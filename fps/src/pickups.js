@@ -182,6 +182,14 @@ function buildWeaponMesh(what) {
     const m = builder();
     m.position.set(0, 0, 0);          // strip the first-person camera offset
     m.rotation.set(0, 0, 0);
+    // S51: strip the hand sub-groups. The held-weapon builders include hand
+    // groups tagged userData.isHand for the first-person view; a world pickup
+    // is a gun sitting on the ground, no hand attached. We REMOVE them from
+    // the tree (not just hide) so they don't inflate the bbox used for the
+    // pickup-size normalisation below.
+    const hands = [];
+    m.traverse((obj) => { if (obj.userData && obj.userData.isHand) hands.push(obj); });
+    for (const h of hands) h.parent.remove(h);
     const box = new THREE.Box3().setFromObject(m);
     const size = new THREE.Vector3(); box.getSize(size);
     const center = new THREE.Vector3(); box.getCenter(center);

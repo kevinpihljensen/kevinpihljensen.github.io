@@ -286,6 +286,9 @@ export const KNIFE_RANGE = 2.6;
 export const KNIFE_DAMAGE = 75;
 export const KNIFE_COOLDOWN = 0.42;      // seconds between swipes
 export const KNIFE_SPEED_MULT = 1.15;    // small mobility buff while knife is out
+// S51: animation length of the visible swipe. Slightly shorter than the
+// cooldown so the slash visually completes before the next swipe can fire.
+export const KNIFE_SWIPE_DURATION = 0.36;
 
 // --- SPAWNING ---
 // Enemies spawn on a ring AROUND THE PLAYER (not the arena origin), so they

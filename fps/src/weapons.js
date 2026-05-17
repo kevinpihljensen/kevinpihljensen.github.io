@@ -23,7 +23,7 @@ import {
   RECOIL_PISTOL, RECOIL_SHOTGUN, RECOIL_SMG, RECOIL_SNIPER, RECOIL_SAW,
   RECOIL_PATTERNS, RECOIL_RESET_TIME,
   HIT_MARKER_TIME, HEADSHOT_MARKER_TIME, HEADSHOT_MULTIPLIER,
-  KNIFE_RANGE, KNIFE_DAMAGE, KNIFE_COOLDOWN,
+  KNIFE_RANGE, KNIFE_DAMAGE, KNIFE_COOLDOWN, KNIFE_SWIPE_DURATION,
   DEFAULT_FOV,
   VIEW_SWAY_LAG, VIEW_SWAY_MAX, VIEW_SWAY_DECAY,
   VIEW_BOB_AMP, VIEW_BOB_FREQ, VIEW_LAND_DIP, VIEW_LAND_DIP_DECAY,
@@ -167,7 +167,55 @@ const WMAT = {
                               roughness: 0.4, metalness: 0.1 }),
   // Glass / lens
   lens:          () => wmat({ color: 0x0a0a0e, roughness: 0.10, metalness: 0.95 }),
+  // Tactical glove — dark grey synthetic
+  glove:         () => wmat({ color: 0x252830, roughness: 0.62, metalness: 0.10 }),
+  // Wrist cuff — slightly darker than the glove
+  cuff:          () => wmat({ color: 0x1a1c20, roughness: 0.70, metalness: 0.05 }),
+  // Sleeve / forearm cloth — different shade for tonal step
+  sleeve:        () => wmat({ color: 0x2a2f3a, roughness: 0.80, metalness: 0.03 }),
 };
+
+// --- HAND BUILDER (S51) ---
+// Procedural fist + wrist + sleeve. Used by every weapon builder so the
+// first-person view always shows hands holding the gun (knife included).
+// Tagged with userData.isHand on the returned group so pickups.js can hide
+// it when the same model is used as a world pickup (a gun on the ground
+// shouldn't have a hand floating with it).
+//
+// Local space: +Z trails BACK toward the camera (where the arm exits the
+// frame), -Z faces the gun body. Knuckles bumps on the +Z (camera-facing)
+// side. side='right' / 'left' just flips the thumb.
+function buildHand({ side = 'right' } = {}) {
+  const g = new THREE.Group();
+  const sign = side === 'right' ? 1 : -1;
+  // Main fist block
+  const fist = new THREE.Mesh(new THREE.BoxGeometry(0.046, 0.060, 0.080), WMAT.glove());
+  g.add(fist);
+  // 4 knuckle ridges on the camera-facing top corner (+Y, +Z)
+  for (let i = 0; i < 4; i++) {
+    const knuckle = new THREE.Mesh(new THREE.BoxGeometry(0.009, 0.010, 0.012), WMAT.glove());
+    knuckle.position.set(-0.015 + i * 0.010, 0.028, 0.022);
+    g.add(knuckle);
+  }
+  // Thumb — angled box on the side, flipped for left-handedness
+  const thumb = new THREE.Mesh(new THREE.BoxGeometry(0.015, 0.030, 0.024), WMAT.glove());
+  thumb.position.set(sign * 0.022, 0.012, 0.014);
+  thumb.rotation.z = -sign * 0.4;
+  g.add(thumb);
+  // Wrist cuff — short cylinder trailing toward the camera (+Z)
+  const cuff = new THREE.Mesh(new THREE.CylinderGeometry(0.024, 0.026, 0.024, 12), WMAT.cuff());
+  cuff.rotation.x = Math.PI / 2;
+  cuff.position.set(sign * 0.004, 0, 0.052);
+  g.add(cuff);
+  // Sleeve / forearm — longer cylinder trailing further toward the camera
+  const arm = new THREE.Mesh(new THREE.CylinderGeometry(0.027, 0.030, 0.14, 12), WMAT.sleeve());
+  arm.rotation.x = Math.PI / 2;
+  arm.position.set(sign * 0.008, 0, 0.13);
+  g.add(arm);
+  // Pickups will look for this tag and hide the whole sub-tree.
+  g.userData.isHand = true;
+  return g;
+}
 
 // --- VIEW MODELS (held weapons attached to camera) ---
 // M11: greatly expanded vs m10. Each weapon now has multi-part construction:
@@ -251,6 +299,10 @@ export function buildPistolModel() {
   const port = new THREE.Mesh(new THREE.BoxGeometry(0.002, 0.020, 0.060), WMAT.rubber());
   port.position.set(0.028, 0.040, -0.04);
   g.add(port);
+  // S51: right hand on the pistol grip
+  const rHand = buildHand({ side: 'right' });
+  rHand.position.set(0.010, -0.060, 0.040);
+  g.add(rHand);
   g.position.set(0.16, -0.16, -0.4);
   return g;
 }
@@ -320,6 +372,16 @@ export function buildShotgunModel() {
   const slingStud = new THREE.Mesh(new THREE.CylinderGeometry(0.005, 0.005, 0.015, 8), WMAT.accentSteel());
   slingStud.position.set(0, -0.050, 0.27);
   g.add(slingStud);
+  // S51: hands — right on the trigger, left on the pump.
+  // Note: the left hand follows the pump during the reload anim (parented to
+  // the gun group, not the pump itself, so it stays at this rest position;
+  // a more elaborate version could parent the hand to the pump mesh).
+  const rHand = buildHand({ side: 'right' });
+  rHand.position.set(0.010, -0.025, 0.085);
+  g.add(rHand);
+  const lHand = buildHand({ side: 'left' });
+  lHand.position.set(-0.010, -0.030, -0.150);
+  g.add(lHand);
   g.position.set(0.20, -0.18, -0.45);
   return g;
 }
@@ -405,6 +467,13 @@ export function buildSmgModel() {
   slingLoop.rotation.y = Math.PI / 2;
   slingLoop.position.set(0, 0.005, 0.085);
   g.add(slingLoop);
+  // S51: hands — right on the pistol grip, left on the magazine/foregrip
+  const rHand = buildHand({ side: 'right' });
+  rHand.position.set(0.010, -0.055, 0.090);
+  g.add(rHand);
+  const lHand = buildHand({ side: 'left' });
+  lHand.position.set(-0.010, -0.075, -0.030);
+  g.add(lHand);
   g.position.set(0.18, -0.17, -0.42);
   return g;
 }
@@ -517,6 +586,13 @@ export function buildSniperModel() {
     vent.position.set(0, 0.039 + i * -0.018, -0.66);
     g.add(vent);
   }
+  // S51: hands — right on the grip, left under the barrel/handguard
+  const rHand = buildHand({ side: 'right' });
+  rHand.position.set(0.010, -0.045, 0.085);
+  g.add(rHand);
+  const lHand = buildHand({ side: 'left' });
+  lHand.position.set(-0.010, -0.020, -0.230);
+  g.add(lHand);
   g.position.set(0.22, -0.18, -0.48);
   return g;
 }
@@ -614,6 +690,14 @@ export function buildSawModel() {
   // Rear sight (peep) on the back of the top cover
   const rs = new THREE.Mesh(new THREE.BoxGeometry(0.018, 0.014, 0.010), WMAT.accentSteel());
   rs.position.set(0, 0.094, 0.060); g.add(rs);
+  // S51: hands — right on the pistol grip, left supporting under the barrel
+  // shroud (LMG support-hand grip — closer to the barrel, not on the foregrip)
+  const rHand = buildHand({ side: 'right' });
+  rHand.position.set(0.010, -0.055, 0.115);
+  g.add(rHand);
+  const lHand = buildHand({ side: 'left' });
+  lHand.position.set(-0.010, -0.025, -0.180);
+  g.add(lHand);
   g.position.set(0.20, -0.18, -0.44);
   return g;
 }
@@ -682,6 +766,12 @@ function buildKnifeModel() {
   const accent = new THREE.Mesh(new THREE.BoxGeometry(0.046, 0.003, 0.003), WMAT.redAccent());
   accent.position.set(0, -0.006, -0.025);
   g.add(accent);
+  // S51: right hand gripping the knife handle. Knife handle is a cylinder
+  // along the Z axis at z=0.045; the hand wraps it. The slash anim swings
+  // the whole knife group so the hand stays with the knife throughout.
+  const rHand = buildHand({ side: 'right' });
+  rHand.position.set(0.008, -0.005, 0.060);
+  g.add(rHand);
   g.position.set(0.17, -0.15, -0.34);
   g.rotation.set(0.10, -0.12, 0);
   return g;
@@ -884,6 +974,15 @@ function _triangleN(x, n) {
   return _hump(frac);
 }
 
+// Three-phase piecewise smoothstep — start → windup peak (at p=0.3) → slash
+// peak (at p=0.7) → end. Used for the knife slash so the swing has a clean
+// "wind back, snap forward, recover" shape rather than a single sin pulse.
+function _slashPhase(p, atStart, atWindup, atSlash, atEnd) {
+  if (p <= 0.3) return atStart  + _smoothstep(p / 0.3)         * (atWindup - atStart);
+  if (p <= 0.7) return atWindup + _smoothstep((p - 0.3) / 0.4) * (atSlash  - atWindup);
+  return            atSlash  + _smoothstep((p - 0.7) / 0.3) * (atEnd    - atSlash);
+}
+
 function updateViewModelTransform(dt) {
   const key = wState.currentWeapon;
   const m = VIEW_MODELS[key];
@@ -999,12 +1098,18 @@ function updateViewModelTransform(dt) {
     }
   }
 
-  // 4. MELEE swipe (knife) — short forward lunge of the WHOLE knife group.
+  // 4. MELEE slash (knife) — S51 right-to-left horizontal slash.
+  //   0.0 → 0.3 : windup — knife pulls right, slightly back, rotates to face right
+  //   0.3 → 0.7 : slash  — sweeps from right to left, slight forward thrust
+  //   0.7 → 1.0 : recover — returns to ready
+  // The whole knife group (blade + handle + hand) animates together so the
+  // hand looks like it's holding the knife throughout.
   if (key === 'knife' && wState.meleeAnim > 0) {
-    const p = 1 - wState.meleeAnim / 0.22;
-    const lunge = _hump(p);
-    m.position.z -= lunge * 0.16;
-    m.rotation.z -= lunge * 0.5;
+    const p = 1 - wState.meleeAnim / KNIFE_SWIPE_DURATION;
+    m.position.x += _slashPhase(p, 0, +0.06, -0.25, 0);
+    m.position.z += _slashPhase(p, 0, -0.04, +0.05, 0);
+    m.rotation.y += _slashPhase(p, 0, +0.50, -1.40, 0);
+    m.rotation.z += _slashPhase(p, 0, +0.15, -0.30, 0);
   }
 }
 
@@ -1035,7 +1140,7 @@ export function tryFire() {
   // --- MELEE (knife): no ammo, short reach, swipe ---
   if (w.melee) {
     wState.fireCooldown = 60 / w.rpm;
-    wState.meleeAnim = 0.22;          // drives the view-model lunge
+    wState.meleeAnim = KNIFE_SWIPE_DURATION;   // S51: right-to-left slash anim
     meleeStrike(w);
     w.sfxFire();
     return;
