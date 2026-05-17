@@ -56,3 +56,16 @@ the double-click case) has been removed -- GitHub Pages serves the
 modular version directly, so it was redundant. `build-singlefile.mjs`
 is retained so a single-file build can still be generated on demand if
 ever needed; running it is not part of normal use or deployment.
+
+## For developers / Claude Code
+
+`CLAUDE.md` (repo root) is the working contract — read it first. It
+documents the constraints, module map, and the mandatory verify-before-
+ship workflow. The verification battery lives in `dev/`:
+
+```
+cd dev && ./test-all.sh      # syntax + 9 harnesses + map analysis
+```
+
+Baseline: 142 assertions, ALL GREEN, MAP OK. A red harness is a real
+regression, not a flaky test.

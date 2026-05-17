@@ -162,3 +162,27 @@ export const LAYOUT = [
   { t: 'box', cx: 27, cz: -22, base: 7.0, sx: 2.0, sy: 1.0, sz: 2.0 }, // tower parapet
   { t: 'box', cx:  0, cz: 24, base: 2.5, sx: 3.0, sy: 1.0, sz: 1.6 },  // bastion parapet
 ];
+
+// --- PICKUPS (M15 Stage 3) ---
+// Static pickup placements. Each entry is { kind, what?, x, y, z } where:
+//   kind = 'weapon' | 'health'
+//   what = weapon key (shotgun|smg|sniper|saw) when kind='weapon'; ignored for health
+//   x,z  = horizontal world position
+//   y    = surface height the pickup sits on (the hover offset is added at runtime)
+// Weapons are distributed so each requires reaching a different part of the
+// map (encourages exploration of all tiers and the loop route). Health is
+// scattered on the ground and on a couple of decks so a player engaged at any
+// elevation can disengage to a nearby pickup.
+export const PICKUPS = [
+  // weapons — one of each non-pistol gun
+  { kind: 'weapon', what: 'shotgun', x:  30, z:   8, y: 2.5 },   // EAST redoubt (tier 2.5)
+  { kind: 'weapon', what: 'smg',     x:   0, z:  21, y: 2.5 },   // SOUTH bastion (tier 2.5)
+  { kind: 'weapon', what: 'saw',     x:   0, z: -18, y: 4.5 },   // KEEP (tier 4.5)
+  { kind: 'weapon', what: 'sniper',  x:  27, z: -25, y: 7.0 },   // TOWER perch (tier 7.0, north of parapet)
+  // health — spread across ground + a couple of elevated spots
+  { kind: 'health', x:   8, z:   8, y: 0 },                       // courtyard, east of spawn
+  { kind: 'health', x: -10, z:  14, y: 0 },                       // SW corridor mouth
+  { kind: 'health', x:  20, z: -10, y: 0 },                       // east-central ground
+  { kind: 'health', x: -28, z:  -6, y: 3.0 },                     // WEST deck top
+  { kind: 'health', x:  27, z: -34, y: 7.0 },                     // RAMPART (back-stairs route)
+];

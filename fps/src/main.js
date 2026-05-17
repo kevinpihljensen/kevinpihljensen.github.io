@@ -6,11 +6,13 @@ import { state, game } from './state.js';
 import { GAME_STATE, MAX_DT, LAYER_WORLD, LAYER_VIEWMODEL } from './constants.js';
 import './arena.js';     // builds floor / walls / cover at import time
 import './input.js';     // attaches keyboard / mouse listeners at import time
+import './pickups.js';   // spawns weapon/health pickups at import time
 import { updatePlayer } from './player.js';
 import { updateEnemies } from './enemies.js';
 import { updateProjectiles } from './projectiles.js';
 import { updateWeaponTimers, processAutoFire } from './weapons.js';
 import { updateDecals } from './decals.js';
+import { updatePickups } from './pickups.js';
 import { updateWave } from './wave.js';
 import { setGameState, updateHUD, updateToast } from './hud.js';
 
@@ -34,6 +36,7 @@ function loop() {
     updateProjectiles(dt);
     updatePlayer(dt);
     updateWeaponTimers(dt);
+    updatePickups(dt);
     updateWave(dt);
     updateDecals(dt);
     updateHUD(dt);
