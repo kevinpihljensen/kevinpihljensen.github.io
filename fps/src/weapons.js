@@ -21,11 +21,17 @@ import { shootables } from './collision.js';
 import {
   RAYCAST_RANGE, MUZZLE_FLASH_TIME, RECOIL_DECAY,
   RECOIL_PISTOL, RECOIL_SHOTGUN, RECOIL_SMG, RECOIL_SNIPER, RECOIL_SAW,
+  RECOIL_PATTERNS, RECOIL_RESET_TIME,
   HIT_MARKER_TIME, HEADSHOT_MARKER_TIME, HEADSHOT_MULTIPLIER,
   KNIFE_RANGE, KNIFE_DAMAGE, KNIFE_COOLDOWN,
   DEFAULT_FOV,
+  VIEW_SWAY_LAG, VIEW_SWAY_MAX, VIEW_SWAY_DECAY,
+  VIEW_BOB_AMP, VIEW_BOB_FREQ, VIEW_LAND_DIP, VIEW_LAND_DIP_DECAY,
+  RELOAD_TILT_X, RELOAD_TILT_Z, RELOAD_DIP_Y,
+  RELOAD_MAG_DROP, RELOAD_PUMP_TRAVEL,
+  RELOAD_BOLT_TRAVEL, RELOAD_BOLT_ROTATE, RELOAD_COVER_OPEN,
 } from './constants.js';
-import { state, player } from './state.js';
+import { state, player, game } from './state.js';
 import { GAME_STATE, LAYER_VIEWMODEL } from './constants.js';
 import {
   sfxPistol, sfxShotgun, sfxSmg, sfxSniper, sfxSaw, sfxKnife,
@@ -102,7 +108,15 @@ export const wState = {
   currentWeapon: 'pistol',
   fireCooldown: 0,
   reloadTimer: 0,
+  // M10: vertical recoil kick (applied to camera.rotation.x in player.js).
+  // S50: yaw added — pattern-based sprays kick horizontally too.
   recoilPitch: 0,
+  recoilYaw: 0,
+  // S50: index into RECOIL_PATTERNS for the active weapon; advances on each
+  // shot; resets after RECOIL_RESET_TIME of not firing so a new burst
+  // restarts the pattern at shot 1.
+  sprayIndex: 0,
+  sprayResetTimer: 0,
   muzzleFlashTimer: 0,
   activeMuzzleFlash: null,
   hitMarkerTimer: 0,
@@ -115,6 +129,10 @@ export const wState = {
   bloom: 0,
   // Knife swipe animation timer (drives the view-model lunge).
   meleeAnim: 0,
+  // S50: persistent reload-time storage (the per-weapon w.reloadTime) so the
+  // reload animation knows how long the current reload is even after we tick
+  // reloadTimer down. Set by tryReload, read by updateViewModelTransform.
+  reloadDuration: 0,
 };
 
 // --- WEAPON MATERIAL PALETTE ---
@@ -214,10 +232,12 @@ export function buildPistolModel() {
   const hammer = new THREE.Mesh(new THREE.BoxGeometry(0.012, 0.022, 0.010), WMAT.bluedSteel());
   hammer.position.set(0, 0.062, 0.075);
   g.add(hammer);
-  // Magazine baseplate (thin block at the bottom of the grip)
+  // Magazine baseplate. Tagged as the reload-animated part: drops out and a
+  // "fresh mag" slides back into place during the reload window.
   const magBase = new THREE.Mesh(new THREE.BoxGeometry(0.055, 0.014, 0.06), WMAT.polymer());
   magBase.position.set(0.005, -0.165, 0.045);
   magBase.rotation.x = -0.18;
+  magBase.userData.reloadPart = 'mag';
   g.add(magBase);
   // Slide release lever — small box on the left side of the frame
   const release = new THREE.Mesh(new THREE.BoxGeometry(0.004, 0.008, 0.025), WMAT.accentSteel());
@@ -253,9 +273,11 @@ export function buildShotgunModel() {
   barrel.rotation.x = Math.PI / 2;
   barrel.position.set(0, 0.024, -0.27);
   g.add(barrel);
-  // Pump grip
+  // Pump grip. Tagged as the reload-animated part: cycles back-and-forward
+  // during the reload window (one stroke per shell loaded, approximated).
   const pumpMesh = new THREE.Mesh(new THREE.BoxGeometry(0.055, 0.045, 0.13), WMAT.walnut());
   pumpMesh.position.set(0, -0.04, -0.16);
+  pumpMesh.userData.reloadPart = 'pump';
   g.add(pumpMesh);
   // Trigger guard
   const tg = new THREE.Mesh(new THREE.TorusGeometry(0.022, 0.006, 6, 14, Math.PI), WMAT.bluedSteel());
@@ -316,10 +338,11 @@ export function buildSmgModel() {
   barrel.rotation.x = Math.PI / 2;
   barrel.position.set(0, 0.025, -0.18);
   g.add(barrel);
-  // Drop magazine — polymer
+  // Drop magazine — polymer. Tagged as the reload-animated part.
   const mag = new THREE.Mesh(new THREE.BoxGeometry(0.055, 0.16, 0.06), WMAT.polymer());
   mag.position.set(0, -0.13, -0.04);
   mag.rotation.x = 0.05;
+  mag.userData.reloadPart = 'mag';
   g.add(mag);
   // Polymer grip
   const grip = new THREE.Mesh(new THREE.BoxGeometry(0.045, 0.10, 0.05), WMAT.polymer());
@@ -399,13 +422,16 @@ export function buildSniperModel() {
   const receiver = new THREE.Mesh(new THREE.BoxGeometry(0.065, 0.085, 0.20), WMAT.bluedSteel());
   receiver.position.set(0, 0.005, 0);
   g.add(receiver);
-  // Bolt handle (polished — catches light)
+  // Bolt handle (polished — catches light). The bolt + knob are tagged as the
+  // reload-animated part: lift, pull back, push forward, lower.
   const bolt = new THREE.Mesh(new THREE.CylinderGeometry(0.008, 0.008, 0.05, 8), WMAT.polishedSteel());
   bolt.rotation.z = Math.PI / 2;
   bolt.position.set(-0.05, 0.04, 0.05);
+  bolt.userData.reloadPart = 'bolt';
   g.add(bolt);
   const boltKnob = new THREE.Mesh(new THREE.SphereGeometry(0.013, 8, 6), WMAT.polishedSteel());
   boltKnob.position.set(-0.08, 0.04, 0.05);
+  boltKnob.userData.reloadPart = 'bolt';
   g.add(boltKnob);
   // Long barrel
   const barrel = new THREE.Mesh(new THREE.CylinderGeometry(0.018, 0.018, 0.55, 12), WMAT.bluedSteel());
@@ -501,9 +527,11 @@ export function buildSawModel() {
   const body = new THREE.Mesh(new THREE.BoxGeometry(0.075, 0.11, 0.30), WMAT.darkSteel());
   body.position.set(0, 0.01, -0.02);
   g.add(body);
-  // Feed tray / top cover
+  // Feed tray / top cover. Tagged as the reload-animated part: hinges open on
+  // the front (low-z) edge during the reload window, then swings closed.
   const cover = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.03, 0.20), WMAT.aluminum());
   cover.position.set(0, 0.075, -0.02);
+  cover.userData.reloadPart = 'cover';
   g.add(cover);
   // Carry handle
   const handle = new THREE.Mesh(new THREE.TorusGeometry(0.03, 0.006, 6, 12, Math.PI), WMAT.bluedSteel());
@@ -788,6 +816,198 @@ function updateWeaponVisibility() {
   }
 }
 
+// --- VIEW-MODEL TRANSFORM COMPOSITION (S50) ---
+// Each frame, the active weapon's transform is composed from:
+//   1. BASE  — the per-weapon hand pose captured once after build (the
+//              g.position.set(...) / g.rotation.set(...) at the end of each
+//              build*Model()).
+//   2. SWAY  — small lag offsets driven by mouse turn-delta this frame
+//              (gun trails the camera turn) + a bob from movement speed +
+//              a brief downward dip on landing.
+//   3. RELOAD ANIM — when wState.reloadTimer > 0: whole-gun tilt + dip, plus
+//              the per-weapon animated part (mag drops, pump cycles, bolt
+//              cycles, SAW cover hinges open).
+//   4. MELEE  — when the knife is mid-swipe (wState.meleeAnim > 0), the lunge.
+//
+// Each frame we RESET to BASE, then add the deltas, so the composition is
+// stateless (no drift / accumulation).
+
+// Base pose (position + rotation) per view-model, captured AFTER the builders
+// have set their final position/rotation but BEFORE we start mutating them
+// per-frame.
+const VIEW_MODEL_BASE = {};
+for (const key in VIEW_MODELS) {
+  const m = VIEW_MODELS[key];
+  VIEW_MODEL_BASE[key] = {
+    px: m.position.x, py: m.position.y, pz: m.position.z,
+    rx: m.rotation.x, ry: m.rotation.y, rz: m.rotation.z,
+  };
+}
+
+// Reload-animated parts. Each entry is { mesh, basePos, baseRot, kind }
+// where kind ∈ {'mag', 'pump', 'bolt', 'cover'} drives which procedural
+// animation to apply during the reload window. Found by walking each
+// view-model and matching userData.reloadPart tags set in the builders.
+const RELOAD_PARTS = {};
+for (const key in VIEW_MODELS) {
+  const parts = [];
+  VIEW_MODELS[key].traverse((obj) => {
+    if (obj.userData && obj.userData.reloadPart) {
+      parts.push({
+        mesh: obj,
+        kind: obj.userData.reloadPart,
+        basePos: { x: obj.position.x, y: obj.position.y, z: obj.position.z },
+        baseRot: { x: obj.rotation.x, y: obj.rotation.y, z: obj.rotation.z },
+      });
+    }
+  });
+  if (parts.length) RELOAD_PARTS[key] = parts;
+}
+
+// Module-local view-state — tracked between frames for sway/bob/lag.
+let _viewLagX = 0, _viewLagY = 0;          // current lag offsets, decays each frame
+let _viewLandDip = 0;                       // current land-dip Y offset, decays
+let _viewPrevYaw = 0, _viewPrevPitch = 0;   // for sway delta
+let _viewPrevGrounded = true;               // for land-dip trigger
+let _viewBobX = 0, _viewBobY = 0;           // current bob, smoothed by speed
+const _ZERO = { x: 0, y: 0, z: 0 };
+
+// Easing helpers (private; pure math).
+function _smoothstep(x) { return x * x * (3 - 2 * x); }     // 0..1 → 0..1 S-curve
+function _hump(x) { return Math.sin(Math.min(1, Math.max(0, x)) * Math.PI); }
+// Two-stroke triangular wave (0→1→0→1→0...→0) for the shotgun pump cycle.
+function _triangleN(x, n) {
+  const t = x * n;                          // 0..n
+  const i = Math.floor(t);
+  const frac = t - i;
+  // Each unit-interval is one back-then-forward stroke; smooth the apex.
+  return _hump(frac);
+}
+
+function updateViewModelTransform(dt) {
+  const key = wState.currentWeapon;
+  const m = VIEW_MODELS[key];
+  const base = VIEW_MODEL_BASE[key];
+  if (!m || !base) return;
+  // 1. Reset to base.
+  m.position.set(base.px, base.py, base.pz);
+  m.rotation.set(base.rx, base.ry, base.rz);
+
+  // 2. SWAY / BOB / LAND DIP
+  // 2a. Lag — translate by the negative of how much the camera turned this
+  // frame (capped, decaying back toward 0).
+  const dYaw = player.yaw - _viewPrevYaw;
+  const dPitch = player.pitch - _viewPrevPitch;
+  _viewPrevYaw = player.yaw;
+  _viewPrevPitch = player.pitch;
+  _viewLagX += dYaw * VIEW_SWAY_LAG;        // turn right → gun lags to the left
+  _viewLagY -= dPitch * VIEW_SWAY_LAG;       // look up → gun dips down briefly
+  // Clamp and decay.
+  if (_viewLagX >  VIEW_SWAY_MAX) _viewLagX =  VIEW_SWAY_MAX;
+  if (_viewLagX < -VIEW_SWAY_MAX) _viewLagX = -VIEW_SWAY_MAX;
+  if (_viewLagY >  VIEW_SWAY_MAX) _viewLagY =  VIEW_SWAY_MAX;
+  if (_viewLagY < -VIEW_SWAY_MAX) _viewLagY = -VIEW_SWAY_MAX;
+  const decay = Math.exp(-VIEW_SWAY_DECAY * dt);
+  _viewLagX *= decay;
+  _viewLagY *= decay;
+  m.position.x += _viewLagX;
+  m.position.y += _viewLagY;
+  // 2b. Bob — figure-eight at footstep cadence, scaled by horizontal speed.
+  const speed = Math.hypot(player.velocityX, player.velocityZ);
+  const speedFrac = player.isGrounded ? Math.min(1.4, speed / 8.0) : 0; // walk≈0.6, sprint≈1
+  const bobT = game.elapsed * VIEW_BOB_FREQ;
+  const bobX = Math.cos(bobT) * VIEW_BOB_AMP * speedFrac;
+  const bobY = Math.abs(Math.sin(bobT)) * VIEW_BOB_AMP * speedFrac;
+  // Smooth the bob so it doesn't pop when isGrounded toggles.
+  _viewBobX += (bobX - _viewBobX) * Math.min(1, dt * 12);
+  _viewBobY += (bobY - _viewBobY) * Math.min(1, dt * 12);
+  m.position.x += _viewBobX;
+  m.position.y += _viewBobY;
+  // 2c. Land dip — when feet snap onto a surface, briefly dip the gun down
+  // and ease it back up. Triggers on the airborne→grounded transition.
+  if (!_viewPrevGrounded && player.isGrounded) _viewLandDip = VIEW_LAND_DIP;
+  _viewPrevGrounded = player.isGrounded;
+  _viewLandDip *= Math.exp(-VIEW_LAND_DIP_DECAY * dt);
+  if (_viewLandDip < 0.0005) _viewLandDip = 0;
+  m.position.y -= _viewLandDip;
+
+  // 3. RELOAD ANIM — only while reloadTimer > 0.
+  if (wState.reloadTimer > 0 && wState.reloadDuration > 0) {
+    // progress = 0 at start of reload, 1 at end.
+    const progress = 1 - (wState.reloadTimer / wState.reloadDuration);
+    // Whole-gun tilt: ease-in then ease-out so the gun rotates over the
+    // reload then snaps back at the end. Peaks around progress ~0.5.
+    const tiltShape = _hump(progress);
+    m.rotation.x += RELOAD_TILT_X * tiltShape;
+    m.rotation.z += RELOAD_TILT_Z * tiltShape;
+    m.position.y += RELOAD_DIP_Y * tiltShape;
+    // Per-weapon part animation.
+    const parts = RELOAD_PARTS[key];
+    if (parts) {
+      for (const p of parts) {
+        // Reset the part to its base before applying the per-kind anim.
+        p.mesh.position.set(p.basePos.x, p.basePos.y, p.basePos.z);
+        p.mesh.rotation.set(p.baseRot.x, p.baseRot.y, p.baseRot.z);
+        if (p.kind === 'mag') {
+          // Drop out [0.05..0.45], hold low [0.45..0.65], rise back in
+          // [0.65..0.95], settled at 1.0.
+          let drop = 0;
+          if (progress < 0.05) drop = 0;
+          else if (progress < 0.45) drop = _smoothstep((progress - 0.05) / 0.40);
+          else if (progress < 0.65) drop = 1;
+          else if (progress < 0.95) drop = 1 - _smoothstep((progress - 0.65) / 0.30);
+          else drop = 0;
+          p.mesh.position.y -= drop * RELOAD_MAG_DROP;
+        } else if (p.kind === 'pump') {
+          // Two back-and-forward strokes spread evenly across the reload
+          // window so the pump visibly cycles. The stroke amount is +Z (rear).
+          const stroke = _triangleN(progress, 2);
+          p.mesh.position.z += stroke * RELOAD_PUMP_TRAVEL;
+        } else if (p.kind === 'bolt') {
+          // One slow cycle: lift bolt (rotate), pull back, push forward, lower.
+          // 0.00..0.20 lift, 0.20..0.55 back, 0.55..0.85 forward, 0.85..1.0 lower.
+          let lift = 0, slide = 0;
+          if (progress < 0.20)      { lift = _smoothstep(progress / 0.20); slide = 0; }
+          else if (progress < 0.55) { lift = 1; slide = _smoothstep((progress - 0.20) / 0.35); }
+          else if (progress < 0.85) { lift = 1; slide = 1 - _smoothstep((progress - 0.55) / 0.30); }
+          else                       { lift = 1 - _smoothstep((progress - 0.85) / 0.15); slide = 0; }
+          p.mesh.rotation.x += lift * RELOAD_BOLT_ROTATE;
+          p.mesh.position.z += slide * RELOAD_BOLT_TRAVEL;
+        } else if (p.kind === 'cover') {
+          // Hinge open [0..0.25], stay open [0.25..0.75], hinge closed [0.75..1].
+          // Pivot is the FRONT edge of the cover (low-z). Approximate by
+          // translating up + rotating around X.
+          let open = 0;
+          if (progress < 0.25)      open = _smoothstep(progress / 0.25);
+          else if (progress < 0.75) open = 1;
+          else                       open = 1 - _smoothstep((progress - 0.75) / 0.25);
+          p.mesh.rotation.x -= open * RELOAD_COVER_OPEN;
+          p.mesh.position.y += open * 0.02;     // tiny lift so the rotated cover doesn't clip the receiver
+        }
+      }
+    }
+  } else {
+    // Not reloading — make sure the animated parts are at their base pose
+    // (they were already, but a frame in which reloadTimer just hit 0 needs
+    // this so the part doesn't freeze mid-anim).
+    const parts = RELOAD_PARTS[key];
+    if (parts) {
+      for (const p of parts) {
+        p.mesh.position.set(p.basePos.x, p.basePos.y, p.basePos.z);
+        p.mesh.rotation.set(p.baseRot.x, p.baseRot.y, p.baseRot.z);
+      }
+    }
+  }
+
+  // 4. MELEE swipe (knife) — short forward lunge of the WHOLE knife group.
+  if (key === 'knife' && wState.meleeAnim > 0) {
+    const p = 1 - wState.meleeAnim / 0.22;
+    const lunge = _hump(p);
+    m.position.z -= lunge * 0.16;
+    m.rotation.z -= lunge * 0.5;
+  }
+}
+
 // --- RAYCAST SCRATCH BUFFERS (reused per frame) ---
 const _origin     = new THREE.Vector3();
 const _direction  = new THREE.Vector3();
@@ -834,7 +1054,18 @@ export function tryFire() {
   const spread = w.spread + (w.bloom ? wState.bloom : 0);
   fireRays(w, spread);
   triggerMuzzleFlash();
-  wState.recoilPitch += w.recoil;
+  // S50: pattern-based recoil. Each shot looks up the next pattern entry and
+  // kicks BOTH pitch and yaw. The pattern is cyclic for full-auto weapons —
+  // long sustained fire wraps around (last few shots stop kicking as hard so
+  // the pattern doesn't endlessly drift away from neutral). RECOIL_RESET_TIME
+  // of not firing snaps sprayIndex back to 0 → next burst starts at shot 1.
+  const pattern = RECOIL_PATTERNS[wState.currentWeapon] ||
+                  [{ p: w.recoil, y: 0 }];
+  const kick = pattern[wState.sprayIndex % pattern.length];
+  wState.recoilPitch += kick.p;
+  wState.recoilYaw   += kick.y;
+  wState.sprayIndex  += 1;
+  wState.sprayResetTimer = RECOIL_RESET_TIME;
   // Sustained fire widens the cone up to the cap.
   if (w.bloom) {
     wState.bloom = Math.min(w.bloom.maxExtra, wState.bloom + w.bloom.addPerShot);
@@ -961,6 +1192,7 @@ export function tryReload() {
   if (s.mag >= w.magSize) return;
   if (s.reserve <= 0) return;
   wState.reloadTimer = w.reloadTime;
+  wState.reloadDuration = w.reloadTime;     // S50: needed for the reload anim
   // sfxReloadStart schedules clipout / clipin / boltpull at frac-of-reload-time
   // intervals using the duration we pass here. If reloadTime changes for a
   // weapon, the sample chain stays in sync.
@@ -1004,8 +1236,15 @@ export function switchWeapon(name) {
   // doesn't bleed into the new weapon's deploy.
   stopAllReloadAudio();
   wState.reloadTimer = 0;
+  wState.reloadDuration = 0;
   wState.fireCooldown = 0;
   wState.bloom = 0;
+  // S50: clear recoil + spray so the new weapon starts at neutral and the
+  // pattern doesn't carry over from the previous gun.
+  wState.recoilPitch = 0;
+  wState.recoilYaw = 0;
+  wState.sprayIndex = 0;
+  wState.sprayResetTimer = 0;
   wState.currentWeapon = name;
   updateWeaponVisibility();
   // Play deploy sample (currently only the sniper has one; others are silent).
@@ -1058,9 +1297,29 @@ export function updateWeaponTimers(dt) {
       muzzleLight.intensity = 0;
     }
   }
+  // S50: pitch + yaw recoil both decay exponentially toward neutral.
   if (wState.recoilPitch !== 0) {
     wState.recoilPitch *= Math.exp(-RECOIL_DECAY * dt);
     if (Math.abs(wState.recoilPitch) < 1e-5) wState.recoilPitch = 0;
+  }
+  if (wState.recoilYaw !== 0) {
+    wState.recoilYaw *= Math.exp(-RECOIL_DECAY * dt);
+    if (Math.abs(wState.recoilYaw) < 1e-5) wState.recoilYaw = 0;
+  }
+  // S50: a window of not-firing resets the spray pattern so the next burst
+  // starts at shot 1. tryFire arms this each shot to RECOIL_RESET_TIME.
+  if (wState.sprayResetTimer > 0) {
+    wState.sprayResetTimer -= dt;
+    if (wState.sprayResetTimer <= 0) {
+      wState.sprayResetTimer = 0;
+      wState.sprayIndex = 0;
+    }
+  }
+  // Tick the melee swipe timer here; the actual visual is composed in
+  // updateViewModelTransform so it can stack with sway/bob/reload.
+  if (wState.meleeAnim > 0) {
+    wState.meleeAnim -= dt;
+    if (wState.meleeAnim < 0) wState.meleeAnim = 0;
   }
 
   // SAW bloom recovers toward 0 when you ease off the trigger (tryFire adds
@@ -1072,18 +1331,10 @@ export function updateWeaponTimers(dt) {
     wState.bloom = Math.max(0, wState.bloom - rec);
   }
 
-  // Knife swipe: a quick forward lunge of the view model, eased out.
-  if (wState.meleeAnim > 0) {
-    wState.meleeAnim -= dt;
-    if (wState.meleeAnim < 0) wState.meleeAnim = 0;
-    const km = VIEW_MODELS.knife;
-    if (km) {
-      const p = 1 - wState.meleeAnim / 0.22;          // 0→1 over the swipe
-      const lunge = Math.sin(Math.min(1, Math.max(0, p)) * Math.PI);
-      km.position.z = WEAPON_OFFSETS.knife.z - lunge * 0.16;
-      km.rotation.z = -lunge * 0.5;
-    }
-  }
+  // S50: drive the view-model transform composition (sway, bob, land dip,
+  // reload anim, melee swipe). One function, applied each frame to the
+  // ACTIVE weapon only.
+  updateViewModelTransform(dt);
   if (wState.hitMarkerTimer > 0) {
     wState.hitMarkerTimer -= dt;
     if (wState.hitMarkerTimer < 0) wState.hitMarkerTimer = 0;
@@ -1109,7 +1360,11 @@ export function resetWeapons() {
   wState.currentWeapon = 'pistol';
   wState.fireCooldown = 0;
   wState.reloadTimer = 0;
+  wState.reloadDuration = 0;
   wState.recoilPitch = 0;
+  wState.recoilYaw = 0;
+  wState.sprayIndex = 0;
+  wState.sprayResetTimer = 0;
   wState.bloom = 0;
   wState.meleeAnim = 0;
   wState.muzzleFlashTimer = 0;
