@@ -117,6 +117,40 @@ export const wState = {
   meleeAnim: 0,
 };
 
+// --- WEAPON MATERIAL PALETTE ---
+// Used by every build*Model() function. Each entry is a factory returning a
+// FRESH MeshStandardMaterial — sharing instances is unsafe because the
+// view-model emissive-lift loop (further down) mutates materials in place;
+// pickups built later need pristine copies. Cheap to call (≤6 materials per
+// weapon × small N of allocations at startup + per pickup spawn).
+function wmat(spec) { return new THREE.MeshStandardMaterial(spec); }
+const WMAT = {
+  // Blued / parkerised steel: dark gunmetal you see on slides, receivers, barrels
+  bluedSteel:    () => wmat({ color: 0x141618, roughness: 0.32, metalness: 0.85 }),
+  // Slightly lighter dark steel — used for frame parts that need a tonal step
+  darkSteel:     () => wmat({ color: 0x1f2126, roughness: 0.40, metalness: 0.78 }),
+  // Polished / chrome: bolt handles, sight surfaces, barrel interiors
+  polishedSteel: () => wmat({ color: 0x8a8e96, roughness: 0.22, metalness: 0.95 }),
+  // Aluminium / hard-anodised: rails, mounts, suppressor bodies
+  aluminum:      () => wmat({ color: 0x3a3d44, roughness: 0.50, metalness: 0.82 }),
+  // Polymer (matte black plastic): grips, magazine bodies, polymer frames
+  polymer:       () => wmat({ color: 0x0c0c10, roughness: 0.82, metalness: 0.04 }),
+  // Hard rubber (recoil pads, textured grip surfaces): blacker than polymer, rougher
+  rubber:        () => wmat({ color: 0x07080a, roughness: 0.92, metalness: 0.02 }),
+  // Walnut stock — slightly variegated browns
+  walnut:        () => wmat({ color: 0x4a2812, roughness: 0.66, metalness: 0.10 }),
+  walnutLight:   () => wmat({ color: 0x5e3618, roughness: 0.60, metalness: 0.10 }),
+  // Brass: shell casings, ammo belt links, occasional accents
+  brass:         () => wmat({ color: 0xb88a3a, roughness: 0.42, metalness: 0.82 }),
+  // Bright steel sight post / serrated detail
+  accentSteel:   () => wmat({ color: 0x52555c, roughness: 0.35, metalness: 0.75 }),
+  // Red accent (dot sight LED, knife wrap accent)
+  redAccent:     () => wmat({ color: 0xff3322, emissive: 0xff2200, emissiveIntensity: 0.6,
+                              roughness: 0.4, metalness: 0.1 }),
+  // Glass / lens
+  lens:          () => wmat({ color: 0x0a0a0e, roughness: 0.10, metalness: 0.95 }),
+};
+
 // --- VIEW MODELS (held weapons attached to camera) ---
 // M11: greatly expanded vs m10. Each weapon now has multi-part construction:
 // slide, frame, barrel, magazine well, grip, trigger guard, sights, etc.
@@ -125,285 +159,501 @@ export const wState = {
 // the lower-right but doesn't obstruct the crosshair.
 export function buildPistolModel() {
   const g = new THREE.Group();
-  const gunmetal = new THREE.MeshStandardMaterial({ color: 0x1a1a1c, roughness: 0.30, metalness: 0.85 });
-  const slide    = new THREE.MeshStandardMaterial({ color: 0x2a2a2e, roughness: 0.40, metalness: 0.75 });
-  const grip     = new THREE.MeshStandardMaterial({ color: 0x16161a, roughness: 0.70, metalness: 0.15 });
-  // Slide (top half, longer)
-  const top = new THREE.Mesh(new THREE.BoxGeometry(0.055, 0.05, 0.22), slide);
+  // Slide (top half) — blued steel
+  const top = new THREE.Mesh(new THREE.BoxGeometry(0.055, 0.05, 0.22), WMAT.bluedSteel());
   top.position.set(0, 0.03, -0.04);
   g.add(top);
-  // Frame (bottom, shorter)
-  const frame = new THREE.Mesh(new THREE.BoxGeometry(0.055, 0.04, 0.13), gunmetal);
+  // Frame (bottom) — polymer for a Glock-ish look
+  const frame = new THREE.Mesh(new THREE.BoxGeometry(0.055, 0.04, 0.13), WMAT.polymer());
   frame.position.set(0, -0.015, -0.02);
   g.add(frame);
-  // Barrel poking out the front
-  const barrel = new THREE.Mesh(new THREE.CylinderGeometry(0.012, 0.012, 0.06, 10), gunmetal);
+  // Barrel — polished steel poking out
+  const barrel = new THREE.Mesh(new THREE.CylinderGeometry(0.012, 0.012, 0.06, 10), WMAT.polishedSteel());
   barrel.rotation.x = Math.PI / 2;
   barrel.position.set(0, 0.03, -0.18);
   g.add(barrel);
-  // Grip
-  const gripMesh = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.12, 0.06), grip);
+  // Polymer grip (angled rearward)
+  const gripMesh = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.12, 0.06), WMAT.polymer());
   gripMesh.position.set(0, -0.10, 0.03);
   gripMesh.rotation.x = -0.18;
   g.add(gripMesh);
   // Trigger guard
-  const tg = new THREE.Mesh(new THREE.TorusGeometry(0.018, 0.005, 6, 14, Math.PI), gunmetal);
+  const tg = new THREE.Mesh(new THREE.TorusGeometry(0.018, 0.005, 6, 14, Math.PI), WMAT.darkSteel());
   tg.rotation.x = Math.PI / 2;
   tg.position.set(0, -0.038, 0.02);
   g.add(tg);
-  // Front sight
-  const fs = new THREE.Mesh(new THREE.BoxGeometry(0.008, 0.012, 0.012), gunmetal);
+  // Front + rear sights — accent steel so they read against the slide
+  const fs = new THREE.Mesh(new THREE.BoxGeometry(0.008, 0.012, 0.012), WMAT.accentSteel());
   fs.position.set(0, 0.062, -0.13);
   g.add(fs);
-  // Rear sight
-  const rs = new THREE.Mesh(new THREE.BoxGeometry(0.025, 0.012, 0.014), gunmetal);
+  const rs = new THREE.Mesh(new THREE.BoxGeometry(0.025, 0.012, 0.014), WMAT.accentSteel());
   rs.position.set(0, 0.062, 0.05);
   g.add(rs);
+  // --- M48 detail additions ---
+  // Slide rear cocking serrations (4 thin ridges on each side)
+  for (let i = 0; i < 4; i++) {
+    const z = 0.04 + i * 0.014;
+    const serrR = new THREE.Mesh(new THREE.BoxGeometry(0.004, 0.04, 0.005), WMAT.bluedSteel());
+    serrR.position.set(0.028, 0.03, z); g.add(serrR);
+    const serrL = new THREE.Mesh(new THREE.BoxGeometry(0.004, 0.04, 0.005), WMAT.bluedSteel());
+    serrL.position.set(-0.028, 0.03, z); g.add(serrL);
+  }
+  // Slide front serrations (3 thinner ridges, just behind the muzzle)
+  for (let i = 0; i < 3; i++) {
+    const z = -0.13 + i * 0.012;
+    const serrR = new THREE.Mesh(new THREE.BoxGeometry(0.004, 0.035, 0.005), WMAT.bluedSteel());
+    serrR.position.set(0.028, 0.03, z); g.add(serrR);
+    const serrL = new THREE.Mesh(new THREE.BoxGeometry(0.004, 0.035, 0.005), WMAT.bluedSteel());
+    serrL.position.set(-0.028, 0.03, z); g.add(serrL);
+  }
+  // Trigger — small box inside the trigger guard
+  const trigger = new THREE.Mesh(new THREE.BoxGeometry(0.008, 0.022, 0.008), WMAT.accentSteel());
+  trigger.position.set(0, -0.034, 0.025);
+  g.add(trigger);
+  // Hammer at the rear of the slide
+  const hammer = new THREE.Mesh(new THREE.BoxGeometry(0.012, 0.022, 0.010), WMAT.bluedSteel());
+  hammer.position.set(0, 0.062, 0.075);
+  g.add(hammer);
+  // Magazine baseplate (thin block at the bottom of the grip)
+  const magBase = new THREE.Mesh(new THREE.BoxGeometry(0.055, 0.014, 0.06), WMAT.polymer());
+  magBase.position.set(0.005, -0.165, 0.045);
+  magBase.rotation.x = -0.18;
+  g.add(magBase);
+  // Slide release lever — small box on the left side of the frame
+  const release = new THREE.Mesh(new THREE.BoxGeometry(0.004, 0.008, 0.025), WMAT.accentSteel());
+  release.position.set(-0.03, 0.005, 0.01);
+  g.add(release);
+  // Picatinny rail under the dust cover
+  const rail = new THREE.Mesh(new THREE.BoxGeometry(0.020, 0.010, 0.07), WMAT.aluminum());
+  rail.position.set(0, -0.005, -0.10);
+  g.add(rail);
+  // Ejection port — dark rectangle inset on the slide's right side (flat plane)
+  const port = new THREE.Mesh(new THREE.BoxGeometry(0.002, 0.020, 0.060), WMAT.rubber());
+  port.position.set(0.028, 0.040, -0.04);
+  g.add(port);
   g.position.set(0.16, -0.16, -0.4);
   return g;
 }
 export function buildShotgunModel() {
   const g = new THREE.Group();
-  const wood    = new THREE.MeshStandardMaterial({ color: 0x4a2c12, roughness: 0.80, metalness: 0.10 });
-  const metal   = new THREE.MeshStandardMaterial({ color: 0x14141a, roughness: 0.35, metalness: 0.85 });
-  const pump    = new THREE.MeshStandardMaterial({ color: 0x2a1810, roughness: 0.75, metalness: 0.15 });
-  // Stock (wood, rear)
-  const stock = new THREE.Mesh(new THREE.BoxGeometry(0.07, 0.10, 0.22), wood);
+  // Walnut stock — rear
+  const stock = new THREE.Mesh(new THREE.BoxGeometry(0.07, 0.10, 0.22), WMAT.walnut());
   stock.position.set(0, -0.005, 0.20);
   g.add(stock);
-  // Receiver (metal, middle)
-  const receiver = new THREE.Mesh(new THREE.BoxGeometry(0.075, 0.085, 0.18), metal);
+  // Lighter walnut comb (visible age band on top of the stock)
+  const comb = new THREE.Mesh(new THREE.BoxGeometry(0.055, 0.024, 0.16), WMAT.walnutLight());
+  comb.position.set(0, 0.052, 0.18);
+  g.add(comb);
+  // Steel receiver
+  const receiver = new THREE.Mesh(new THREE.BoxGeometry(0.075, 0.085, 0.18), WMAT.bluedSteel());
   receiver.position.set(0, 0.005, 0.02);
   g.add(receiver);
-  // Barrel (long, in front)
-  const barrel = new THREE.Mesh(new THREE.CylinderGeometry(0.025, 0.025, 0.42, 12), metal);
+  // Barrel
+  const barrel = new THREE.Mesh(new THREE.CylinderGeometry(0.025, 0.025, 0.42, 12), WMAT.bluedSteel());
   barrel.rotation.x = Math.PI / 2;
   barrel.position.set(0, 0.024, -0.27);
   g.add(barrel);
-  // Pump grip under the barrel
-  const pumpMesh = new THREE.Mesh(new THREE.BoxGeometry(0.055, 0.045, 0.13), pump);
+  // Pump grip
+  const pumpMesh = new THREE.Mesh(new THREE.BoxGeometry(0.055, 0.045, 0.13), WMAT.walnut());
   pumpMesh.position.set(0, -0.04, -0.16);
   g.add(pumpMesh);
   // Trigger guard
-  const tg = new THREE.Mesh(new THREE.TorusGeometry(0.022, 0.006, 6, 14, Math.PI), metal);
+  const tg = new THREE.Mesh(new THREE.TorusGeometry(0.022, 0.006, 6, 14, Math.PI), WMAT.bluedSteel());
   tg.rotation.x = Math.PI / 2;
   tg.position.set(0, -0.045, 0.06);
   g.add(tg);
-  // Bead front sight
-  const fs = new THREE.Mesh(new THREE.SphereGeometry(0.008, 8, 6), metal);
+  // Bead front sight (polished — catches the light)
+  const fs = new THREE.Mesh(new THREE.SphereGeometry(0.008, 8, 6), WMAT.polishedSteel());
   fs.position.set(0, 0.055, -0.48);
   g.add(fs);
+  // --- M48 detail additions ---
+  // Magazine tube under the barrel (full-length cylinder)
+  const magTube = new THREE.Mesh(new THREE.CylinderGeometry(0.014, 0.014, 0.40, 10), WMAT.bluedSteel());
+  magTube.rotation.x = Math.PI / 2;
+  magTube.position.set(0, -0.012, -0.26);
+  g.add(magTube);
+  // Trigger inside the guard
+  const trigger = new THREE.Mesh(new THREE.BoxGeometry(0.010, 0.020, 0.010), WMAT.accentSteel());
+  trigger.position.set(0, -0.045, 0.06);
+  g.add(trigger);
+  // Pump grip ribs (5 raised ridges for grip)
+  for (let i = 0; i < 5; i++) {
+    const rib = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.006, 0.005), WMAT.bluedSteel());
+    rib.position.set(0, -0.062, -0.21 + i * 0.026);
+    g.add(rib);
+  }
+  // Recoil pad on the stock butt (rubber)
+  const pad = new THREE.Mesh(new THREE.BoxGeometry(0.075, 0.11, 0.020), WMAT.rubber());
+  pad.position.set(0, -0.005, 0.315);
+  g.add(pad);
+  // Loading port — dark recessed rectangle on the receiver's underside
+  const port = new THREE.Mesh(new THREE.BoxGeometry(0.060, 0.003, 0.060), WMAT.rubber());
+  port.position.set(0, -0.040, 0.04);
+  g.add(port);
+  // Rear sight (bead-style — small raised square)
+  const rs = new THREE.Mesh(new THREE.BoxGeometry(0.014, 0.008, 0.012), WMAT.accentSteel());
+  rs.position.set(0, 0.054, -0.06);
+  g.add(rs);
+  // Sling stud on the bottom of the stock
+  const slingStud = new THREE.Mesh(new THREE.CylinderGeometry(0.005, 0.005, 0.015, 8), WMAT.accentSteel());
+  slingStud.position.set(0, -0.050, 0.27);
+  g.add(slingStud);
   g.position.set(0.20, -0.18, -0.45);
   return g;
 }
 export function buildSmgModel() {
   const g = new THREE.Group();
-  const metal = new THREE.MeshStandardMaterial({ color: 0x1f1f24, roughness: 0.40, metalness: 0.75 });
-  const dark  = new THREE.MeshStandardMaterial({ color: 0x0b0b0e, roughness: 0.55, metalness: 0.45 });
-  const accent = new THREE.MeshStandardMaterial({ color: 0x303035, roughness: 0.55, metalness: 0.55 });
-  // Boxy receiver (MAC-style)
-  const body = new THREE.Mesh(new THREE.BoxGeometry(0.065, 0.10, 0.20), metal);
+  // Boxy receiver — dark steel
+  const body = new THREE.Mesh(new THREE.BoxGeometry(0.065, 0.10, 0.20), WMAT.darkSteel());
   body.position.set(0, 0.005, -0.02);
   g.add(body);
-  // Topstrap (slim raised section)
-  const top = new THREE.Mesh(new THREE.BoxGeometry(0.04, 0.012, 0.18), accent);
+  // Topstrap accent (slim raised aluminium section)
+  const top = new THREE.Mesh(new THREE.BoxGeometry(0.04, 0.012, 0.18), WMAT.aluminum());
   top.position.set(0, 0.062, -0.02);
   g.add(top);
-  // Short barrel poking out
-  const barrel = new THREE.Mesh(new THREE.CylinderGeometry(0.014, 0.014, 0.14, 10), dark);
+  // Short barrel
+  const barrel = new THREE.Mesh(new THREE.CylinderGeometry(0.014, 0.014, 0.14, 10), WMAT.bluedSteel());
   barrel.rotation.x = Math.PI / 2;
   barrel.position.set(0, 0.025, -0.18);
   g.add(barrel);
-  // Drop magazine
-  const mag = new THREE.Mesh(new THREE.BoxGeometry(0.055, 0.16, 0.06), dark);
+  // Drop magazine — polymer
+  const mag = new THREE.Mesh(new THREE.BoxGeometry(0.055, 0.16, 0.06), WMAT.polymer());
   mag.position.set(0, -0.13, -0.04);
   mag.rotation.x = 0.05;
   g.add(mag);
-  // Grip
-  const grip = new THREE.Mesh(new THREE.BoxGeometry(0.045, 0.10, 0.05), dark);
+  // Polymer grip
+  const grip = new THREE.Mesh(new THREE.BoxGeometry(0.045, 0.10, 0.05), WMAT.polymer());
   grip.position.set(0, -0.09, 0.10);
   grip.rotation.x = -0.15;
   g.add(grip);
   // Folding stock (extended)
-  const stock = new THREE.Mesh(new THREE.BoxGeometry(0.025, 0.025, 0.15), accent);
+  const stock = new THREE.Mesh(new THREE.BoxGeometry(0.025, 0.025, 0.15), WMAT.aluminum());
   stock.position.set(0, 0.005, 0.16);
   g.add(stock);
-  const stockButt = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.045, 0.025), accent);
+  const stockButt = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.045, 0.025), WMAT.rubber());
   stockButt.position.set(0, 0.005, 0.24);
   g.add(stockButt);
   // Trigger guard
-  const tg = new THREE.Mesh(new THREE.TorusGeometry(0.020, 0.005, 6, 14, Math.PI), metal);
+  const tg = new THREE.Mesh(new THREE.TorusGeometry(0.020, 0.005, 6, 14, Math.PI), WMAT.darkSteel());
   tg.rotation.x = Math.PI / 2;
   tg.position.set(0, -0.04, 0.06);
   g.add(tg);
+  // --- M48 detail additions ---
+  // Trigger
+  const trigger = new THREE.Mesh(new THREE.BoxGeometry(0.008, 0.020, 0.008), WMAT.accentSteel());
+  trigger.position.set(0, -0.040, 0.06); g.add(trigger);
+  // Suppressor on the muzzle (longer/thicker than the barrel)
+  const suppressor = new THREE.Mesh(new THREE.CylinderGeometry(0.022, 0.022, 0.12, 12), WMAT.aluminum());
+  suppressor.rotation.x = Math.PI / 2;
+  suppressor.position.set(0, 0.025, -0.30);
+  g.add(suppressor);
+  // Charging handle (cylinder + knob) on top
+  const chargeBar = new THREE.Mesh(new THREE.CylinderGeometry(0.005, 0.005, 0.04, 8), WMAT.polishedSteel());
+  chargeBar.rotation.z = Math.PI / 2;
+  chargeBar.position.set(0.035, 0.075, 0.02);
+  g.add(chargeBar);
+  const chargeKnob = new THREE.Mesh(new THREE.SphereGeometry(0.009, 8, 6), WMAT.polishedSteel());
+  chargeKnob.position.set(0.060, 0.075, 0.02);
+  g.add(chargeKnob);
+  // Picatinny rail running across the top
+  const rail = new THREE.Mesh(new THREE.BoxGeometry(0.022, 0.008, 0.14), WMAT.aluminum());
+  rail.position.set(0, 0.072, -0.02);
+  g.add(rail);
+  // Red-dot sight: base + housing + glowing dot
+  const dotBase = new THREE.Mesh(new THREE.BoxGeometry(0.030, 0.012, 0.040), WMAT.aluminum());
+  dotBase.position.set(0, 0.082, -0.04); g.add(dotBase);
+  const dotBody = new THREE.Mesh(new THREE.BoxGeometry(0.026, 0.024, 0.030), WMAT.darkSteel());
+  dotBody.position.set(0, 0.100, -0.04); g.add(dotBody);
+  const dot = new THREE.Mesh(new THREE.SphereGeometry(0.0035, 8, 6), WMAT.redAccent());
+  dot.position.set(0, 0.104, -0.030); g.add(dot);
+  // Magazine ridges (5 grip ribs on the mag body)
+  for (let i = 0; i < 5; i++) {
+    const rib = new THREE.Mesh(new THREE.BoxGeometry(0.057, 0.005, 0.058), WMAT.polymer());
+    rib.position.set(0, -0.080 - i * 0.020, -0.04);
+    rib.rotation.x = 0.05;
+    g.add(rib);
+  }
+  // Selector switch lever on the receiver's left side
+  const selector = new THREE.Mesh(new THREE.BoxGeometry(0.005, 0.018, 0.020), WMAT.accentSteel());
+  selector.position.set(-0.034, 0.020, 0.045);
+  g.add(selector);
+  // Sling loop on the back of the receiver
+  const slingLoop = new THREE.Mesh(new THREE.TorusGeometry(0.008, 0.0025, 6, 12), WMAT.accentSteel());
+  slingLoop.rotation.y = Math.PI / 2;
+  slingLoop.position.set(0, 0.005, 0.085);
+  g.add(slingLoop);
   g.position.set(0.18, -0.17, -0.42);
   return g;
 }
 export function buildSniperModel() {
   const g = new THREE.Group();
-  const metal = new THREE.MeshStandardMaterial({ color: 0x161618, roughness: 0.30, metalness: 0.90 });
-  const wood  = new THREE.MeshStandardMaterial({ color: 0x4a2c12, roughness: 0.75, metalness: 0.10 });
-  const dark  = new THREE.MeshStandardMaterial({ color: 0x000000, roughness: 0.20, metalness: 0.7 });
-  const scopeMat = new THREE.MeshStandardMaterial({ color: 0x222226, roughness: 0.25, metalness: 0.85 });
-  // Long wooden stock (cheek rest + butt)
-  const stock = new THREE.Mesh(new THREE.BoxGeometry(0.065, 0.10, 0.26), wood);
+  // Long walnut stock
+  const stock = new THREE.Mesh(new THREE.BoxGeometry(0.065, 0.10, 0.26), WMAT.walnut());
   stock.position.set(0, -0.005, 0.22);
   g.add(stock);
-  // Stock comb (raised cheek piece)
-  const comb = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.025, 0.16), wood);
+  // Stock comb (raised cheek piece — lighter walnut to show grain step)
+  const comb = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.025, 0.16), WMAT.walnutLight());
   comb.position.set(0, 0.06, 0.17);
   g.add(comb);
-  // Receiver
-  const receiver = new THREE.Mesh(new THREE.BoxGeometry(0.065, 0.085, 0.20), metal);
+  // Receiver (blued steel)
+  const receiver = new THREE.Mesh(new THREE.BoxGeometry(0.065, 0.085, 0.20), WMAT.bluedSteel());
   receiver.position.set(0, 0.005, 0);
   g.add(receiver);
-  // Bolt handle (small knob on right side)
-  const bolt = new THREE.Mesh(new THREE.CylinderGeometry(0.008, 0.008, 0.05, 8), metal);
+  // Bolt handle (polished — catches light)
+  const bolt = new THREE.Mesh(new THREE.CylinderGeometry(0.008, 0.008, 0.05, 8), WMAT.polishedSteel());
   bolt.rotation.z = Math.PI / 2;
   bolt.position.set(-0.05, 0.04, 0.05);
   g.add(bolt);
-  const boltKnob = new THREE.Mesh(new THREE.SphereGeometry(0.013, 8, 6), metal);
+  const boltKnob = new THREE.Mesh(new THREE.SphereGeometry(0.013, 8, 6), WMAT.polishedSteel());
   boltKnob.position.set(-0.08, 0.04, 0.05);
   g.add(boltKnob);
   // Long barrel
-  const barrel = new THREE.Mesh(new THREE.CylinderGeometry(0.018, 0.018, 0.55, 12), metal);
+  const barrel = new THREE.Mesh(new THREE.CylinderGeometry(0.018, 0.018, 0.55, 12), WMAT.bluedSteel());
   barrel.rotation.x = Math.PI / 2;
   barrel.position.set(0, 0.02, -0.37);
   g.add(barrel);
-  // Muzzle brake (chunkier end)
-  const muzzle = new THREE.Mesh(new THREE.CylinderGeometry(0.025, 0.025, 0.05, 10), dark);
+  // Muzzle brake
+  const muzzle = new THREE.Mesh(new THREE.CylinderGeometry(0.025, 0.025, 0.05, 10), WMAT.darkSteel());
   muzzle.rotation.x = Math.PI / 2;
   muzzle.position.set(0, 0.02, -0.66);
   g.add(muzzle);
-  // Scope body (cylinder above receiver)
-  const scope = new THREE.Mesh(new THREE.CylinderGeometry(0.022, 0.022, 0.20, 14), scopeMat);
+  // Scope body
+  const scope = new THREE.Mesh(new THREE.CylinderGeometry(0.022, 0.022, 0.20, 14), WMAT.aluminum());
   scope.rotation.x = Math.PI / 2;
   scope.position.set(0, 0.085, -0.06);
   g.add(scope);
-  // Scope objective bell (wider front)
-  const objective = new THREE.Mesh(new THREE.CylinderGeometry(0.028, 0.028, 0.04, 14), scopeMat);
+  // Scope objective bell
+  const objective = new THREE.Mesh(new THREE.CylinderGeometry(0.028, 0.028, 0.04, 14), WMAT.aluminum());
   objective.rotation.x = Math.PI / 2;
   objective.position.set(0, 0.085, -0.18);
   g.add(objective);
-  // Scope eyepiece bell (wider rear)
-  const eyepiece = new THREE.Mesh(new THREE.CylinderGeometry(0.026, 0.026, 0.04, 14), scopeMat);
+  // Scope eyepiece bell
+  const eyepiece = new THREE.Mesh(new THREE.CylinderGeometry(0.026, 0.026, 0.04, 14), WMAT.aluminum());
   eyepiece.rotation.x = Math.PI / 2;
   eyepiece.position.set(0, 0.085, 0.06);
   g.add(eyepiece);
-  // Scope mounts (two small blocks connecting scope to receiver)
-  const mount1 = new THREE.Mesh(new THREE.BoxGeometry(0.025, 0.025, 0.025), metal);
-  mount1.position.set(0, 0.06, -0.10);
-  g.add(mount1);
-  const mount2 = new THREE.Mesh(new THREE.BoxGeometry(0.025, 0.025, 0.025), metal);
-  mount2.position.set(0, 0.06, 0.02);
-  g.add(mount2);
-  // Grip
-  const grip = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.10, 0.05), wood);
+  // Scope mounts
+  const mount1 = new THREE.Mesh(new THREE.BoxGeometry(0.025, 0.025, 0.025), WMAT.darkSteel());
+  mount1.position.set(0, 0.06, -0.10); g.add(mount1);
+  const mount2 = new THREE.Mesh(new THREE.BoxGeometry(0.025, 0.025, 0.025), WMAT.darkSteel());
+  mount2.position.set(0, 0.06, 0.02); g.add(mount2);
+  // Walnut grip
+  const grip = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.10, 0.05), WMAT.walnut());
   grip.position.set(0, -0.07, 0.09);
   grip.rotation.x = -0.15;
   g.add(grip);
   // Trigger guard
-  const tg = new THREE.Mesh(new THREE.TorusGeometry(0.022, 0.005, 6, 14, Math.PI), metal);
+  const tg = new THREE.Mesh(new THREE.TorusGeometry(0.022, 0.005, 6, 14, Math.PI), WMAT.bluedSteel());
   tg.rotation.x = Math.PI / 2;
   tg.position.set(0, -0.038, 0.04);
   g.add(tg);
   // Bipod legs (folded forward)
-  const bipodL = new THREE.Mesh(new THREE.CylinderGeometry(0.005, 0.005, 0.13, 6), dark);
+  const bipodL = new THREE.Mesh(new THREE.CylinderGeometry(0.005, 0.005, 0.13, 6), WMAT.darkSteel());
   bipodL.rotation.set(-0.4, 0, 0.3);
   bipodL.position.set( 0.03, -0.06, -0.30);
   g.add(bipodL);
-  const bipodR = new THREE.Mesh(new THREE.CylinderGeometry(0.005, 0.005, 0.13, 6), dark);
+  const bipodR = new THREE.Mesh(new THREE.CylinderGeometry(0.005, 0.005, 0.13, 6), WMAT.darkSteel());
   bipodR.rotation.set(-0.4, 0, -0.3);
   bipodR.position.set(-0.03, -0.06, -0.30);
   g.add(bipodR);
+  // --- M48 detail additions ---
+  // Trigger
+  const trigger = new THREE.Mesh(new THREE.BoxGeometry(0.008, 0.020, 0.008), WMAT.accentSteel());
+  trigger.position.set(0, -0.032, 0.04); g.add(trigger);
+  // Scope windage turret (top of scope, perpendicular)
+  const windage = new THREE.Mesh(new THREE.CylinderGeometry(0.014, 0.014, 0.024, 12), WMAT.darkSteel());
+  windage.position.set(0, 0.115, -0.06); g.add(windage);
+  // Scope elevation turret (right side of scope, perpendicular)
+  const elev = new THREE.Mesh(new THREE.CylinderGeometry(0.014, 0.014, 0.024, 12), WMAT.darkSteel());
+  elev.rotation.z = Math.PI / 2;
+  elev.position.set(0.030, 0.085, -0.06); g.add(elev);
+  // Lens inserts (dark, slightly reflective) on both ends of the scope
+  const objLens = new THREE.Mesh(new THREE.CylinderGeometry(0.025, 0.025, 0.003, 14), WMAT.lens());
+  objLens.rotation.x = Math.PI / 2;
+  objLens.position.set(0, 0.085, -0.201); g.add(objLens);
+  const eyeLens = new THREE.Mesh(new THREE.CylinderGeometry(0.023, 0.023, 0.003, 14), WMAT.lens());
+  eyeLens.rotation.x = Math.PI / 2;
+  eyeLens.position.set(0, 0.085, 0.081); g.add(eyeLens);
+  // Recoil pad on the stock butt
+  const pad = new THREE.Mesh(new THREE.BoxGeometry(0.07, 0.105, 0.022), WMAT.rubber());
+  pad.position.set(0, -0.005, 0.358); g.add(pad);
+  // Front sling swivel under the barrel
+  const swivelF = new THREE.Mesh(new THREE.TorusGeometry(0.008, 0.0025, 6, 12), WMAT.accentSteel());
+  swivelF.rotation.y = Math.PI / 2;
+  swivelF.position.set(0, -0.005, -0.20); g.add(swivelF);
+  // Rear sling swivel on the stock
+  const swivelR = new THREE.Mesh(new THREE.TorusGeometry(0.008, 0.0025, 6, 12), WMAT.accentSteel());
+  swivelR.rotation.y = Math.PI / 2;
+  swivelR.position.set(0, -0.055, 0.28); g.add(swivelR);
+  // Muzzle brake vents (3 thin slot meshes around the brake)
+  for (let i = 0; i < 3; i++) {
+    const vent = new THREE.Mesh(new THREE.BoxGeometry(0.052, 0.004, 0.006), WMAT.rubber());
+    vent.position.set(0, 0.039 + i * -0.018, -0.66);
+    g.add(vent);
+  }
   g.position.set(0.22, -0.18, -0.48);
   return g;
 }
 
 export function buildSawModel() {
   const g = new THREE.Group();
-  const metal  = new THREE.MeshStandardMaterial({ color: 0x20231f, roughness: 0.45, metalness: 0.70 });
-  const dark   = new THREE.MeshStandardMaterial({ color: 0x0c0d0b, roughness: 0.55, metalness: 0.45 });
-  const accent = new THREE.MeshStandardMaterial({ color: 0x33372c, roughness: 0.55, metalness: 0.50 });
   // Bulky receiver
-  const body = new THREE.Mesh(new THREE.BoxGeometry(0.075, 0.11, 0.30), metal);
+  const body = new THREE.Mesh(new THREE.BoxGeometry(0.075, 0.11, 0.30), WMAT.darkSteel());
   body.position.set(0, 0.01, -0.02);
   g.add(body);
   // Feed tray / top cover
-  const cover = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.03, 0.20), accent);
+  const cover = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.03, 0.20), WMAT.aluminum());
   cover.position.set(0, 0.075, -0.02);
   g.add(cover);
   // Carry handle
-  const handle = new THREE.Mesh(new THREE.TorusGeometry(0.03, 0.006, 6, 12, Math.PI), metal);
+  const handle = new THREE.Mesh(new THREE.TorusGeometry(0.03, 0.006, 6, 12, Math.PI), WMAT.bluedSteel());
   handle.rotation.set(Math.PI / 2, 0, 0);
   handle.position.set(0, 0.09, -0.04);
   g.add(handle);
   // Long heavy barrel
-  const barrel = new THREE.Mesh(new THREE.CylinderGeometry(0.017, 0.017, 0.40, 12), dark);
+  const barrel = new THREE.Mesh(new THREE.CylinderGeometry(0.017, 0.017, 0.40, 12), WMAT.bluedSteel());
   barrel.rotation.x = Math.PI / 2;
   barrel.position.set(0, 0.02, -0.32);
   g.add(barrel);
-  // Barrel shroud (vented section, just a chunkier sleeve)
-  const shroud = new THREE.Mesh(new THREE.CylinderGeometry(0.026, 0.026, 0.16, 10), metal);
+  // Barrel shroud
+  const shroud = new THREE.Mesh(new THREE.CylinderGeometry(0.026, 0.026, 0.16, 10), WMAT.darkSteel());
   shroud.rotation.x = Math.PI / 2;
   shroud.position.set(0, 0.02, -0.20);
   g.add(shroud);
-  // Boxy 200-rd ammo box hanging under the receiver
-  const ammo = new THREE.Mesh(new THREE.BoxGeometry(0.085, 0.11, 0.13), dark);
+  // 200-rd ammo box hanging under the receiver
+  const ammo = new THREE.Mesh(new THREE.BoxGeometry(0.085, 0.11, 0.13), WMAT.darkSteel());
   ammo.position.set(0, -0.10, 0.01);
   g.add(ammo);
-  // Pistol grip
-  const grip = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.11, 0.055), dark);
+  // Pistol grip — polymer
+  const grip = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.11, 0.055), WMAT.polymer());
   grip.position.set(0, -0.085, 0.12);
   grip.rotation.x = -0.16;
   g.add(grip);
   // Solid stock
-  const stock = new THREE.Mesh(new THREE.BoxGeometry(0.055, 0.075, 0.16), metal);
+  const stock = new THREE.Mesh(new THREE.BoxGeometry(0.055, 0.075, 0.16), WMAT.darkSteel());
   stock.position.set(0, 0.0, 0.20);
   g.add(stock);
   // Folded bipod under the barrel
-  const bipodL = new THREE.Mesh(new THREE.CylinderGeometry(0.005, 0.005, 0.15, 6), dark);
+  const bipodL = new THREE.Mesh(new THREE.CylinderGeometry(0.005, 0.005, 0.15, 6), WMAT.darkSteel());
   bipodL.rotation.set(-0.5, 0, 0.35); bipodL.position.set(0.03, -0.05, -0.34);
   g.add(bipodL);
-  const bipodR = new THREE.Mesh(new THREE.CylinderGeometry(0.005, 0.005, 0.15, 6), dark);
+  const bipodR = new THREE.Mesh(new THREE.CylinderGeometry(0.005, 0.005, 0.15, 6), WMAT.darkSteel());
   bipodR.rotation.set(-0.5, 0, -0.35); bipodR.position.set(-0.03, -0.05, -0.34);
   g.add(bipodR);
   // Front sight post
-  const fs = new THREE.Mesh(new THREE.BoxGeometry(0.008, 0.02, 0.01), metal);
+  const fs = new THREE.Mesh(new THREE.BoxGeometry(0.008, 0.02, 0.01), WMAT.accentSteel());
   fs.position.set(0, 0.06, -0.30);
   g.add(fs);
+  // --- M48 detail additions ---
+  // Trigger guard + trigger
+  const tg = new THREE.Mesh(new THREE.TorusGeometry(0.020, 0.005, 6, 14, Math.PI), WMAT.darkSteel());
+  tg.rotation.x = Math.PI / 2;
+  tg.position.set(0, -0.045, 0.07); g.add(tg);
+  const trigger = new THREE.Mesh(new THREE.BoxGeometry(0.008, 0.018, 0.008), WMAT.accentSteel());
+  trigger.position.set(0, -0.042, 0.07); g.add(trigger);
+  // Brass ammo belt feeding from the top of the box into the receiver — a
+  // short chain of brass + steel link blocks
+  for (let i = 0; i < 7; i++) {
+    const link = new THREE.Mesh(new THREE.BoxGeometry(0.018, 0.008, 0.008), WMAT.brass());
+    link.position.set(0, -0.040 + i * 0.012, -0.005 - i * 0.002);
+    g.add(link);
+  }
+  // Rivets along the top cover (4 small steel domes)
+  for (let i = 0; i < 4; i++) {
+    const rivet = new THREE.Mesh(new THREE.SphereGeometry(0.005, 8, 6), WMAT.polishedSteel());
+    rivet.position.set(-0.025 + i * 0.018, 0.092, -0.04);
+    g.add(rivet);
+  }
+  // Vent slits on the barrel shroud (5 dark cuts around the top)
+  for (let i = 0; i < 5; i++) {
+    const slit = new THREE.Mesh(new THREE.BoxGeometry(0.008, 0.004, 0.060), WMAT.rubber());
+    slit.position.set(-0.018 + i * 0.009, 0.046, -0.20);
+    g.add(slit);
+  }
+  // Charging handle on the right side of the receiver
+  const chargeBar = new THREE.Mesh(new THREE.CylinderGeometry(0.005, 0.005, 0.045, 8), WMAT.polishedSteel());
+  chargeBar.rotation.z = Math.PI / 2;
+  chargeBar.position.set(0.058, 0.020, -0.08); g.add(chargeBar);
+  const chargeKnob = new THREE.Mesh(new THREE.SphereGeometry(0.010, 8, 6), WMAT.polishedSteel());
+  chargeKnob.position.set(0.085, 0.020, -0.08); g.add(chargeKnob);
+  // Recoil pad on the stock butt
+  const pad = new THREE.Mesh(new THREE.BoxGeometry(0.058, 0.080, 0.020), WMAT.rubber());
+  pad.position.set(0, 0.0, 0.290); g.add(pad);
+  // Sling loop on the rear of the receiver
+  const slingLoop = new THREE.Mesh(new THREE.TorusGeometry(0.009, 0.003, 6, 12), WMAT.accentSteel());
+  slingLoop.rotation.y = Math.PI / 2;
+  slingLoop.position.set(0, 0.030, 0.090); g.add(slingLoop);
+  // Rear sight (peep) on the back of the top cover
+  const rs = new THREE.Mesh(new THREE.BoxGeometry(0.018, 0.014, 0.010), WMAT.accentSteel());
+  rs.position.set(0, 0.094, 0.060); g.add(rs);
   g.position.set(0.20, -0.18, -0.44);
   return g;
 }
 function buildKnifeModel() {
   const g = new THREE.Group();
-  const steel = new THREE.MeshStandardMaterial({ color: 0xb8bcc4, roughness: 0.22, metalness: 0.92 });
-  const edge  = new THREE.MeshStandardMaterial({ color: 0xe6e9ef, roughness: 0.15, metalness: 0.85 });
-  const grip  = new THREE.MeshStandardMaterial({ color: 0x16140f, roughness: 0.80, metalness: 0.10 });
-  const guard = new THREE.MeshStandardMaterial({ color: 0x2a2a2e, roughness: 0.40, metalness: 0.70 });
-  // Blade (tapered: a thin box + a flat angled tip)
-  const blade = new THREE.Mesh(new THREE.BoxGeometry(0.018, 0.006, 0.20), steel);
+  // Blade body (polished steel)
+  const blade = new THREE.Mesh(new THREE.BoxGeometry(0.018, 0.006, 0.20), WMAT.polishedSteel());
   blade.position.set(0, 0, -0.13);
   g.add(blade);
-  const bevel = new THREE.Mesh(new THREE.BoxGeometry(0.006, 0.005, 0.20), edge);
+  // Bevel / edge — slightly brighter strip running down the cutting edge
+  const bevel = new THREE.Mesh(new THREE.BoxGeometry(0.006, 0.005, 0.20),
+                               wmat({ color: 0xe6e9ef, roughness: 0.15, metalness: 0.85 }));
   bevel.position.set(0.008, 0, -0.13);
   g.add(bevel);
-  const tip = new THREE.Mesh(new THREE.ConeGeometry(0.012, 0.05, 4), steel);
+  // Point — angled cone tip
+  const tip = new THREE.Mesh(new THREE.ConeGeometry(0.012, 0.05, 4), WMAT.polishedSteel());
   tip.rotation.set(Math.PI / 2, Math.PI / 4, 0);
   tip.position.set(0, 0, -0.255);
   g.add(tip);
   // Cross guard
-  const cg = new THREE.Mesh(new THREE.BoxGeometry(0.045, 0.012, 0.018), guard);
+  const cg = new THREE.Mesh(new THREE.BoxGeometry(0.045, 0.012, 0.018), WMAT.darkSteel());
   cg.position.set(0, 0, -0.025);
   g.add(cg);
-  // Handle
-  const handle = new THREE.Mesh(new THREE.CylinderGeometry(0.013, 0.011, 0.11, 8), grip);
+  // Handle core — dark polymer
+  const handle = new THREE.Mesh(new THREE.CylinderGeometry(0.013, 0.011, 0.11, 8), WMAT.polymer());
   handle.rotation.x = Math.PI / 2;
   handle.position.set(0, 0, 0.045);
   g.add(handle);
-  const pommel = new THREE.Mesh(new THREE.SphereGeometry(0.013, 8, 6), guard);
+  // Pommel — small heavy cap
+  const pommel = new THREE.Mesh(new THREE.SphereGeometry(0.013, 8, 6), WMAT.darkSteel());
   pommel.position.set(0, 0, 0.105);
   g.add(pommel);
+  // --- M48 detail additions ---
+  // Blade fuller — narrow recessed groove running most of the blade length.
+  // Modelled as a slightly darker (so it reads "recessed") inset bar.
+  const fuller = new THREE.Mesh(new THREE.BoxGeometry(0.004, 0.003, 0.16), WMAT.darkSteel());
+  fuller.position.set(-0.003, 0.002, -0.15);
+  g.add(fuller);
+  // Saw-back teeth on the spine of the blade — 6 small cone notches
+  for (let i = 0; i < 6; i++) {
+    const tooth = new THREE.Mesh(new THREE.ConeGeometry(0.0035, 0.012, 3), WMAT.polishedSteel());
+    tooth.rotation.x = Math.PI / 2;
+    tooth.position.set(-0.009, 0.003, -0.06 - i * 0.024);
+    g.add(tooth);
+  }
+  // Paracord wrap on the handle — alternating dark/light bands
+  for (let i = 0; i < 6; i++) {
+    const isDark = i % 2 === 0;
+    const ringMat = isDark ? WMAT.polymer() : wmat({ color: 0x9a9591, roughness: 0.85, metalness: 0.04 });
+    const wrap = new THREE.Mesh(new THREE.CylinderGeometry(0.014, 0.012, 0.018, 8), ringMat);
+    wrap.rotation.x = Math.PI / 2;
+    wrap.position.set(0, 0, 0.0 + i * 0.018);
+    g.add(wrap);
+  }
+  // Lanyard hole through the pommel (small dark cylinder passing through)
+  const lanyard = new THREE.Mesh(new THREE.CylinderGeometry(0.0035, 0.0035, 0.020, 8), WMAT.rubber());
+  lanyard.rotation.z = Math.PI / 2;
+  lanyard.position.set(0, 0, 0.110);
+  g.add(lanyard);
+  // Glass-breaker spike sticking out the back of the pommel
+  const spike = new THREE.Mesh(new THREE.ConeGeometry(0.005, 0.020, 4), WMAT.polishedSteel());
+  spike.rotation.x = -Math.PI / 2;
+  spike.position.set(0, 0, 0.128);
+  g.add(spike);
+  // Small red accent on the cross guard (signature flair)
+  const accent = new THREE.Mesh(new THREE.BoxGeometry(0.046, 0.003, 0.003), WMAT.redAccent());
+  accent.position.set(0, -0.006, -0.025);
+  g.add(accent);
   g.position.set(0.17, -0.15, -0.34);
   g.rotation.set(0.10, -0.12, 0);
   return g;
@@ -524,9 +774,9 @@ for (const key in VIEW_MODELS) {
         Math.max(_vmColor.g, 0.06),
         Math.max(_vmColor.b, 0.07)
       );
-      m.emissiveIntensity = 0.55;
-      if (m.metalness !== undefined) m.metalness = Math.min(m.metalness, 0.55);
-      if (m.roughness !== undefined) m.roughness = Math.max(m.roughness, 0.45);
+      m.emissiveIntensity = 0.28;
+      if (m.metalness !== undefined) m.metalness = Math.min(m.metalness, 0.72);
+      if (m.roughness !== undefined) m.roughness = Math.max(m.roughness, 0.32);
       m.needsUpdate = true;
     }
   });

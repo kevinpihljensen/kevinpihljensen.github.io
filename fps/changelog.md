@@ -26,6 +26,37 @@ Format: newest entries at the top. Each entry lists what was added, what was cha
 
 ## Session log
 
+### 2026-05-17 — Session 49 (Weapon models: richer materials + ~5–8 new parts per gun)
+
+Per-weapon detail pass over all six builders. Two changes intersect: a shared **material palette** so every gun draws from the same vocabulary of metals/polymers/woods, and **additional silhouette-changing parts** so each weapon reads as a distinct, fully-detailed object rather than a primitive composition. Because the existing builders are the single source of truth for BOTH the first-person view model and the world pickup (Session 48), all six are now noticeably richer in both contexts at once.
+
+**Material palette (`weapons.js`).** Added a top-level `WMAT` map of factory functions returning fresh `MeshStandardMaterial` instances per call. Names: `bluedSteel` (slides/receivers/barrels), `darkSteel` (frames needing a tonal step), `polishedSteel` (bolt handles, sights — catches the light), `aluminum` (rails, mounts, suppressors), `polymer` (Glock-style grips, magazine bodies), `rubber` (recoil pads, dark inset surfaces like ejection ports), `walnut` + `walnutLight` (sniper/shotgun stocks), `brass` (SAW ammo-belt links), `accentSteel` (mid-grey detail parts), `redAccent` (red-dot LED, knife guard accent), `lens` (scope objective/eyepiece). Each builder uses 4–7 of these; per-call freshness is required because the view-model emissive-lift loop further down mutates materials in place — sharing would leak the lift into pickups.
+
+**Relaxed the view-model emissive lift.** Same loop as before, but `emissiveIntensity` 0.55→0.28, `metalness` clamp 0.55→0.72, `roughness` clamp 0.45→0.32. The lift still keeps the darkest gunmetal parts readable but no longer flattens the new material variety into uniform plastic — brass, polished steel, and walnut now keep their character on the held weapon (pickups never had the lift applied).
+
+**Per-weapon additions** (parts ADDED to the existing builds — old parts kept, just retoned with the palette):
+- **Pistol** (+12 parts): 4 rear cocking serrations × 2 sides, 3 front serrations × 2 sides, trigger inside the guard, hammer at the slide rear, magazine baseplate, slide-release lever, Picatinny rail under the dust cover, ejection port (dark inset on the slide).
+- **Shotgun** (+8): magazine tube under the barrel, walnut comb on the stock, trigger, 5 pump-grip ribs, rubber recoil pad, loading port, rear bead sight, sling stud.
+- **SMG** (+13): trigger, suppressor on the muzzle, charging handle (cylinder + knob), Picatinny rail, red-dot sight (base + housing + glowing LED dot — uses `redAccent`), 5 magazine grip ribs, selector switch, sling loop.
+- **Sniper** (+9): trigger, windage turret on top of the scope, elevation turret on the side, objective + eyepiece lens inserts, recoil pad, front + rear sling swivels, 3 muzzle-brake vent slits.
+- **SAW** (+18): trigger guard + trigger, 7-link brass ammo belt feeding from the box, 4 rivets on the top cover, 5 dark vent slits on the barrel shroud, charging handle (cylinder + knob), recoil pad, sling loop, rear peep sight.
+- **Knife** (+15): blade fuller (recessed darker bar down the blade), 6 saw-back teeth on the spine, 6-segment alternating paracord-wrap on the handle, lanyard hole through the pommel, glass-breaker spike at the pommel, red-accent stripe on the cross guard.
+
+That's ~75 new meshes spread across six weapons. Each gun is still well under the budget where allocation would matter (the previous most-complex was the sniper at 17 parts; new sniper is ~26). View-models are built once at startup and pickups are built lazily as PICKUPS are spawned, so frame cost is unchanged.
+
+**Naming hygiene.** Original draft of the material palette used the names `M` (object) and `mat` (helper). Renamed to `WMAT` / `wmat` to satisfy CLAUDE.md §4 (every top-level identifier must be unique across all modules — the single-file builder concatenates module bodies and strips imports/exports). `M` and `mat` are common enough that a future module would have collided.
+
+**Verified.** Battery still ALL GREEN: ai 37/37, arena 15/15, weapons 13/13, doors 8/8, raisedfloor 3/3, duckjump 5/5, kit 28/28, combat 16/16, crouch2 17/17, pickups 41/41 (183 assertions total). 19 modules `node --check` clean. The harnesses don't import `weapons.js` (replicate the math; the only thing they test against this file is the SAW bloom/knife math constants, both unchanged), so visual correctness is browser-only. Knife was upgraded too per user request.
+
+**Changed**
+- `src/weapons.js` — added `WMAT` / `wmat`, rewrote all six builders (`buildPistolModel`, `buildShotgunModel`, `buildSmgModel`, `buildSniperModel`, `buildSawModel`, `buildKnifeModel`), relaxed the view-model emissive lift.
+
+**Known issues**
+- Material/silhouette feel is subjective; if any part reads "too noisy" or "too sparse" call it out by weapon and I'll trim/add.
+- The red-dot LED on the SMG and the red knife-guard accent use `emissiveIntensity = 0.6`. If they bloom too brightly under the tone-mapped sun they can be dialled down.
+
+---
+
 ### 2026-05-17 — Session 48 (Pickups: closer-to-ground hover + real weapon view-models)
 
 Two user-driven adjustments to the Session 46–47 pickup work.
