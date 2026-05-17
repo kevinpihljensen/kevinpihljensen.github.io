@@ -26,6 +26,55 @@ Format: newest entries at the top. Each entry lists what was added, what was cha
 
 ## Session log
 
+### 2026-05-17 — Session 54 (Humanoid enemies + blood splatter + weapons held with hands)
+
+User asked for three things at once: (a) enemies that look more human/realistic instead of the M11 sci-fi stack of capsules with glowing visors, (b) blood splatter when an enemy is hit, (c) per-enemy weapon models the soldiers visibly hold with their arms. All three landed in one session.
+
+**1. Blood splatter (`decals.js`, `constants.js`, `main.js`, `wave.js`, `weapons.js`).** New parallel pool `blood[]` next to the existing `decals[]`. Each `createBloodSplat(point, normal)` spawns 4–6 small red `CircleGeometry` discs in a random disc-pattern around the hit point, each with its own transparent `MeshBasicMaterial` so opacity can fade independently. Discs face along `normal` (we orient them back toward the shooter so they always read as camera-facing rather than edge-on, regardless of the actual enemy-surface normal). Splat positions are pushed slightly along the normal so the layered droplets don't z-fight. New tunables `BLOOD_LIFE = 1.4s` and `MAX_BLOOD = 80`. `updateBlood(dt)` fades opacity linearly to zero then disposes; FIFO eviction at the cap. `clearBlood()` wired into both reset paths (`resetGame` + `startMapTest`). Hooked into `weapons.js#fireRays` (after `damageEnemy`) and `weapons.js#meleeStrike` (after the knife hit). Bullet decals on world geometry are unchanged.
+
+**2. Humanoid enemy models (`enemies.js`, all three `build*Model` functions).** Wholesale rewrite. Out: emissive visor bands, glowing chest cores, "powered armor" capsules, the sci-fi look entirely. In: tactical soldiers built from skin/fabric/boot materials. Common humanoid base for all three:
+- Skin-toned head capsule with two small dark eye boxes
+- Type-specific headgear (helmet/cap/hood) as children of the head Group so it bobs with the head
+- Skin neck bridging head and torso
+- Slimmer torso + tactical vest + belt + hip block
+- Visible legs as cylinders + box boots
+- Arms restructured as `THREE.Group`s at the shoulders; the visible arm cylinder + skin-tone hand box are children so swing animation moves arm + hand + (parented weapon) as one unit
+
+Per-type identity stays readable through fatigue color and headgear:
+- **Grunt** — dark red fatigues + black tactical vest + dark balaclava (top hood + lower mask, eye band shows skin). Right arm posed forward, knife visible in the hand. Reads as: scrappy assaulter with a knife.
+- **Shooter** — tan/khaki fatigues + dark vest with ammo pouches on the belt + tactical cap with brim + dark sunglasses band. Both arms posed forward (`rotation.x ≈ -0.95`), shoulders pulled in toward the centerline; hands meet the rifle's grip and foregrip. Rifle now has stock + receiver + mag + sight rail + barrel as separate meshes (was 2 meshes). Reads as: marksman/operator aiming a carbine.
+- **Heavy** — dark red fatigues + plate carrier covering most of the torso + combat helmet dome with a torus rim + dark goggles band. Bigger pauldron pads kept (signature heavy silhouette). Both arms posed forward gripping the minigun, with two new grip handle boxes on the receiver where the hands sit. Reads as: heavy gunner pinned behind a six-barrel.
+
+Helper functions extracted to keep each builder readable: `_buildArm`, `_buildLeg`, `_buildHead` (the head helper accepts an optional `headgearFn` so each enemy adds its own helmet/cap/hood without copy-paste of the base head + eye dot code). Each helper pushes meshes into the caller's `meshes` array and (for heads) also pushes head-region meshes into a separate `headMeshes` array so makeEnemy can tag them all with `userData.isHead = true` — meaning a shot to the helmet OR the goggles OR the chin still counts as a headshot (was only the head capsule itself).
+
+`makeEnemy` reworked: builders now pre-parent every mesh into the correct sub-group (the head Group, the armL/armR Groups, or `group` directly). makeEnemy DOES NOT re-parent — that would yank arm meshes back out of their swing groups and break the idle sway. It still enables shadows, tags `userData.enemy`, registers in `shootables`, and now tags every member of `built.headMeshes` (instead of a single `built.head` mesh) with `isHead`.
+
+**3. Weapons held with arms.**
+- **Grunt knife** is now a child of the right-arm Group. Idle arm sway swings the knife with the arm (it follows the hand). The swipe rotation on `knifePivot` is layered on top, in arm-local space — the slash still sweeps correctly because `updateGruntSwipe` only sets the pivot's local rotation. Knife position recalculated for the new arm-local frame (`(0, -0.55, -0.06)` instead of model-space).
+- **Shooter rifle** stays parented at the model level (heavy minigun does too — the AI muzzle-fire math hardcodes the local minigun offsets, and moving the gun into an arm Group would shift the muzzle position calc out from under `heavyFire()`). Instead, arms are posed forward with hands at the grip positions; the small ~4° idle sway makes the hands wiggle a few cm around the static gun, which is acceptable at the size and distance the player sees these enemies. Heavy gets two new grip-handle boxes on the receiver so the hands have a visible anchor.
+
+**Hit-flash + headshot routing preserved.** Each builder creates fresh per-enemy material instances (no sharing across enemies → flashing one enemy doesn't flash others). The `_buildHead` helper accepts the caller's `bodyMats` array and pushes its own locally-created eye material in, so it both participates in hit-flash and gets disposed on death (avoiding a small per-enemy material leak that would have happened otherwise).
+
+ENEMY_DEFS reshaped: replaced the M11 `{body, accent, visor, glow}` color quadruple with `{fatigue, gear, accent, skin}`. Stats (hp/speed/radius/score/contactDmg) unchanged.
+
+**Verified.** Battery still ALL GREEN: 10 harnesses, 202 assertions, MAP OK. The harnesses test damage/range/HP/AI math — none of them touch the new builder geometry. So this is browser-only on the visual side; the new humanoid proportions, headgear choices, arm poses, and weapon grip positions are all tuned by feel and will likely need a dial after a playtest.
+
+**Changed**
+- `src/constants.js` — added `BLOOD_LIFE`, `MAX_BLOOD`.
+- `src/decals.js` — added the `blood[]` pool, `createBloodSplat`, `updateBlood`, `clearBlood`, plus a `_basisOnPlane` helper for orienting droplets on the splat plane.
+- `src/main.js` — `updateBlood` called from the active-frame update list (after `updateDecals`).
+- `src/wave.js` — `clearBlood` called from `resetGame` and `startMapTest`.
+- `src/weapons.js` — `fireRays` and `meleeStrike` both emit `createBloodSplat` at the hit point on a successful enemy hit.
+- `src/enemies.js` — `ENEMY_DEFS` color schema reshaped; all three `build*Model` functions rewritten as humanoid soldiers with skin/fabric materials, posed arms as Groups, headgear (balaclava/cap/helmet), legs+boots, hands on weapons; added `_buildArm`, `_buildLeg`, `_buildHead` helpers; `makeEnemy` no longer re-parents meshes (builders pre-parent into sub-groups) and now tags `built.headMeshes` (the set) with `isHead` instead of a single `built.head` mesh.
+
+**Known issues**
+- All proportions and arm-pose angles are tuned by feel; expect a dial-in pass once the user sees them in motion. Shooter shoulder pinch, heavy helmet height, grunt knife hand position are the most likely to need adjustment.
+- Shooter rifle and heavy minigun are parented to the model group (not the arms), so they don't swing with idle arm sway — the hands wiggle ~few cm around the static gun. Not very noticeable at gameplay distance; could be fixed by reparenting the weapon to the right arm Group, but for the heavy that would also require rewriting the muzzle-offset math in `heavyFire()`. Deferred.
+- The blood splat orientation is camera-facing (back toward the shooter), not enemy-surface-aligned. Trade-off: always reads cleanly to the player, but blood doesn't appear to "stick" to the enemy. The splats are in world space, not parented to the enemy, so they stay where they were spawned while the enemy moves through. Acceptable for short-lived (1.4s) bursts.
+- No texture / decal painting: faces are skin capsules with two eye dots, no nose/mouth. The "humanoid" read is silhouette + headgear + materials, not facial detail. Closer faces would need a tiny eye/mouth texture which violates the no-external-assets rule.
+
+---
+
 ### 2026-05-17 — Session 53 (Rambo bowie redesign + dedicated overhead stab)
 
 User feedback on S52: (a) the swing was still too complex / not committed enough, said an overhead stab would be easier to animate and feel better; (b) the M48-style cone tip "looks dumb"; wanted a Rambo-style knife instead. Both addressed.

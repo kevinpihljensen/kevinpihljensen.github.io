@@ -47,271 +47,424 @@ export const enemies = [];
 // Enemy capsule height, used for per-floor wall filtering + AABB Y span.
 const ENEMY_BODY_H = 1.7;
 
-// M11: redesigned enemy definitions with body/accent/visor/glow colors.
-//   * `body` is the main armor color (most of the visible volume)
-//   * `accent` is the trim color (belt, pauldrons, joints)
-//   * `visor` is the head visor — emissive on heavy and shooter
-//   * `glow` is a small chest/back-of-head emissive accent that reads as
-//     "powered armor" — gives each silhouette a clear status indicator
+// S54: humanoid soldier definitions. Each type has its own fatigue + accent
+// color so silhouettes still read at a glance, but the bodies are now built
+// from skin/fabric/boot materials instead of emissive sci-fi armor.
+//   * `fatigue` — main uniform color (torso/limbs)
+//   * `gear`    — tactical vest / pauldron / helmet color
+//   * `accent`  — secondary fabric (lower legs, sleeves)
+//   * `skin`    — exposed face/hands tone
 export const ENEMY_DEFS = {
   grunt: {
     hp: 30, speed: 4.0, radius: 0.35, score: 100, contactDmg: 10,
-    body: 0x991b1b, accent: 0x2a0a0a, visor: 0xff3838, glow: 0xff5252,
+    fatigue: 0x6b1212, gear: 0x1a0a0a, accent: 0x3a1212, skin: 0xc99a73,
   },
   shooter: {
     hp: 20, speed: 2.5, radius: 0.35, score: 150, contactDmg: 0,
-    body: 0xca8a04, accent: 0x422006, visor: 0xfde047, glow: 0xfacc15,
+    fatigue: 0x8a6a32, gear: 0x2a2218, accent: 0x554021, skin: 0xc99a73,
   },
   heavy: {
     hp: 150, speed: 1.5, radius: 0.50, score: 400, contactDmg: 25,
-    body: 0x7f1d1d, accent: 0x0e0c0c, visor: 0xfacc15, glow: 0xfde047,
+    fatigue: 0x4a1212, gear: 0x141414, accent: 0x2a0e0e, skin: 0xc99a73,
   },
 };
 
-// --- MODEL CONSTRUCTION ---
-// M11: each builder returns hierarchical geometry with:
-//   * Capsule torso/head for rounded silhouette (vs m10's stacked boxes)
-//   * Emissive visor + chest core that read as glowing "vitals"
-//   * Trim edges (thin accent strips at shoulder / belt / collar)
-//   * Animation rig refs: head and arms saved separately on the returned
-//     object so updateEnemies() can apply idle bob + arm sway per type
-// userData.enemy → set on every mesh (raycaster route to enemy)
-// userData.isHead → set ONLY on the head mesh (headshot detection)
+// --- MODEL CONSTRUCTION (S54: humanoid soldiers) ---
+//
+// Each builder returns:
+//   * group       — top-level Group, fully populated. Added to the scene
+//                   as-is by makeEnemy.
+//   * meshes      — flat array of every Mesh inside `group`. makeEnemy
+//                   enables shadows, tags userData.enemy, and registers
+//                   each in `shootables`. Already parented; makeEnemy
+//                   does NOT re-parent.
+//   * headMeshes  — subset of `meshes` that should also be tagged with
+//                   userData.isHead = true (head-region headshot hit).
+//   * head        — the head sub-Group; `.position.y` is bobbed by the
+//                   idle animation.
+//   * armL/armR   — arm Groups; `.rotation.x` is swayed by idle anim.
+//                   Hands, weapon parts may be children — they sway too.
+//   * bodyMats    — materials hit-flash applies to (most everything).
+//   * emissiveMats — permanent-emissive mats; flash leaves them alone.
+//
+// Type-specific extras (kept from M12/M13):
+//   * knifePivot/knifeMeshes/knifeRestRot — grunt only; the swipe rig
+//   * barrelGrp/muzzleMat — heavy only; minigun spin + muzzle glow
 
-// Helper: emissive material that survives tone mapping at high brightness.
-function emissiveMat(color, intensity) {
-  return new THREE.MeshStandardMaterial({
-    color: color, emissive: color, emissiveIntensity: intensity,
-    roughness: 0.4, metalness: 0.2, toneMapped: false,
-  });
+// Build an arm Group with a visible upper arm + forearm cylinder and a
+// box "hand" at the wrist. The Group sits at the SHOULDER; rotating its
+// X axis swings the arm around the shoulder. All meshes are pushed into
+// the caller's `meshes` array.
+function _buildArm({ side, shoulderY, length, radius, restRotX, sleeveMat, skinMat, meshes }) {
+  const sx = side === 'right' ? -1 : 1;
+  const g = new THREE.Group();
+  g.position.set(0.34 * sx, shoulderY, 0);
+  g.rotation.x = restRotX;
+  const sleeve = new THREE.Mesh(
+    new THREE.CylinderGeometry(radius, radius * 0.9, length * 0.85, 10), sleeveMat);
+  sleeve.position.y = -length * 0.425;
+  g.add(sleeve);
+  meshes.push(sleeve);
+  const hand = new THREE.Mesh(new THREE.BoxGeometry(0.10, 0.11, 0.13), skinMat);
+  hand.position.y = -length - 0.02;
+  g.add(hand);
+  meshes.push(hand);
+  return { g, sleeve, hand };
+}
+
+// Build a leg/boot pair, both children of `group`. Pushes meshes.
+function _buildLeg({ side, hipY, length, radius, trouserMat, bootMat, group, meshes }) {
+  const sx = side === 'right' ? -1 : 1;
+  const leg = new THREE.Mesh(
+    new THREE.CylinderGeometry(radius, radius * 0.92, length, 10), trouserMat);
+  leg.position.set(0.13 * sx, hipY - length * 0.5, 0);
+  group.add(leg);
+  meshes.push(leg);
+  const boot = new THREE.Mesh(new THREE.BoxGeometry(0.22, 0.10, 0.32), bootMat);
+  boot.position.set(0.13 * sx, hipY - length - 0.005, -0.04);
+  group.add(boot);
+  meshes.push(boot);
+}
+
+// Build a humanoid head as a Group at headRestY containing skin head capsule
+// + two dark eye dots. `headgearFn` (optional) is invoked with the headGroup
+// and meshes array so the caller can add type-specific helmet / cap / hood
+// meshes — they're added to the same Group so they bob along with the head.
+// Pushes the locally-created eye material into `bodyMats` so it gets the
+// hit-flash AND gets disposed when the enemy dies.
+function _buildHead({ restY, skinMat, headgearFn, meshes, headMeshes, bodyMats }) {
+  const headGroup = new THREE.Group();
+  headGroup.position.y = restY;
+  // Skin head capsule.
+  const head = new THREE.Mesh(new THREE.CapsuleGeometry(0.13, 0.05, 4, 10), skinMat);
+  headGroup.add(head);
+  meshes.push(head); headMeshes.push(head);
+  // Two small dark eye boxes (slight inset so they read through the band).
+  const eyeMat = new THREE.MeshStandardMaterial({ color: 0x06080a, roughness: 0.5, metalness: 0.0 });
+  bodyMats.push(eyeMat);
+  for (const sx of [+1, -1]) {
+    const eye = new THREE.Mesh(new THREE.BoxGeometry(0.025, 0.015, 0.012), eyeMat);
+    eye.position.set(0.05 * sx, 0.012, -0.13);
+    headGroup.add(eye);
+    meshes.push(eye); headMeshes.push(eye);
+  }
+  if (headgearFn) headgearFn(headGroup, meshes, headMeshes, eyeMat);
+  return { headGroup, head, eyeMat };
 }
 
 function buildGruntModel(def) {
-  const main   = new THREE.MeshStandardMaterial({ color: def.body,   roughness: 0.55, metalness: 0.35 });
-  const accent = new THREE.MeshStandardMaterial({ color: def.accent, roughness: 0.7,  metalness: 0.45 });
-  const visor  = emissiveMat(def.visor, 1.4);
-  const glow   = emissiveMat(def.glow, 1.0);
+  // Per-enemy materials (fresh instances → hit-flash isolated to this enemy).
+  const fatigue = new THREE.MeshStandardMaterial({ color: def.fatigue, roughness: 0.82, metalness: 0.06 });
+  const gear    = new THREE.MeshStandardMaterial({ color: def.gear,    roughness: 0.75, metalness: 0.12 });
+  const accent  = new THREE.MeshStandardMaterial({ color: def.accent,  roughness: 0.80, metalness: 0.05 });
+  const skin    = new THREE.MeshStandardMaterial({ color: def.skin,    roughness: 0.75, metalness: 0.02 });
+  const boot    = new THREE.MeshStandardMaterial({ color: 0x0e0f12,    roughness: 0.55, metalness: 0.18 });
+  const hood    = new THREE.MeshStandardMaterial({ color: 0x111114,    roughness: 0.88, metalness: 0.03 });
+  const bladeMat = new THREE.MeshStandardMaterial({ color: 0xd8dde6, roughness: 0.25, metalness: 0.9 });
+  const hiltMat  = new THREE.MeshStandardMaterial({ color: 0x161616, roughness: 0.6,  metalness: 0.3 });
 
   const group = new THREE.Group();
+  const meshes = [];
+  const headMeshes = [];
 
-  // Torso — capsule for rounded shoulders
-  const torso = new THREE.Mesh(new THREE.CapsuleGeometry(0.32, 0.5, 4, 10), main);
-  torso.position.y = 0.95;
-
-  // Chest core (small glowing center disc)
-  const core = new THREE.Mesh(new THREE.CylinderGeometry(0.07, 0.07, 0.02, 12), glow);
-  core.rotation.x = Math.PI / 2;
-  core.position.set(0, 1.05, -0.27);
-
+  // --- TORSO ---
+  // Slimmer than M11's wide capsule. Read as a person, not a barrel.
+  const torso = new THREE.Mesh(new THREE.CapsuleGeometry(0.22, 0.42, 4, 10), fatigue);
+  torso.position.y = 1.05;
+  group.add(torso); meshes.push(torso);
+  // Tactical vest plate sitting on the front of the torso.
+  const vest = new THREE.Mesh(new THREE.BoxGeometry(0.42, 0.38, 0.12), gear);
+  vest.position.set(0, 1.10, -0.18);
+  group.add(vest); meshes.push(vest);
   // Belt
-  const belt = new THREE.Mesh(new THREE.BoxGeometry(0.72, 0.12, 0.5), accent);
-  belt.position.y = 0.5;
+  const belt = new THREE.Mesh(new THREE.BoxGeometry(0.52, 0.07, 0.36), gear);
+  belt.position.y = 0.72;
+  group.add(belt); meshes.push(belt);
+  // Hip block (slimmer than torso, suggesting waist taper)
+  const hips = new THREE.Mesh(new THREE.BoxGeometry(0.48, 0.20, 0.32), fatigue);
+  hips.position.y = 0.62;
+  group.add(hips); meshes.push(hips);
 
-  // Hips
-  const hips = new THREE.Mesh(new THREE.CapsuleGeometry(0.26, 0.18, 4, 8), main);
-  hips.position.y = 0.28;
+  // --- LEGS ---
+  _buildLeg({ side: 'left',  hipY: 0.52, length: 0.50, radius: 0.11, trouserMat: fatigue, bootMat: boot, group, meshes });
+  _buildLeg({ side: 'right', hipY: 0.52, length: 0.50, radius: 0.11, trouserMat: fatigue, bootMat: boot, group, meshes });
 
-  // Head — capsule for rounded helmet
-  const head = new THREE.Mesh(new THREE.CapsuleGeometry(0.20, 0.06, 4, 10), main);
-  head.position.y = 1.58;
-
-  // Visor — wide thin emissive band wrapping the front of the head
-  const visorMesh = new THREE.Mesh(new THREE.BoxGeometry(0.32, 0.08, 0.025), visor);
-  visorMesh.position.set(0, 1.60, -0.20);
-
-  // Arms — cylinder for rounded look
-  const armL = new THREE.Mesh(new THREE.CylinderGeometry(0.09, 0.08, 0.7, 10), main);
-  armL.position.set( 0.42, 0.95, 0);
-  const armR = new THREE.Mesh(new THREE.CylinderGeometry(0.09, 0.08, 0.7, 10), main);
-  armR.position.set(-0.42, 0.95, 0);
-
-  // Shoulder pads
-  const shoulderL = new THREE.Mesh(new THREE.SphereGeometry(0.12, 10, 8), accent);
-  shoulderL.position.set( 0.42, 1.30, 0);
-  const shoulderR = new THREE.Mesh(new THREE.SphereGeometry(0.12, 10, 8), accent);
-  shoulderR.position.set(-0.42, 1.30, 0);
-
-  // M13: combat knife in the right hand.
-  // The knife is parented to a small pivot Group placed at the right hand
-  // (bottom of armR, slightly forward). Animating the pivot's rotation makes
-  // the blade slash without needing to re-rig the whole arm. Default pose:
-  // blade pointing forward (-Z), held at the hip.
-  const bladeMat = new THREE.MeshStandardMaterial({
-    color: 0xd8dde6, roughness: 0.25, metalness: 0.9,
+  // --- HEAD (balaclava-style hood + eye band) ---
+  const bodyMats = [fatigue, gear, accent, skin, boot, hood, bladeMat, hiltMat];
+  const { headGroup } = _buildHead({
+    restY: 1.50, skinMat: skin, meshes, headMeshes, bodyMats,
+    headgearFn: (hg, ms, hms) => {
+      // Hood dome — sphere capped at theta to cover top of head only.
+      const top = new THREE.Mesh(
+        new THREE.SphereGeometry(0.155, 14, 10, 0, Math.PI * 2, 0, Math.PI * 0.55), hood);
+      top.position.y = 0.02;
+      hg.add(top); ms.push(top); hms.push(top);
+      // Mask covering the lower face (below the eye band).
+      const mask = new THREE.Mesh(
+        new THREE.SphereGeometry(0.145, 14, 10, 0, Math.PI * 2, Math.PI * 0.55, Math.PI * 0.5), hood);
+      mask.position.y = -0.01;
+      hg.add(mask); ms.push(mask); hms.push(mask);
+    },
   });
-  const hiltMat = new THREE.MeshStandardMaterial({
-    color: 0x161616, roughness: 0.6, metalness: 0.3,
-  });
+  group.add(headGroup);
+  // Neck — thin skin cylinder bridging head and torso.
+  const neck = new THREE.Mesh(new THREE.CylinderGeometry(0.07, 0.075, 0.08, 8), skin);
+  neck.position.y = 1.36;
+  group.add(neck); meshes.push(neck);
+
+  // --- ARMS (groups; armR holds the knife) ---
+  const armLrest = +0.05;
+  const armRrest = -0.55;   // forward — holding knife at the ready
+  const armL = _buildArm({ side: 'left',  shoulderY: 1.32, length: 0.50, radius: 0.075, restRotX: armLrest, sleeveMat: fatigue, skinMat: skin, meshes });
+  const armR = _buildArm({ side: 'right', shoulderY: 1.32, length: 0.50, radius: 0.075, restRotX: armRrest, sleeveMat: fatigue, skinMat: skin, meshes });
+  group.add(armL.g, armR.g);
+
+  // --- KNIFE (child of the right arm group, positioned at the hand) ---
+  // Local position relative to armR group: y at the hand (-length - hand_half),
+  // z forward of the hand so the blade sticks out from the fist.
   const knifePivot = new THREE.Group();
-  // Right hand position: under/forward of the right arm.
-  knifePivot.position.set(-0.42, 0.66, -0.10);
-  const blade = new THREE.Mesh(new THREE.BoxGeometry(0.035, 0.02, 0.34), bladeMat);
-  blade.position.set(0, 0, -0.20);
-  const tip = new THREE.Mesh(
-    new THREE.ConeGeometry(0.025, 0.10, 4),
-    bladeMat
-  );
-  // Cone points +Y by default; rotate so it points -Z to cap the blade.
+  knifePivot.position.set(0, -0.55, -0.06);
+  armR.g.add(knifePivot);
+  // Knife geometry (small, no fancy detail — the player will mostly see this
+  // from a distance during the swipe).
+  const blade = new THREE.Mesh(new THREE.BoxGeometry(0.028, 0.014, 0.26), bladeMat);
+  blade.position.set(0, 0, -0.16);
+  const tip = new THREE.Mesh(new THREE.ConeGeometry(0.020, 0.07, 4), bladeMat);
+  tip.scale.y = 0.45;
   tip.rotation.x = -Math.PI / 2;
-  tip.position.set(0, 0, -0.42);
-  const guard = new THREE.Mesh(new THREE.BoxGeometry(0.10, 0.03, 0.03), hiltMat);
-  guard.position.set(0, 0, -0.02);
-  const hilt = new THREE.Mesh(new THREE.CylinderGeometry(0.022, 0.022, 0.12, 8), hiltMat);
+  tip.rotation.z = Math.PI / 4;
+  tip.position.set(0, 0, -0.31);
+  const guard = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.02, 0.020), hiltMat);
+  guard.position.set(0, 0, -0.025);
+  const hilt = new THREE.Mesh(new THREE.CylinderGeometry(0.018, 0.018, 0.10, 8), hiltMat);
   hilt.rotation.x = Math.PI / 2;
-  hilt.position.set(0, 0, 0.06);
+  hilt.position.set(0, 0, 0.04);
   knifePivot.add(blade, tip, guard, hilt);
-  // Resting orientation: slight inward angle so it reads as "held", not rigid.
-  knifePivot.rotation.set(0, 0.25, 0);
+  // Rest pose: blade aimed forward of the grunt, slight outward yaw.
+  knifePivot.rotation.set(0, 0.20, 0);
 
   return {
     group,
-    meshes: [torso, core, belt, hips, head, visorMesh, armL, armR, shoulderL, shoulderR],
-    head, armL, armR,
-    // M13: knife rig. The blade meshes are parented to knifePivot (NOT in
-    // `meshes`, or they'd get re-parented to the group and the pivot animation
-    // would do nothing). makeEnemy adds knifePivot to the group and registers
-    // the blade meshes as shootable + shadow-casting separately.
+    meshes,
+    headMeshes,
+    head: headGroup,
+    armL: armL.g,
+    armR: armR.g,
+    bodyMats,
+    emissiveMats: [],
     knifePivot,
     knifeMeshes: [blade, tip, guard, hilt],
-    knifeRestRot: { x: 0, y: 0.25, z: 0 },
-    bodyMats: [main, accent, bladeMat, hiltMat], // M11: hit-flash applies to these
-    emissiveMats: [visor, glow], // these keep their permanent glow
+    knifeRestRot: { x: 0, y: 0.20, z: 0 },
   };
 }
 
 function buildShooterModel(def) {
-  const main   = new THREE.MeshStandardMaterial({ color: def.body,   roughness: 0.55, metalness: 0.35 });
-  const accent = new THREE.MeshStandardMaterial({ color: def.accent, roughness: 0.7,  metalness: 0.45 });
-  const visor  = emissiveMat(def.visor, 1.4);
-  const glow   = emissiveMat(def.glow, 1.0);
-  const gunMat = new THREE.MeshStandardMaterial({ color: 0x111111, roughness: 0.35, metalness: 0.7 });
+  const fatigue = new THREE.MeshStandardMaterial({ color: def.fatigue, roughness: 0.82, metalness: 0.06 });
+  const gear    = new THREE.MeshStandardMaterial({ color: def.gear,    roughness: 0.75, metalness: 0.12 });
+  const accent  = new THREE.MeshStandardMaterial({ color: def.accent,  roughness: 0.80, metalness: 0.05 });
+  const skin    = new THREE.MeshStandardMaterial({ color: def.skin,    roughness: 0.75, metalness: 0.02 });
+  const boot    = new THREE.MeshStandardMaterial({ color: 0x14130f,    roughness: 0.55, metalness: 0.18 });
+  const cap     = new THREE.MeshStandardMaterial({ color: 0x2b2418,    roughness: 0.80, metalness: 0.05 });
+  const gunMetal = new THREE.MeshStandardMaterial({ color: 0x1a1a1e, roughness: 0.40, metalness: 0.70 });
+  const gunPoly  = new THREE.MeshStandardMaterial({ color: 0x0d0d10, roughness: 0.85, metalness: 0.05 });
 
   const group = new THREE.Group();
+  const meshes = [];
+  const headMeshes = [];
 
-  const torso = new THREE.Mesh(new THREE.CapsuleGeometry(0.32, 0.5, 4, 10), main);
-  torso.position.y = 0.95;
+  // --- TORSO + GEAR ---
+  const torso = new THREE.Mesh(new THREE.CapsuleGeometry(0.22, 0.42, 4, 10), fatigue);
+  torso.position.y = 1.05;
+  group.add(torso); meshes.push(torso);
+  const vest = new THREE.Mesh(new THREE.BoxGeometry(0.42, 0.40, 0.12), gear);
+  vest.position.set(0, 1.10, -0.18);
+  group.add(vest); meshes.push(vest);
+  // Belt + ammo pouches (two small boxes on the front of the belt).
+  const belt = new THREE.Mesh(new THREE.BoxGeometry(0.52, 0.07, 0.36), gear);
+  belt.position.y = 0.72;
+  group.add(belt); meshes.push(belt);
+  for (const sx of [+1, -1]) {
+    const pouch = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.10, 0.07), accent);
+    pouch.position.set(0.13 * sx, 0.74, -0.20);
+    group.add(pouch); meshes.push(pouch);
+  }
+  const hips = new THREE.Mesh(new THREE.BoxGeometry(0.48, 0.20, 0.32), fatigue);
+  hips.position.y = 0.62;
+  group.add(hips); meshes.push(hips);
 
-  const core = new THREE.Mesh(new THREE.CylinderGeometry(0.07, 0.07, 0.02, 12), glow);
-  core.rotation.x = Math.PI / 2;
-  core.position.set(0, 1.05, -0.27);
+  // --- LEGS ---
+  _buildLeg({ side: 'left',  hipY: 0.52, length: 0.50, radius: 0.11, trouserMat: fatigue, bootMat: boot, group, meshes });
+  _buildLeg({ side: 'right', hipY: 0.52, length: 0.50, radius: 0.11, trouserMat: fatigue, bootMat: boot, group, meshes });
 
-  const belt = new THREE.Mesh(new THREE.BoxGeometry(0.72, 0.12, 0.5), accent);
-  belt.position.y = 0.5;
+  // --- HEAD (tactical cap + dark sunglasses band) ---
+  const bodyMats = [fatigue, gear, accent, skin, boot, cap, gunMetal, gunPoly];
+  const { headGroup } = _buildHead({
+    restY: 1.50, skinMat: skin, meshes, headMeshes, bodyMats,
+    headgearFn: (hg, ms, hms) => {
+      // Cap crown — short cylinder
+      const crown = new THREE.Mesh(new THREE.CylinderGeometry(0.135, 0.130, 0.06, 14), cap);
+      crown.position.y = 0.10;
+      hg.add(crown); ms.push(crown); hms.push(crown);
+      // Brim — flat box poking forward
+      const brim = new THREE.Mesh(new THREE.BoxGeometry(0.26, 0.018, 0.10), cap);
+      brim.position.set(0, 0.085, -0.13);
+      hg.add(brim); ms.push(brim); hms.push(brim);
+      // Sunglasses band — covers eye area
+      const shades = new THREE.Mesh(new THREE.BoxGeometry(0.22, 0.038, 0.018), gunPoly);
+      shades.position.set(0, 0.012, -0.135);
+      hg.add(shades); ms.push(shades); hms.push(shades);
+    },
+  });
+  group.add(headGroup);
+  const neck = new THREE.Mesh(new THREE.CylinderGeometry(0.07, 0.075, 0.08, 8), skin);
+  neck.position.y = 1.36;
+  group.add(neck); meshes.push(neck);
 
-  const hips = new THREE.Mesh(new THREE.CapsuleGeometry(0.26, 0.18, 4, 8), main);
-  hips.position.y = 0.28;
+  // --- ARMS (both forward, posed at the rifle) ---
+  // Right hand at trigger grip (~z=-0.36, slightly right of center).
+  // Left hand at foregrip (~z=-0.56, slightly left of center).
+  const armLrest = -0.95;   // strong forward tilt
+  const armRrest = -0.95;
+  const armL = _buildArm({ side: 'left',  shoulderY: 1.30, length: 0.46, radius: 0.075, restRotX: armLrest, sleeveMat: fatigue, skinMat: skin, meshes });
+  const armR = _buildArm({ side: 'right', shoulderY: 1.30, length: 0.46, radius: 0.075, restRotX: armRrest, sleeveMat: fatigue, skinMat: skin, meshes });
+  // Bring the shoulders inward a touch so the elbows angle in toward the rifle.
+  armL.g.position.x = +0.22;
+  armR.g.position.x = -0.22;
+  group.add(armL.g, armR.g);
 
-  const head = new THREE.Mesh(new THREE.CapsuleGeometry(0.20, 0.06, 4, 10), main);
-  head.position.y = 1.58;
-
-  const visorMesh = new THREE.Mesh(new THREE.BoxGeometry(0.32, 0.10, 0.025), visor);
-  visorMesh.position.set(0, 1.60, -0.20);
-
-  // Arms held forward — aim posture. We rotate each arm group around its
-  // local origin (shoulder) by tilting in X.
-  const armL = new THREE.Mesh(new THREE.CylinderGeometry(0.09, 0.08, 0.65, 10), main);
-  armL.position.set( 0.30, 1.10, -0.18);
-  armL.rotation.x = -0.55;
-  const armR = new THREE.Mesh(new THREE.CylinderGeometry(0.09, 0.08, 0.65, 10), main);
-  armR.position.set(-0.30, 1.10, -0.18);
-  armR.rotation.x = -0.55;
-
-  // Rifle in front (compound: receiver + barrel + scope-ish bump)
-  const rifleBody = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.10, 0.45), gunMat);
-  rifleBody.position.set(0, 1.05, -0.40);
-  const rifleBarrel = new THREE.Mesh(new THREE.CylinderGeometry(0.025, 0.025, 0.30, 8), gunMat);
+  // --- RIFLE (parented to the model group, hands wrap around it) ---
+  // Receiver, stock, magazine, barrel, sight rail — separate meshes so the
+  // gun reads as a real weapon rather than one box.
+  const rifleStock = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.10, 0.18), gunPoly);
+  rifleStock.position.set(0, 1.05, -0.18);
+  group.add(rifleStock); meshes.push(rifleStock);
+  const rifleBody = new THREE.Mesh(new THREE.BoxGeometry(0.07, 0.08, 0.30), gunMetal);
+  rifleBody.position.set(0, 1.05, -0.42);
+  group.add(rifleBody); meshes.push(rifleBody);
+  const rifleMag = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.12, 0.05), gunPoly);
+  rifleMag.position.set(0, 0.98, -0.40);
+  group.add(rifleMag); meshes.push(rifleMag);
+  const rifleRail = new THREE.Mesh(new THREE.BoxGeometry(0.03, 0.02, 0.18), gunMetal);
+  rifleRail.position.set(0, 1.10, -0.42);
+  group.add(rifleRail); meshes.push(rifleRail);
+  const rifleBarrel = new THREE.Mesh(new THREE.CylinderGeometry(0.020, 0.020, 0.32, 8), gunMetal);
   rifleBarrel.rotation.x = Math.PI / 2;
-  rifleBarrel.position.set(0, 1.07, -0.70);
-
-  // Shoulder pads
-  const shoulderL = new THREE.Mesh(new THREE.SphereGeometry(0.11, 10, 8), accent);
-  shoulderL.position.set( 0.42, 1.30, 0);
-  const shoulderR = new THREE.Mesh(new THREE.SphereGeometry(0.11, 10, 8), accent);
-  shoulderR.position.set(-0.42, 1.30, 0);
+  rifleBarrel.position.set(0, 1.06, -0.72);
+  group.add(rifleBarrel); meshes.push(rifleBarrel);
 
   return {
     group,
-    meshes: [torso, core, belt, hips, head, visorMesh, armL, armR, rifleBody, rifleBarrel, shoulderL, shoulderR],
-    head, armL, armR,
-    bodyMats: [main, accent, gunMat],
-    emissiveMats: [visor, glow],
+    meshes,
+    headMeshes,
+    head: headGroup,
+    armL: armL.g,
+    armR: armR.g,
+    bodyMats,
+    emissiveMats: [],
   };
 }
 
 function buildHeavyModel(def) {
-  const main   = new THREE.MeshStandardMaterial({ color: def.body,   roughness: 0.55, metalness: 0.4 });
-  const accent = new THREE.MeshStandardMaterial({ color: def.accent, roughness: 0.6,  metalness: 0.5 });
-  const visor  = emissiveMat(def.visor, 1.6);
-  const glow   = emissiveMat(def.glow, 1.2);
-  const plate  = new THREE.MeshStandardMaterial({ color: 0x2a0e0e, roughness: 0.5, metalness: 0.6 });
-
-  const group = new THREE.Group();
-
-  // Wide capsule torso
-  const torso = new THREE.Mesh(new THREE.CapsuleGeometry(0.5, 0.6, 4, 12), main);
-  torso.position.y = 1.10;
-
-  // Chest plate
-  const chest = new THREE.Mesh(new THREE.BoxGeometry(0.85, 0.7, 0.10), plate);
-  chest.position.set(0, 1.20, -0.40);
-
-  // Chest core glow — bigger and brighter on the heavy
-  const core = new THREE.Mesh(new THREE.CylinderGeometry(0.12, 0.12, 0.04, 16), glow);
-  core.rotation.x = Math.PI / 2;
-  core.position.set(0, 1.20, -0.46);
-
-  // Belt
-  const belt = new THREE.Mesh(new THREE.BoxGeometry(1.10, 0.18, 0.75), accent);
-  belt.position.y = 0.55;
-
-  // Head — bigger capsule
-  const head = new THREE.Mesh(new THREE.CapsuleGeometry(0.28, 0.05, 4, 12), main);
-  head.position.y = 1.88;
-
-  // Yellow glowing visor — heavy's signature
-  const visorMesh = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.12, 0.025), visor);
-  visorMesh.position.set(0, 1.89, -0.30);
-
-  // Shoulder pauldrons — big armor plates
-  const shoulderL = new THREE.Mesh(new THREE.SphereGeometry(0.22, 12, 10), accent);
-  shoulderL.position.set( 0.65, 1.55, 0);
-  shoulderL.scale.set(1, 0.7, 1);
-  const shoulderR = new THREE.Mesh(new THREE.SphereGeometry(0.22, 12, 10), accent);
-  shoulderR.position.set(-0.65, 1.55, 0);
-  shoulderR.scale.set(1, 0.7, 1);
-
-  // Thick arms — cylinders
-  const armL = new THREE.Mesh(new THREE.CylinderGeometry(0.16, 0.14, 0.85, 12), main);
-  armL.position.set( 0.65, 1.08, 0);
-  const armR = new THREE.Mesh(new THREE.CylinderGeometry(0.16, 0.14, 0.85, 12), main);
-  armR.position.set(-0.65, 1.08, 0);
-
-  // Legs — cylinders
-  const legL = new THREE.Mesh(new THREE.CylinderGeometry(0.18, 0.16, 0.5, 10), main);
-  legL.position.set( 0.25, 0.25, 0);
-  const legR = new THREE.Mesh(new THREE.CylinderGeometry(0.18, 0.16, 0.5, 10), main);
-  legR.position.set(-0.25, 0.25, 0);
-
-  // --- M12 MINIGUN ---
-  // Mounted forward of the torso, centered, pointing -Z (the model's forward,
-  // same axis faceEnemyTowardPlayer aims). Construction:
-  //   gunMount  — boxy receiver attached to the body
-  //   barrelGrp — rotating group of 6 thin barrels in a ring + a hub; this
-  //               group is returned so the AI can spin it on its Z axis
-  //   muzzle    — emissive ring at the barrel tips (lights up while firing)
+  const fatigue = new THREE.MeshStandardMaterial({ color: def.fatigue, roughness: 0.82, metalness: 0.06 });
+  const gear    = new THREE.MeshStandardMaterial({ color: def.gear,    roughness: 0.65, metalness: 0.25 });
+  const accent  = new THREE.MeshStandardMaterial({ color: def.accent,  roughness: 0.70, metalness: 0.12 });
+  const skin    = new THREE.MeshStandardMaterial({ color: def.skin,    roughness: 0.75, metalness: 0.02 });
+  const boot    = new THREE.MeshStandardMaterial({ color: 0x0e0f12,    roughness: 0.55, metalness: 0.18 });
+  const plate   = new THREE.MeshStandardMaterial({ color: 0x1a0e0e,    roughness: 0.55, metalness: 0.40 });
+  const helmet  = new THREE.MeshStandardMaterial({ color: 0x141416,    roughness: 0.65, metalness: 0.25 });
   const gunMetal = new THREE.MeshStandardMaterial({ color: 0x14141a, roughness: 0.35, metalness: 0.85 });
   const gunAccent = new THREE.MeshStandardMaterial({ color: 0x3a3a42, roughness: 0.5, metalness: 0.7 });
-  const muzzleMat = emissiveMat(0xffae3a, 0.0); // intensity raised while firing
+  const muzzleMat = new THREE.MeshStandardMaterial({
+    color: 0xffae3a, emissive: 0xffae3a, emissiveIntensity: 0.0,
+    roughness: 0.4, metalness: 0.2, toneMapped: false,
+  });
 
+  const group = new THREE.Group();
+  const meshes = [];
+  const headMeshes = [];
+
+  // --- TORSO (wider, heavier; plate carrier on top) ---
+  const torso = new THREE.Mesh(new THREE.CapsuleGeometry(0.34, 0.55, 4, 12), fatigue);
+  torso.position.y = 1.15;
+  group.add(torso); meshes.push(torso);
+  // Plate carrier covering front + sides of the torso.
+  const chest = new THREE.Mesh(new THREE.BoxGeometry(0.72, 0.62, 0.18), plate);
+  chest.position.set(0, 1.20, -0.18);
+  group.add(chest); meshes.push(chest);
+  // Shoulder pauldrons (kept from M11 — looks gnarly, fits the heavy).
+  for (const sx of [+1, -1]) {
+    const pauldron = new THREE.Mesh(new THREE.SphereGeometry(0.20, 12, 10), gear);
+    pauldron.position.set(0.46 * sx, 1.50, 0);
+    pauldron.scale.set(1, 0.7, 1);
+    group.add(pauldron); meshes.push(pauldron);
+  }
+  // Belt (broader than grunt/shooter to read heavy)
+  const belt = new THREE.Mesh(new THREE.BoxGeometry(0.80, 0.12, 0.50), gear);
+  belt.position.y = 0.78;
+  group.add(belt); meshes.push(belt);
+  const hips = new THREE.Mesh(new THREE.BoxGeometry(0.70, 0.22, 0.40), fatigue);
+  hips.position.y = 0.65;
+  group.add(hips); meshes.push(hips);
+
+  // --- LEGS (thicker) ---
+  _buildLeg({ side: 'left',  hipY: 0.54, length: 0.52, radius: 0.16, trouserMat: fatigue, bootMat: boot, group, meshes });
+  _buildLeg({ side: 'right', hipY: 0.54, length: 0.52, radius: 0.16, trouserMat: fatigue, bootMat: boot, group, meshes });
+
+  // --- HEAD (combat helmet dome + visor goggles) ---
+  const bodyMats = [fatigue, gear, accent, skin, boot, plate, helmet, gunMetal, gunAccent];
+  const { headGroup } = _buildHead({
+    restY: 1.72, skinMat: skin, meshes, headMeshes, bodyMats,
+    headgearFn: (hg, ms, hms) => {
+      // Combat helmet — half-sphere a bit bigger than the head
+      const dome = new THREE.Mesh(
+        new THREE.SphereGeometry(0.175, 14, 10, 0, Math.PI * 2, 0, Math.PI * 0.55), helmet);
+      dome.position.y = 0.02;
+      hg.add(dome); ms.push(dome); hms.push(dome);
+      // Front rim of helmet
+      const rim = new THREE.Mesh(new THREE.TorusGeometry(0.16, 0.018, 6, 16, Math.PI), helmet);
+      rim.rotation.x = -Math.PI / 2;
+      rim.position.set(0, 0.04, 0);
+      hg.add(rim); ms.push(rim); hms.push(rim);
+      // Dark goggles band
+      const goggles = new THREE.Mesh(new THREE.BoxGeometry(0.26, 0.045, 0.020), gunMetal);
+      goggles.position.set(0, 0.015, -0.16);
+      hg.add(goggles); ms.push(goggles); hms.push(goggles);
+    },
+  });
+  group.add(headGroup);
+  // Thick neck (helmet pushed the head up — slightly taller neck reads as "armored").
+  const neck = new THREE.Mesh(new THREE.CylinderGeometry(0.09, 0.10, 0.10, 8), skin);
+  neck.position.y = 1.55;
+  group.add(neck); meshes.push(neck);
+
+  // --- ARMS (groups; both forward to grip the minigun handles) ---
+  const armLrest = -0.85;
+  const armRrest = -0.85;
+  const armL = _buildArm({ side: 'left',  shoulderY: 1.42, length: 0.62, radius: 0.13, restRotX: armLrest, sleeveMat: fatigue, skinMat: skin, meshes });
+  const armR = _buildArm({ side: 'right', shoulderY: 1.42, length: 0.62, radius: 0.13, restRotX: armRrest, sleeveMat: fatigue, skinMat: skin, meshes });
+  armL.g.position.x = +0.40;
+  armR.g.position.x = -0.40;
+  group.add(armL.g, armR.g);
+
+  // --- MINIGUN ---
+  // Geometry positions kept compatible with the heavyFire muzzle offset (0.20,
+  // 1.16, -0.92) — moving them shifts the muzzle math in enemies.js#heavyFire.
   const gunMount = new THREE.Mesh(new THREE.BoxGeometry(0.34, 0.34, 0.42), gunMetal);
   gunMount.position.set(0.20, 1.15, -0.40);
-
-  // Ammo drum on the side
+  group.add(gunMount); meshes.push(gunMount);
+  // Two large grip handles on the receiver (one for each hand, visually).
+  const gripL = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.16, 0.07), gunAccent);
+  gripL.position.set(0.36, 1.06, -0.32);
+  group.add(gripL); meshes.push(gripL);
+  const gripR = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.16, 0.07), gunAccent);
+  gripR.position.set(0.04, 1.06, -0.32);
+  group.add(gripR); meshes.push(gripR);
+  // Ammo drum.
   const drum = new THREE.Mesh(new THREE.CylinderGeometry(0.20, 0.20, 0.22, 14), gunAccent);
   drum.rotation.z = Math.PI / 2;
   drum.position.set(0.46, 1.05, -0.30);
-
-  // Rotating barrel assembly
+  group.add(drum); meshes.push(drum);
+  // Rotating barrel assembly (kept as a Group so AI can spin it on Z).
   const barrelGrp = new THREE.Group();
   barrelGrp.position.set(0.20, 1.16, -0.62);
   const hub = new THREE.Mesh(new THREE.CylinderGeometry(0.07, 0.07, 0.46, 12), gunAccent);
@@ -326,24 +479,22 @@ function buildHeavyModel(def) {
     b.position.set(Math.cos(ang) * ring, Math.sin(ang) * ring, 0);
     barrelGrp.add(b);
   }
-  // Emissive muzzle disc at the front of the barrel cluster
+  group.add(barrelGrp);
+  // Muzzle disc (emissive, brightens while firing).
   const muzzle = new THREE.Mesh(new THREE.CylinderGeometry(0.11, 0.11, 0.03, 14), muzzleMat);
   muzzle.rotation.x = Math.PI / 2;
   muzzle.position.set(0.20, 1.16, -0.92);
+  group.add(muzzle); meshes.push(muzzle);
 
   return {
     group,
-    meshes: [
-      torso, chest, core, belt, head, visorMesh, shoulderL, shoulderR,
-      armL, armR, legL, legR, gunMount, drum, muzzle,
-    ],
-    head, armL, armR,
-    bodyMats: [main, accent, plate, gunMetal, gunAccent],
-    emissiveMats: [visor, glow, muzzleMat],
-    // M12: extra refs for the minigun. barrelGrp is added to the model group
-    // here (it's a Group, not a Mesh, so it's not in `meshes`/`shootables` —
-    // intentionally not shootable, it's cosmetic). muzzleMat lets the AI glow
-    // the muzzle while firing.
+    meshes,
+    headMeshes,
+    head: headGroup,
+    armL: armL.g,
+    armR: armR.g,
+    bodyMats,
+    emissiveMats: [muzzleMat],
     barrelGrp,
     muzzleMat,
   };
@@ -360,30 +511,30 @@ export function makeEnemy(type, x, z) {
   const built = MODEL_BUILDERS[type](def);
 
   built.group.position.set(x, 0, z);
+
+  // S54: the builder has already parented every mesh into the correct sub-
+  // group (head Group, armL/armR Groups, or directly on `group`). We do NOT
+  // re-parent here — that would yank arm meshes out of their swing groups
+  // and the idle sway / weapon-follow-arm coupling would break.
   for (let i = 0; i < built.meshes.length; i++) {
     const m = built.meshes[i];
     m.castShadow = true;
     m.receiveShadow = true;
-    built.group.add(m);
   }
-  // M12: the heavy's minigun has a rotating barrel Group (not in `meshes`
-  // since it's cosmetic / non-shootable). Add it to the model group and turn
-  // off shadows on its children (lots of thin cylinders → shadow acne + cost).
+  // Heavy minigun's rotating barrel group is cosmetic — shadows off (lots of
+  // thin cylinders → shadow acne + cost), already parented inside the builder.
   if (built.barrelGrp) {
     built.barrelGrp.traverse((o) => {
       if (o.isMesh) { o.castShadow = false; o.receiveShadow = false; }
     });
-    built.group.add(built.barrelGrp);
   }
-  // M13: the grunt's knife lives under a pivot Group (so the swipe animation
-  // can rotate the whole blade as a unit). Parent the pivot to the model
-  // group; the blade meshes themselves still cast shadows + are shootable.
+  // Grunt knife meshes are shootable + shadow-casting; the pivot is already
+  // parented to the right-arm group inside the builder.
   if (built.knifePivot) {
     for (let i = 0; i < built.knifeMeshes.length; i++) {
       built.knifeMeshes[i].castShadow = true;
       built.knifeMeshes[i].receiveShadow = true;
     }
-    built.group.add(built.knifePivot);
   }
   scene.add(built.group);
 
@@ -472,12 +623,16 @@ export function makeEnemy(type, x, z) {
   }
 
   // Tag every mesh with the enemy ref so the raycaster can route hits.
-  // Tag ONLY the head mesh with isHead = true so weapons can detect headshots.
+  // S54: tag the SET of head-region meshes (head capsule + headgear + eye
+  // dots) with isHead so headshots register whether the player aims at the
+  // helmet, the eye band, or the chin.
   for (let i = 0; i < built.meshes.length; i++) {
     built.meshes[i].userData.enemy = enemy;
     shootables.push(built.meshes[i]);
   }
-  built.head.userData.isHead = true;
+  for (let i = 0; i < built.headMeshes.length; i++) {
+    built.headMeshes[i].userData.isHead = true;
+  }
 
   enemies.push(enemy);
   return enemy;

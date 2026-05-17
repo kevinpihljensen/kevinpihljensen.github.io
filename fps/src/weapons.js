@@ -39,7 +39,7 @@ import {
   sfxScopeOn, sfxScopeOff, sfxWeaponDeploy, stopAllReloadAudio,
 } from './audio.js';
 import { damageEnemy } from './enemies.js';
-import { createImpact } from './decals.js';
+import { createImpact, createBloodSplat } from './decals.js';
 
 // --- WEAPON DEFS ---
 // Each weapon: { name, damage, rpm, magSize, reserveStart, reloadTime,
@@ -1290,6 +1290,11 @@ function fireRays(w, spread) {
         damageEnemy(enemy, damage);
         anyEnemyHit = true;
         if (isHead) anyHeadshot = true;
+        // S54: blood burst at the hit point. Orient the splat back toward
+        // the shooter (= the negated ray direction) so it always reads as
+        // camera-facing rather than edge-on.
+        _hitNormal.copy(_direction).multiplyScalar(-1);
+        createBloodSplat(hit.point, _hitNormal);
       } else {
         _hitNormal.copy(hit.face.normal);
         _normalMat3.getNormalMatrix(hit.object.matrixWorld);
@@ -1323,6 +1328,9 @@ function meleeStrike(w) {
       const isHead = hit.object.userData.isHead === true;
       const dmg = isHead ? w.damage * (w.headshotMult || 1) : w.damage;
       damageEnemy(enemy, dmg);
+      // S54: blood burst at the stab point (oriented back toward the camera).
+      _hitNormal.copy(_camForward).multiplyScalar(-1);
+      createBloodSplat(hit.point, _hitNormal);
       sfxEnemyHit();
       wState.hitMarkerTimer = HIT_MARKER_TIME;
     }
