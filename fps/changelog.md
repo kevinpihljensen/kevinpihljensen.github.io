@@ -26,6 +26,28 @@ Format: newest entries at the top. Each entry lists what was added, what was cha
 
 ## Session log
 
+### 2026-05-17 — Session 47 (Custom asset: classic medkit .glb for health pickups)
+
+First authored 3D asset in the project. User uploaded `220a9cef-classic_med_kit.glb` (~1.58 MB); placed at `fps/assets/models/medkit.glb` so it lives under the existing `assets/` tree alongside the audio samples. This is a deliberate deviation from CLAUDE.md §2's "geometry is procedural" rule — `CLAUDE.md` was updated to reflect the new contract so the next session doesn't strip the asset thinking it's an accident.
+
+**Wiring (`src/pickups.js`).** Added `GLTFLoader` import (`three/addons/loaders/GLTFLoader.js`). Async load kicked off at module-init time alongside `spawnAllPickups()`; while it's in flight, every health pickup renders the existing procedural red+white-cross mesh (`buildHealthFallbackMesh`). When the load completes, `loadHealthModel`'s success callback walks the live `pickups[]`, clones the GLTF scene for each `health` entry, normalises it (recentre on XZ + drop to y=0 + uniform scale so the longest axis is `HEALTH_TARGET_SIZE = 0.55 m`, regardless of how the asset was authored), and swaps the rendered group in-place — preserving each pickup's runtime state (`collected`, `respawn`, `phase`) and current visibility. On load failure the placeholder stays; failure is logged but doesn't break the game.
+
+**Importmap (`index.html`).** Added `"three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"` so `three/addons/loaders/GLTFLoader.js` resolves to the matching r160 build. No other dependency added — `three` stays at the pinned r160.
+
+**Verified.** Battery still ALL GREEN (no harness covers the renderer; the new path is render-only so 41/41 pickups passes prove the gameplay math is untouched). 19 modules `node --check` clean. **What is NOT verified:** the actual rendering / scale / orientation of the loaded `.glb`. That requires opening the game in a browser (`python3 -m http.server 8000`, point at `http://localhost:8000/`) — the harness can't fetch over HTTP and `GLTFLoader` is browser-only. The bounding-box normalisation should make the model a sensible ≈0.55 m, but if it's mis-oriented (e.g. authored with +Z up instead of +Y up) a flat-on-its-back medkit will need a one-line `rotation.set(...)` tweak in `buildHealthMeshFromGLTF`.
+
+**Changed**
+- New `fps/assets/models/medkit.glb` (~1.58 MB).
+- `src/pickups.js` — `GLTFLoader` import; `buildHealthMeshFromGLTF` (normalise origin + scale); `loadHealthModel` async preload + in-place swap; renamed the procedural mesh to `buildHealthFallbackMesh`.
+- `index.html` — `three/addons/` entry in the importmap.
+- `CLAUDE.md` — §2 now explicitly names `medkit.glb` and `GLTFLoader` as the lone authored asset / loader.
+
+**Known issues**
+- Visual verification still owed (browser test); orientation / scale tweak may be needed once the model is on screen.
+- The asset is 1.58 MB — bigger than the ≤500 KB rule of thumb mentioned earlier. Acceptable for one health pickup; if more authored assets are added the page weight should be revisited.
+
+---
+
 ### 2026-05-17 — Session 46 (M15 Stage 3: map pickups + no more wave unlocks, no more passive regen)
 
 Stage 3 of the M15 rework, the last open item. **Weapons are now acquired by walking over pickups on the map**, not by surviving a wave. **Passive health regen is gone**; HP is recovered only from health pickups. Picked-up weapons are permanent for the run; subsequent pickups of the same gun act as ammo refills. All design choices were confirmed with the user up front (static map placements; pistol+knife starter; pickups-only health; persistent weapons) so no subjective rebalance was done silently.

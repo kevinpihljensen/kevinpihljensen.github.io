@@ -28,7 +28,12 @@ A single-player browser FPS wave shooter.
   only external library. Do not bump the Three.js version.
 - **No build step.** The game must run by serving the folder as-is.
 - **No external runtime assets** beyond what is in `assets/`. Geometry
-  is procedural (BoxGeometry etc.). Audio is the bundled `.wav` files.
+  is MOSTLY procedural (BoxGeometry etc.); the lone authored 3D asset is
+  `assets/models/medkit.glb`, used by the health pickup and loaded via
+  `GLTFLoader` (`three/addons/loaders/GLTFLoader.js`, added to the
+  importmap as `three/addons/`). Audio is the bundled `.wav` files. New
+  authored assets are a deviation from this contract — flag and ask
+  before adding more.
 - **GitHub Pages serves from the repo ROOT.** `index.html`, `src/`,
   `assets/` must sit at the repository root — NOT nested in a subfolder.
   If they are nested, Pages 404s. This has bitten the project before.
