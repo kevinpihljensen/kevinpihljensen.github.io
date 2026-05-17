@@ -123,7 +123,7 @@ export const wState = {
 // Materials use real metalness so the dark gunmetal reads as metal rather
 // than charcoal-painted plastic. Position offsets tuned so the gun sits in
 // the lower-right but doesn't obstruct the crosshair.
-function buildPistolModel() {
+export function buildPistolModel() {
   const g = new THREE.Group();
   const gunmetal = new THREE.MeshStandardMaterial({ color: 0x1a1a1c, roughness: 0.30, metalness: 0.85 });
   const slide    = new THREE.MeshStandardMaterial({ color: 0x2a2a2e, roughness: 0.40, metalness: 0.75 });
@@ -162,7 +162,7 @@ function buildPistolModel() {
   g.position.set(0.16, -0.16, -0.4);
   return g;
 }
-function buildShotgunModel() {
+export function buildShotgunModel() {
   const g = new THREE.Group();
   const wood    = new THREE.MeshStandardMaterial({ color: 0x4a2c12, roughness: 0.80, metalness: 0.10 });
   const metal   = new THREE.MeshStandardMaterial({ color: 0x14141a, roughness: 0.35, metalness: 0.85 });
@@ -196,7 +196,7 @@ function buildShotgunModel() {
   g.position.set(0.20, -0.18, -0.45);
   return g;
 }
-function buildSmgModel() {
+export function buildSmgModel() {
   const g = new THREE.Group();
   const metal = new THREE.MeshStandardMaterial({ color: 0x1f1f24, roughness: 0.40, metalness: 0.75 });
   const dark  = new THREE.MeshStandardMaterial({ color: 0x0b0b0e, roughness: 0.55, metalness: 0.45 });
@@ -239,7 +239,7 @@ function buildSmgModel() {
   g.position.set(0.18, -0.17, -0.42);
   return g;
 }
-function buildSniperModel() {
+export function buildSniperModel() {
   const g = new THREE.Group();
   const metal = new THREE.MeshStandardMaterial({ color: 0x161618, roughness: 0.30, metalness: 0.90 });
   const wood  = new THREE.MeshStandardMaterial({ color: 0x4a2c12, roughness: 0.75, metalness: 0.10 });
@@ -320,7 +320,7 @@ function buildSniperModel() {
   return g;
 }
 
-function buildSawModel() {
+export function buildSawModel() {
   const g = new THREE.Group();
   const metal  = new THREE.MeshStandardMaterial({ color: 0x20231f, roughness: 0.45, metalness: 0.70 });
   const dark   = new THREE.MeshStandardMaterial({ color: 0x0c0d0b, roughness: 0.55, metalness: 0.45 });
