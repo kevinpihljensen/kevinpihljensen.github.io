@@ -15,6 +15,7 @@
 // reads them at import time so the meshes exist before the first frame.
 
 import * as THREE from 'three';
+import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { scene } from './scene.js';
 import { state, player, game } from './state.js';
 import {
@@ -51,12 +52,19 @@ const HEALTH_WHITE = new THREE.MeshStandardMaterial({
   roughness: 0.5, metalness: 0.0,
 });
 
-function buildHealthMesh() {
+// Target on-screen size for the health pickup, regardless of source-model
+// scale: fit the longest bounding-box axis into HEALTH_TARGET_SIZE metres so
+// the player always sees a roughly similar-sized object regardless of how the
+// asset was authored.
+const HEALTH_TARGET_SIZE = 0.55;
+
+function buildHealthFallbackMesh() {
+  // Procedural placeholder shown until the glb finishes loading, AND used as
+  // a fallback if the load fails (404 / decode error). Red cube + white cross,
+  // same as the original procedural version.
   const g = new THREE.Group();
-  // Red base cube
   const base = new THREE.Mesh(new THREE.BoxGeometry(0.36, 0.36, 0.36), HEALTH_RED);
   g.add(base);
-  // White cross on top: two thin perpendicular boxes
   const arm1 = new THREE.Mesh(new THREE.BoxGeometry(0.40, 0.08, 0.10), HEALTH_WHITE);
   arm1.position.y = 0.10;
   g.add(arm1);
@@ -64,6 +72,67 @@ function buildHealthMesh() {
   arm2.position.y = 0.10;
   g.add(arm2);
   return g;
+}
+
+// Build a health-pickup mesh from the loaded medkit GLTF scene. The source
+// can be authored at any scale and may not be centred on its origin; we
+// normalise both: compute the bounding box, recentre on XZ + drop to y=0,
+// then uniformly scale so the longest axis is HEALTH_TARGET_SIZE.
+function buildHealthMeshFromGLTF(gltfScene) {
+  const g = new THREE.Group();
+  const m = gltfScene.clone(true);
+  // Normalise origin + size.
+  const box = new THREE.Box3().setFromObject(m);
+  const size = new THREE.Vector3(); box.getSize(size);
+  const center = new THREE.Vector3(); box.getCenter(center);
+  const longest = Math.max(size.x, size.y, size.z) || 1;
+  const s = HEALTH_TARGET_SIZE / longest;
+  // Translate so the model is centred on (0, half-height-up, 0) — the pickup
+  // hovers via the parent group, so we want the model to sit on its own base.
+  m.position.set(-center.x * s, (-box.min.y) * s, -center.z * s);
+  m.scale.setScalar(s);
+  g.add(m);
+  return g;
+}
+
+// Loaded medkit scene template. Populated asynchronously by loadHealthModel;
+// every health pickup that exists by then gets its mesh swapped in-place.
+// New pickups built after this is set use the model directly.
+let medkitScene = null;
+
+function loadHealthModel() {
+  const loader = new GLTFLoader();
+  loader.load('assets/models/medkit.glb', (gltf) => {
+    medkitScene = gltf.scene;
+    // Replace every existing health pickup's mesh with the loaded model.
+    // Preserves the pickup's runtime state (collected/respawn/phase) and
+    // current visibility — we only swap the rendered Group.
+    for (const p of pickups) {
+      if (p.kind !== 'health') continue;
+      const replacement = buildHealthMeshFromGLTF(medkitScene);
+      replacement.position.copy(p.group.position);
+      replacement.rotation.copy(p.group.rotation);
+      replacement.visible = p.group.visible;
+      scene.remove(p.group);
+      // Dispose the placeholder geometry/materials we built — the shared
+      // HEALTH_RED/HEALTH_WHITE materials are kept (still referenced by the
+      // module-level fallback) but the placeholder geometries are unique.
+      p.group.traverse((obj) => { if (obj.isMesh) obj.geometry.dispose(); });
+      scene.add(replacement);
+      p.group = replacement;
+    }
+  }, undefined, (err) => {
+    // Load failure: leave the procedural placeholder in place. Logged to the
+    // console so a 404 / decode error is visible, but the game keeps running.
+    console.warn('pickups: failed to load medkit.glb — using procedural fallback', err);
+  });
+}
+
+function buildHealthMesh() {
+  // If the model loaded before this pickup was built (it won't on first run,
+  // but resetPickups + future dynamic spawns might), use it directly.
+  if (medkitScene) return buildHealthMeshFromGLTF(medkitScene);
+  return buildHealthFallbackMesh();
 }
 
 function buildWeaponMesh(what) {
@@ -185,5 +254,8 @@ export function updatePickups(dt) {
 }
 
 // Build the meshes at import time — same pattern as arena.js (build the world
-// before the first frame so the loop has everything to render).
+// before the first frame so the loop has everything to render). The medkit
+// glb is fetched async; until it's ready, health pickups show the procedural
+// fallback. Once loaded, every existing health pickup is swapped in-place.
 spawnAllPickups();
+loadHealthModel();
