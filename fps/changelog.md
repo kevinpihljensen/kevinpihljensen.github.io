@@ -26,6 +26,27 @@ Format: newest entries at the top. Each entry lists what was added, what was cha
 
 ## Session log
 
+### 2026-05-17 — Session 48 (Pickups: closer-to-ground hover + real weapon view-models)
+
+Two user-driven adjustments to the Session 46–47 pickup work.
+
+**Hover lowered (`constants.js`).** `PICKUP_HOVER_HEIGHT` 0.9 → 0.35 so pickups float just above the surface instead of at chest height. Still positive (no clipping into the floor) and still safely within `PICKUP_VERT_TOL = 1.6` (hover + bob = 0.45 ≪ 1.6) so the proximity gate is unaffected — `harness_pickups` checks both invariants and stays green.
+
+**Weapon pickups now use the actual gun models.** Exported the existing view-model builders (`buildPistolModel`, `buildShotgunModel`, `buildSmgModel`, `buildSniperModel`, `buildSawModel`) from `weapons.js`. `pickups.buildWeaponMesh` now calls the appropriate builder, strips the camera-space first-person position offset, bbox-normalises to `WEAPON_TARGET_SIZE = 0.7 m` (so all four guns read at a consistent size despite different authored extents), and recentres. The torus + octahedron placeholder is replaced; a smaller coloured base ring (matching the per-weapon colour code) is kept under the gun as a pickup-zone hint. Single source of truth: changing a gun's geometry now updates both the held weapon and its pickup automatically.
+
+**Verified.** Battery still ALL GREEN (10 harnesses, 183 assertions, MAP OK). Renderer-side correctness is still a browser thing — bbox normalisation should size each gun consistently regardless of authoring scale, but if a particular weapon reads at a weird orientation it needs a one-line `m.rotation.set(...)` per-builder tweak. Knife pickup intentionally not added (knife is always-available, never locked).
+
+**Changed**
+- `src/constants.js` — `PICKUP_HOVER_HEIGHT` 0.9 → 0.35.
+- `src/weapons.js` — `export` on `buildPistolModel`/`buildShotgunModel`/`buildSmgModel`/`buildSniperModel`/`buildSawModel`.
+- `src/pickups.js` — `buildWeaponMesh` rewritten to use the real model + base ring; added `WEAPON_TARGET_SIZE`, `WEAPON_MODEL_BUILDERS`, `buildPickupBaseRing`.
+
+**Known issues**
+- Visual orientation / scale of each weapon pickup is browser-only verification, same caveat as the medkit (Session 47).
+- The base-ring colour code is now arguably redundant with the gun model itself — could be removed if the rings look noisy in play, but I left them for the "pickup zone" hint.
+
+---
+
 ### 2026-05-17 — Session 47 (Custom asset: classic medkit .glb for health pickups)
 
 First authored 3D asset in the project. User uploaded `220a9cef-classic_med_kit.glb` (~1.58 MB); placed at `fps/assets/models/medkit.glb` so it lives under the existing `assets/` tree alongside the audio samples. This is a deliberate deviation from CLAUDE.md §2's "geometry is procedural" rule — `CLAUDE.md` was updated to reflect the new contract so the next session doesn't strip the asset thinking it's an accident.

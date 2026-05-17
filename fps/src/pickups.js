@@ -25,7 +25,10 @@ import {
   HEALTH_PICKUP_AMOUNT,
 } from './constants.js';
 import { PICKUPS as PICKUP_LAYOUT } from './maplayout.js';
-import { WEAPON_DEFS, unlockWeapon } from './weapons.js';
+import {
+  WEAPON_DEFS, unlockWeapon,
+  buildShotgunModel, buildSmgModel, buildSniperModel, buildSawModel,
+} from './weapons.js';
 import { sfxWeaponUnlock, sfxScopeOn } from './audio.js';
 import { showToast } from './hud.js';
 
@@ -135,26 +138,69 @@ function buildHealthMesh() {
   return buildHealthFallbackMesh();
 }
 
+// Target on-screen size for weapon pickups: bbox-normalise so every weapon
+// reads at a similar scale regardless of how the view-model was authored. The
+// view models are tiny (camera-space first-person scale, ~0.3-0.5 m extent);
+// without normalisation a shotgun on the ground looks like a pencil. Slightly
+// larger than HEALTH_TARGET_SIZE because guns are long+thin.
+const WEAPON_TARGET_SIZE = 0.7;
+
+const WEAPON_MODEL_BUILDERS = {
+  shotgun: buildShotgunModel,
+  smg:     buildSmgModel,
+  sniper:  buildSniperModel,
+  saw:     buildSawModel,
+};
+
+// Build a small coloured ring at the pickup's base that identifies the weapon
+// and gives the player a visual cue for the pickup zone. The actual gun model
+// floats above it.
+function buildPickupBaseRing(colour) {
+  const ringMat = new THREE.MeshStandardMaterial({
+    color: colour, emissive: colour, emissiveIntensity: 0.9,
+    roughness: 0.4, metalness: 0.2, transparent: true, opacity: 0.85,
+  });
+  const ring = new THREE.Mesh(new THREE.TorusGeometry(0.30, 0.035, 8, 24), ringMat);
+  ring.rotation.x = Math.PI / 2;
+  return ring;
+}
+
 function buildWeaponMesh(what) {
   const info = WEAPON_PICKUP_INFO[what];
-  const c = info ? info.color : 0xffffff;
+  const colour = info ? info.color : 0xffffff;
+  const builder = WEAPON_MODEL_BUILDERS[what];
   const g = new THREE.Group();
-  // Glowing ring (the "summon" pad)
-  const ringMat = new THREE.MeshStandardMaterial({
-    color: c, emissive: c, emissiveIntensity: 0.9,
-    roughness: 0.4, metalness: 0.2, transparent: true, opacity: 0.95,
-  });
-  const ring = new THREE.Mesh(new THREE.TorusGeometry(0.40, 0.05, 8, 24), ringMat);
-  ring.rotation.x = Math.PI / 2;
+  // Base ring (color-coded pickup-zone hint at the bottom of the float).
+  const ring = buildPickupBaseRing(colour);
+  ring.position.y = -0.20;            // sits just below the gun
   g.add(ring);
-  // Floating crystal core: octahedron in the same colour
-  const coreMat = new THREE.MeshStandardMaterial({
-    color: c, emissive: c, emissiveIntensity: 1.1,
-    roughness: 0.25, metalness: 0.6,
-  });
-  const core = new THREE.Mesh(new THREE.OctahedronGeometry(0.22, 0), coreMat);
-  core.position.y = 0.05;
-  g.add(core);
+  // Actual weapon model. Each builder returns a THREE.Group authored for
+  // first-person view-model placement (it has a baked-in camera-space position
+  // offset). For a world pickup we reset that offset, then bbox-normalise so
+  // every weapon reads at WEAPON_TARGET_SIZE.
+  if (builder) {
+    const m = builder();
+    m.position.set(0, 0, 0);          // strip the first-person camera offset
+    m.rotation.set(0, 0, 0);
+    const box = new THREE.Box3().setFromObject(m);
+    const size = new THREE.Vector3(); box.getSize(size);
+    const center = new THREE.Vector3(); box.getCenter(center);
+    const longest = Math.max(size.x, size.y, size.z) || 1;
+    const s = WEAPON_TARGET_SIZE / longest;
+    // Recentre on origin (XYZ) then bring the model's centroid up a touch so
+    // it floats nicely above the base ring. The parent group's spin will
+    // rotate the whole thing around Y, which reads well because the longest
+    // axis of every gun is roughly horizontal in the view-model orientation.
+    m.position.set(-center.x * s, -center.y * s + 0.05, -center.z * s);
+    m.scale.setScalar(s);
+    g.add(m);
+  } else {
+    // Unknown weapon key — fall back to a coloured cube so the bug is visible.
+    const fallbackMat = new THREE.MeshStandardMaterial({
+      color: colour, emissive: colour, emissiveIntensity: 0.6,
+    });
+    g.add(new THREE.Mesh(new THREE.BoxGeometry(0.4, 0.4, 0.4), fallbackMat));
+  }
   return g;
 }
 
