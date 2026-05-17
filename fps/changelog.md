@@ -26,6 +26,36 @@ Format: newest entries at the top. Each entry lists what was added, what was cha
 
 ## Session log
 
+### 2026-05-17 — Session 52 (CS-style knife slash: snappier strike, alternating arc, overhead stab)
+
+User feedback on S51's knife: the swing felt sluggish at the moment of impact. The S51 `_slashPhase` used a symmetric piecewise smoothstep — windup 0.0–0.3, slash 0.3–0.7, recovery 0.7–1.0 — and `smoothstep` eases the slash IN as well as OUT, so peak amplitude landed dead-centre at p≈0.5 with the velocity tapering toward the impact frame. CS-style knives whip the OTHER way: a quick wind-back, a snap forward, then a long weighty settle. Reshaped accordingly.
+
+**1. Reshaped `_slashPhase` (`weapons.js`).** Three phases, asymmetric, each with the right easing direction:
+- 0.00–0.18 — windup: ease-out (`1-(1-t)^2`), fast pull-back settling into pose
+- 0.18–0.40 — strike: ease-out, snap forward — peak amplitude lands at p=0.40
+- 0.40–1.00 — recovery: smoothstep, slow weighty return to ready
+
+Same total duration (`KNIFE_SWIPE_DURATION = 0.36 s`, untouched), and the function still takes the same `(p, atStart, atWindup, atSlash, atEnd)` signature so the call sites don't change shape — only the easings inside.
+
+**2. Alternating slash direction (`weapons.js`).** Added `wState.meleeSwingIndex`, bumped (modulo 1024) each time `tryFire` arms a melee swing. The view-model animation reads the index and flips a `dir ∈ {+1, -1}` factor on the x-translation and y/z-rotation components — so consecutive primary attacks sweep right→left, then left→right, then right→left, mirroring the CS:GO/CS2 primary cycle. Also added a small pitch component (`rotation.x`) so the arc is diagonal (down-across) rather than perfectly horizontal — reads more like a real swing.
+
+**3. Overhead stab every 4th swing (`weapons.js`).** When `meleeSwingIndex % 4 === 0` (and not the initial 0), the same `_slashPhase` machinery drives a different shape entirely: knife winds UP and BACK (positive `position.y`, negative `rotation.x`), then thrusts DOWN-AND-FORWARD (negative `position.y`, positive `rotation.x`, big `-z`). Breaks up the rhythm of repeated horizontal slashes.
+
+**4. Bumped slash amplitudes slightly (`weapons.js`).** Horizontal slash x-translation from ±0.06/-0.25 to ±0.08/-0.28; yaw from ±0.50/-1.40 to ±0.55/-1.55; roll from ±0.15/-0.30 to ±0.18/-0.38; added a small y-rise/dip and pitch arc. Makes the sweep cover more of the field of view without losing the hand-on-handle read.
+
+Strike math (`meleeStrike` → ray cast, damage, sfx) is unchanged. Cooldown, range, damage, speed buff, sfx — all untouched. Only the view-model animation timing/shape changed.
+
+**Verified.** Battery still ALL GREEN: 10 harnesses, 202 assertions, MAP OK. The harness covers knife damage/range/cooldown/speed-mult; nothing in the suite asserts the animation shape, so this is browser-only on the visual side and was tuned by feel.
+
+**Changed**
+- `src/weapons.js` — added `wState.meleeSwingIndex`; rewrote `_slashPhase` with asymmetric ease-out windup + ease-out snap + smoothstep recovery; rewrote the MELEE block in `updateViewModelTransform` with alternating-direction horizontal slash + every-4th overhead stab + diagonal pitch arc; `tryFire` bumps `meleeSwingIndex` before arming `meleeAnim`.
+
+**Known issues**
+- Slash amplitudes were tuned by feel (no in-browser session yet this turn). If the new arc reads as too wide or the overhead stab feels out of place, flag it and I'll dial.
+- The strike still registers damage on the same `tryFire` frame as before (p=0). Visually the peak amplitude is now at p≈0.40 (~144 ms in), so there's a subtle disconnect between when the hit registers and when the knife visually "connects". Aligning them would mean delaying `meleeStrike` by ~one-strike-phase — defer until playtest says it matters.
+
+---
+
 ### 2026-05-17 — Session 51 (Hands on every weapon + right-to-left knife slash)
 
 Two user-driven visual changes.
