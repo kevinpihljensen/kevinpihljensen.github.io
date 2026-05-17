@@ -26,6 +26,45 @@ Format: newest entries at the top. Each entry lists what was added, what was cha
 
 ## Session log
 
+### 2026-05-17 — Session 53 (Rambo bowie redesign + dedicated overhead stab)
+
+User feedback on S52: (a) the swing was still too complex / not committed enough, said an overhead stab would be easier to animate and feel better; (b) the M48-style cone tip "looks dumb"; wanted a Rambo-style knife instead. Both addressed.
+
+**1. Rambo-style knife model (`weapons.js`, `buildKnifeModel`).** Wholesale rebuild. Out: the angled 4-sided cone tip (the "weird tip"), the M48 spherical pommel, the glass-breaker spike on the back of the pommel, the red cross-guard accent. In:
+- Bigger main blade slab: 0.028 × 0.005 × 0.22 m (was 0.018 × 0.006 × 0.20)
+- **Clip-point tip** — a 4-sided `ConeGeometry(0.016, 0.07)` scaled to `y=0.32` to flatten it into a slab-thickness pyramid, rotated apex-forward, offset slightly toward the cutting edge so the spine appears to "clip" down to the point. Replaces the diamond-pyramid cone tip.
+- **Brass double-quillon guard** — main bar `BoxGeometry(0.058, 0.014, 0.022)` in `WMAT.brass()`, plus two flared end-caps for the rounded-quillon Rambo silhouette
+- **Hollow handle** — fatter cylinder (`r=0.015→0.014, h=0.122`) suggesting the survival-handle thickness
+- **Paracord wrap** — 7 alternating dark/tan bands (added a local `cordTan` material since `WMAT.walnut` was too red)
+- **Brass pommel cap** — flat 12-sided cylinder (`WMAT.brass()`); plus a **dark compass disk** on the rear face for the iconic Rambo compass detail
+- **Sawback spine** — 9 chunky 3-sided teeth running most of the spine length (was 6 small ones)
+- **Recessed fuller** — kept, slightly bigger
+- Hand position lightly nudged to match the new handle Z range
+
+The whole knife group sits at the same `position` and `rotation` as before, so view-model offsets and the muzzle-flash table don't need updating.
+
+**2. Dedicated overhead stab (`weapons.js`, `updateViewModelTransform`).** S52's alternating-arc + every-4th-stab branching was over-engineered. Replaced with a SINGLE, FIXED overhead-stab motion every swing — same animation every time, like a brutal hammer-grip strike. Phase shape uses the existing `_slashPhase` (ease-out windup → ease-out snap → smoothstep recovery), so the impact frame still lands at p≈0.40:
+- WINDUP: position rises (`y +0.14`) + pulls back (`z +0.08`); wrist rolls back (`rotation.x -0.85`) so the blade points up overhead
+- STRIKE: position drops (`y -0.10`) + thrusts forward (`z -0.26`); wrist snaps down (`rotation.x +0.75`) so the blade leads the stab forward
+- RECOVER: smoothstep back to ready
+
+No yaw component, no horizontal sweep — purely a sagittal (forward-back, up-down) motion. Removed `wState.meleeSwingIndex` and its `tryFire` increment (dead state now). The MELEE block is ~12 lines instead of ~25.
+
+Strike math (`meleeStrike` → ray cast, damage, sfx) is unchanged. Cooldown, range, damage, speed buff, sfx — all untouched. Only the view-model geometry and animation changed.
+
+**Verified.** Battery still ALL GREEN: 10 harnesses, 202 assertions, MAP OK. The harness covers knife damage/range/cooldown/speed-mult; no animation/geometry coverage. Tuning was by feel — both the model proportions and the stab amplitudes will likely need a dial in a playtest.
+
+**Changed**
+- `src/weapons.js` — `buildKnifeModel` fully rewritten with a Rambo bowie design (clip-point tip, brass quillon guard, paracord-wrapped hollow handle, brass pommel cap with compass face, fuller sawback spine); MELEE block in `updateViewModelTransform` reduced to a single overhead-stab motion; removed `wState.meleeSwingIndex` and its increment in `tryFire`.
+
+**Known issues**
+- All geometry tuned by feel; the clip-point tip in particular is a flat 4-sided pyramid rather than a true clip cut (real clip points have an asymmetric profile that can't be done with vanilla primitives without ExtrudeGeometry — flag if it still reads off and we'll go to a custom geometry).
+- Strike registers on the same `tryFire` frame as before (p=0); the visual peak amplitude lands at p≈0.40 (~144 ms in). Disconnect persists; deferred until playtest says it matters.
+- The compass face is a flat disk — there's no painted N/S/E/W ring, just a dark cap. Adding cardinal marks would need a texture; the current code stays texture-free.
+- This change SUPERSEDES the parallel S52b knife model rebuild (which fixed the same "weird tip" in-place via geometry-baked rotation + scale.y squash). The S52b sniper z-fight fixes were preserved during the merge; only the knife-model portion of S52b was overwritten. See the S52b entry below for context on the sniper fix.
+
+---
+
 ### 2026-05-17 — Session 52b (Sniper z-fight fixes + knife model rebuild — layered onto the S52 animation work)
 
 A parallel session shipped the CS-style knife slash improvements (S52: reshape `_slashPhase` for ease-out snap, alternating direction via `meleeSwingIndex`, every-4th overhead stab, diagonal pitch arc). This entry covers the two non-animation issues the user reported at the same time, which the parallel session didn't touch:
@@ -41,7 +80,7 @@ Right hand position dropped y -0.045 → -0.060 to follow the moved grip.
 
 While there, cleaned up the blade itself: dropped the saw-teeth boxes (never quite read as teeth) and the small disjoint fuller bar; replaced with a single longer fuller groove on one face. Widened blade slightly (0.018 → 0.024) so the proportions read more like a combat knife. Kept the paracord wrap, pommel, lanyard hole, glass-breaker spike, and red-accent flair.
 
-**Merge.** Both this session and the parallel S52 produced overlapping weapons.js diffs. Resolution kept the parallel session's `_slashPhase` reshape + alternating-direction + overhead-stab in the animation block (already shipped + more elaborate), and this session's sniper z-fix + knife model rebuild stand independently elsewhere in the file. No animation logic from this session ended up in main.
+**Merge.** Both this session and the parallel S52 produced overlapping weapons.js diffs. Resolution kept the parallel session's `_slashPhase` reshape + alternating-direction + overhead-stab in the animation block (already shipped + more elaborate), and this session's sniper z-fix + knife model rebuild stand independently elsewhere in the file. No animation logic from this session ended up in main. The knife model portion of this entry was then SUPERSEDED by S53's full Rambo redesign — the sniper z-fight fixes survive.
 
 **Verified.** Battery still ALL GREEN: 10 harnesses, 202 assertions, MAP OK.
 
