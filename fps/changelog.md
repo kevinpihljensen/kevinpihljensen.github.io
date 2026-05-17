@@ -26,6 +26,30 @@ Format: newest entries at the top. Each entry lists what was added, what was cha
 
 ## Session log
 
+### 2026-05-17 — Session 52b (Sniper z-fight fixes + knife model rebuild — layered onto the S52 animation work)
+
+A parallel session shipped the CS-style knife slash improvements (S52: reshape `_slashPhase` for ease-out snap, alternating direction via `meleeSwingIndex`, every-4th overhead stab, diagonal pitch arc). This entry covers the two non-animation issues the user reported at the same time, which the parallel session didn't touch:
+
+**1. Sniper clipping between brown and black parts.** The walnut stock's z-range (z 0.09 → 0.35) overlapped with the receiver's (z -0.10 → 0.10) at z=0.09–0.10 — a coplanar surface battle on the depth buffer that flickers under camera motion. Same problem with the comb base sharing the receiver-top plane, and the walnut grip top poking above the receiver bottom. Three small offsets push each interface apart by 5–10 mm:
+- stock: z 0.22 → 0.245 (front edge moves back from z=0.09 to z=0.115)
+- comb: y 0.06 → 0.067, z 0.17 → 0.195
+- grip: y -0.07 → -0.090
+
+Right hand position dropped y -0.045 → -0.060 to follow the moved grip.
+
+**2. Knife model — disembodied tip + cleaner blade.** The old tip was a 4-sided cone with `rotation.x = π/2` (pointing the apex TOWARD the camera, not forward) and `rotation.y = π/4` (45° spin) — what the player saw was a square wedge floating off the front of the blade at the wrong angle. Fix: bake the rotation into the geometry via `tipGeom.rotateX(-Math.PI/2)` + `tipGeom.rotateZ(Math.PI/4)`, then `scale.y = 0.255` to squash the cone's cross-section to match the blade's flat profile (cone is now blade-shaped, not square-shaped). Base sits flush at z = blade-end. A second narrower tip mesh continues the bright cutting bevel from the blade into the tip.
+
+While there, cleaned up the blade itself: dropped the saw-teeth boxes (never quite read as teeth) and the small disjoint fuller bar; replaced with a single longer fuller groove on one face. Widened blade slightly (0.018 → 0.024) so the proportions read more like a combat knife. Kept the paracord wrap, pommel, lanyard hole, glass-breaker spike, and red-accent flair.
+
+**Merge.** Both this session and the parallel S52 produced overlapping weapons.js diffs. Resolution kept the parallel session's `_slashPhase` reshape + alternating-direction + overhead-stab in the animation block (already shipped + more elaborate), and this session's sniper z-fix + knife model rebuild stand independently elsewhere in the file. No animation logic from this session ended up in main.
+
+**Verified.** Battery still ALL GREEN: 10 harnesses, 202 assertions, MAP OK.
+
+**Changed**
+- `src/weapons.js` — sniper stock/comb/grip moved; sniper right-hand y dropped; knife model rebuilt with correctly-oriented tip + scale.y for blade-shape cross-section.
+
+---
+
 ### 2026-05-17 — Session 52 (CS-style knife slash: snappier strike, alternating arc, overhead stab)
 
 User feedback on S51's knife: the swing felt sluggish at the moment of impact. The S51 `_slashPhase` used a symmetric piecewise smoothstep — windup 0.0–0.3, slash 0.3–0.7, recovery 0.7–1.0 — and `smoothstep` eases the slash IN as well as OUT, so peak amplitude landed dead-centre at p≈0.5 with the velocity tapering toward the impact frame. CS-style knives whip the OTHER way: a quick wind-back, a snap forward, then a long weighty settle. Reshaped accordingly.
