@@ -127,13 +127,8 @@ export const wState = {
   // SAW progressive inaccuracy: extra spread (radians) accumulated by
   // sustained fire, recovered when not firing. 0 for all other weapons.
   bloom: 0,
-  // Knife swipe animation timer (drives the view-model lunge).
+  // Knife swipe animation timer (drives the view-model overhead stab).
   meleeAnim: 0,
-  // S52: alternating-slash counter. Each swipe increments this; the view-model
-  // animation flips the slash arc on odd vs even swings so consecutive attacks
-  // sweep right→left then left→right (CS-style). Also drives a small overhead
-  // stab variant every fourth swing for extra variety.
-  meleeSwingIndex: 0,
   // S50: persistent reload-time storage (the per-weapon w.reloadTime) so the
   // reload animation knows how long the current reload is even after we tick
   // reloadTimer down. Set by tryReload, read by updateViewModelTransform.
@@ -707,76 +702,117 @@ export function buildSawModel() {
   return g;
 }
 function buildKnifeModel() {
+  // S53: Rambo-style survival bowie — larger clip-point blade, full sawback
+  // spine, brass double-quillon guard, paracord-wrapped hollow handle, brass
+  // pommel cap with compass face. Local frame: cutting edge faces +X, spine
+  // faces -X, blade thickness is Y, length is along Z (forward = -Z).
   const g = new THREE.Group();
-  // Blade body (polished steel)
-  const blade = new THREE.Mesh(new THREE.BoxGeometry(0.018, 0.006, 0.20), WMAT.polishedSteel());
-  blade.position.set(0, 0, -0.13);
+
+  // Main blade body — wider and longer than before. The slab is flat on
+  // the Y axis; X is the cutting-edge-to-spine span; Z is length.
+  const blade = new THREE.Mesh(
+    new THREE.BoxGeometry(0.028, 0.005, 0.22), WMAT.polishedSteel());
+  blade.position.set(0, 0, -0.15);
   g.add(blade);
-  // Bevel / edge — slightly brighter strip running down the cutting edge
-  const bevel = new THREE.Mesh(new THREE.BoxGeometry(0.006, 0.005, 0.20),
-                               wmat({ color: 0xe6e9ef, roughness: 0.15, metalness: 0.85 }));
-  bevel.position.set(0.008, 0, -0.13);
-  g.add(bevel);
-  // Point — angled cone tip
-  const tip = new THREE.Mesh(new THREE.ConeGeometry(0.012, 0.05, 4), WMAT.polishedSteel());
-  tip.rotation.set(Math.PI / 2, Math.PI / 4, 0);
-  tip.position.set(0, 0, -0.255);
-  g.add(tip);
-  // Cross guard
-  const cg = new THREE.Mesh(new THREE.BoxGeometry(0.045, 0.012, 0.018), WMAT.darkSteel());
-  cg.position.set(0, 0, -0.025);
-  g.add(cg);
-  // Handle core — dark polymer
-  const handle = new THREE.Mesh(new THREE.CylinderGeometry(0.013, 0.011, 0.11, 8), WMAT.polymer());
-  handle.rotation.x = Math.PI / 2;
-  handle.position.set(0, 0, 0.045);
-  g.add(handle);
-  // Pommel — small heavy cap
-  const pommel = new THREE.Mesh(new THREE.SphereGeometry(0.013, 8, 6), WMAT.darkSteel());
-  pommel.position.set(0, 0, 0.105);
-  g.add(pommel);
-  // --- M48 detail additions ---
-  // Blade fuller — narrow recessed groove running most of the blade length.
-  // Modelled as a slightly darker (so it reads "recessed") inset bar.
-  const fuller = new THREE.Mesh(new THREE.BoxGeometry(0.004, 0.003, 0.16), WMAT.darkSteel());
-  fuller.position.set(-0.003, 0.002, -0.15);
+
+  // Hollow fuller — recessed darker stripe along the spine half of the blade.
+  const fuller = new THREE.Mesh(
+    new THREE.BoxGeometry(0.006, 0.0035, 0.18), WMAT.darkSteel());
+  fuller.position.set(-0.006, 0.0015, -0.15);
   g.add(fuller);
-  // Saw-back teeth on the spine of the blade — 6 small cone notches
-  for (let i = 0; i < 6; i++) {
-    const tooth = new THREE.Mesh(new THREE.ConeGeometry(0.0035, 0.012, 3), WMAT.polishedSteel());
-    tooth.rotation.x = Math.PI / 2;
-    tooth.position.set(-0.009, 0.003, -0.06 - i * 0.024);
+
+  // Cutting-edge bevel — bright polished strip running the full edge.
+  const bevel = new THREE.Mesh(
+    new THREE.BoxGeometry(0.006, 0.0045, 0.22),
+    wmat({ color: 0xe6e9ef, roughness: 0.15, metalness: 0.9 }));
+  bevel.position.set(0.013, 0, -0.15);
+  g.add(bevel);
+
+  // CLIP-POINT TIP — a flat 4-sided pyramid scaled thin in Y so it reads as
+  // a continuation of the blade slab, slightly offset toward the cutting
+  // edge so the spine appears to "clip" down to the point.
+  const tip = new THREE.Mesh(
+    new THREE.ConeGeometry(0.016, 0.07, 4), WMAT.polishedSteel());
+  tip.scale.set(1.0, 0.32, 1.0);
+  tip.rotation.x = -Math.PI / 2;          // apex points -Z (forward)
+  tip.rotation.z = Math.PI / 4;           // align flat face with the slab
+  tip.position.set(0.003, 0, -0.295);
+  g.add(tip);
+
+  // SAWBACK SPINE — 9 chunky 3-sided teeth running most of the spine.
+  // Bigger and more aggressive than the M48 sawback.
+  for (let i = 0; i < 9; i++) {
+    const tooth = new THREE.Mesh(
+      new THREE.ConeGeometry(0.0055, 0.014, 3), WMAT.polishedSteel());
+    tooth.rotation.z = -Math.PI / 2;      // tooth points along -X (out the spine)
+    tooth.position.set(-0.020, 0.002, -0.07 - i * 0.022);
     g.add(tooth);
   }
-  // Paracord wrap on the handle — alternating dark/light bands
-  for (let i = 0; i < 6; i++) {
+
+  // DOUBLE-QUILLON BRASS GUARD — wide bar plus two flared end-caps. The
+  // small caps push beyond the main bar to create the classic Rambo guard
+  // silhouette with rounded ends.
+  const guard = new THREE.Mesh(
+    new THREE.BoxGeometry(0.058, 0.014, 0.022), WMAT.brass());
+  guard.position.set(0, 0, -0.030);
+  g.add(guard);
+  for (const sx of [+1, -1]) {
+    const quillon = new THREE.Mesh(
+      new THREE.BoxGeometry(0.009, 0.018, 0.016), WMAT.brass());
+    quillon.position.set(0.030 * sx, 0, -0.030);
+    g.add(quillon);
+  }
+
+  // HOLLOW HANDLE core — fatter cylinder than before, slight taper toward
+  // the pommel suggests the iconic Rambo hollow survival handle.
+  const handle = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.015, 0.014, 0.122, 10), WMAT.polymer());
+  handle.rotation.x = Math.PI / 2;
+  handle.position.set(0, 0, 0.051);
+  g.add(handle);
+
+  // PARACORD WRAP — 7 alternating dark/tan bands; reads as the wrapped
+  // grip rather than a smooth handle.
+  const cordTan = wmat({ color: 0x6a4a2a, roughness: 0.86, metalness: 0.02 });
+  for (let i = 0; i < 7; i++) {
     const isDark = i % 2 === 0;
-    const ringMat = isDark ? WMAT.polymer() : wmat({ color: 0x9a9591, roughness: 0.85, metalness: 0.04 });
-    const wrap = new THREE.Mesh(new THREE.CylinderGeometry(0.014, 0.012, 0.018, 8), ringMat);
+    const wrap = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.0165, 0.015, 0.017, 10),
+      isDark ? WMAT.polymer() : cordTan);
     wrap.rotation.x = Math.PI / 2;
-    wrap.position.set(0, 0, 0.0 + i * 0.018);
+    wrap.position.set(0, 0, 0.000 + i * 0.017);
     g.add(wrap);
   }
-  // Lanyard hole through the pommel (small dark cylinder passing through)
-  const lanyard = new THREE.Mesh(new THREE.CylinderGeometry(0.0035, 0.0035, 0.020, 8), WMAT.rubber());
+
+  // BRASS POMMEL CAP — heavier flat-faced cap; replaces the spherical
+  // pommel + glass-breaker spike of the M48 design.
+  const pommel = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.017, 0.016, 0.020, 12), WMAT.brass());
+  pommel.rotation.x = Math.PI / 2;
+  pommel.position.set(0, 0, 0.122);
+  g.add(pommel);
+
+  // COMPASS face — small dark disk on the rear of the pommel (signature
+  // Rambo survival-knife detail).
+  const compass = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.011, 0.011, 0.003, 14),
+    wmat({ color: 0x0d1014, roughness: 0.35, metalness: 0.25 }));
+  compass.rotation.x = Math.PI / 2;
+  compass.position.set(0, 0, 0.134);
+  g.add(compass);
+
+  // LANYARD HOLE through the pommel cap.
+  const lanyard = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.004, 0.004, 0.024, 8), WMAT.rubber());
   lanyard.rotation.z = Math.PI / 2;
-  lanyard.position.set(0, 0, 0.110);
+  lanyard.position.set(0, -0.005, 0.122);
   g.add(lanyard);
-  // Glass-breaker spike sticking out the back of the pommel
-  const spike = new THREE.Mesh(new THREE.ConeGeometry(0.005, 0.020, 4), WMAT.polishedSteel());
-  spike.rotation.x = -Math.PI / 2;
-  spike.position.set(0, 0, 0.128);
-  g.add(spike);
-  // Small red accent on the cross guard (signature flair)
-  const accent = new THREE.Mesh(new THREE.BoxGeometry(0.046, 0.003, 0.003), WMAT.redAccent());
-  accent.position.set(0, -0.006, -0.025);
-  g.add(accent);
-  // S51: right hand gripping the knife handle. Knife handle is a cylinder
-  // along the Z axis at z=0.045; the hand wraps it. The slash anim swings
-  // the whole knife group so the hand stays with the knife throughout.
+
+  // Right hand gripping the handle (S51).
   const rHand = buildHand({ side: 'right' });
-  rHand.position.set(0.008, -0.005, 0.060);
+  rHand.position.set(0.008, -0.005, 0.062);
   g.add(rHand);
+
   g.position.set(0.17, -0.15, -0.34);
   g.rotation.set(0.10, -0.12, 0);
   return g;
@@ -1116,43 +1152,28 @@ function updateViewModelTransform(dt) {
     }
   }
 
-  // 4. MELEE slash (knife) — S52 CS-style swing.
-  //   Phases (see _slashPhase): WINDUP (0→0.18), STRIKE (0.18→0.40),
-  //   RECOVER (0.40→1.0). The strike snaps forward early so the impact
-  //   frame feels punchy, then the knife eases back to a ready pose.
+  // 4. MELEE — S53 overhead stab.
+  //   Phases (see _slashPhase): WINDUP (0→0.18) the knife rises up and
+  //   pulls back, the blade pitches up so the point faces the sky;
+  //   STRIKE (0.18→0.40) the knife thrusts forward-and-down hard, blade
+  //   pitches down to lead the stab; RECOVER (0.40→1.0) eases the whole
+  //   thing back to ready. Single fixed motion (no alternating arc) —
+  //   the same stab every swing, like a brutal hammer-grip strike.
   //
-  //   Swings alternate direction (right→left then left→right) on
-  //   consecutive primaries — wState.meleeSwingIndex flips dir each swipe.
-  //   Every fourth swing is an OVERHEAD STAB instead of a horizontal
-  //   slash: the knife pulls high, then thrusts down-and-forward.
-  //
-  //   The whole knife group (blade + handle + hand) animates together so
-  //   the hand looks like it's holding the knife throughout.
+  //   The whole knife group (blade + handle + hand) moves as one, so the
+  //   hand stays gripping the handle the entire time.
   if (key === 'knife' && wState.meleeAnim > 0) {
     const p = 1 - wState.meleeAnim / KNIFE_SWIPE_DURATION;
-    const swingN = wState.meleeSwingIndex;
-    const isStab = (swingN > 0) && (swingN % 4 === 0);
-    if (isStab) {
-      // Overhead stab — wind up high and back, then thrust forward + down.
-      m.position.x += _slashPhase(p, 0, -0.02, +0.02, 0);
-      m.position.y += _slashPhase(p, 0, +0.10, -0.07, 0);
-      m.position.z += _slashPhase(p, 0, +0.06, -0.22, 0);
-      m.rotation.x += _slashPhase(p, 0, -0.55, +0.65, 0);
-      m.rotation.z += _slashPhase(p, 0, +0.05, -0.08, 0);
-    } else {
-      // Horizontal slash — direction alternates each swing. dir = +1 means
-      // pull right then sweep left (S51 original); dir = -1 mirrors it.
-      const dir = (swingN % 2 === 1) ? +1 : -1;
-      m.position.x += _slashPhase(p, 0, +0.08 * dir, -0.28 * dir, 0);
-      m.position.y += _slashPhase(p, 0, +0.05,       -0.04,       0);
-      m.position.z += _slashPhase(p, 0, -0.05,       +0.07,       0);
-      // Yaw sweep is the dominant motion; add a touch of pitch so the slash
-      // arcs diagonally (down-across) and a roll so the blade rotates into
-      // the cut like a real swing.
-      m.rotation.x += _slashPhase(p, 0, -0.18,        +0.22,       0);
-      m.rotation.y += _slashPhase(p, 0, +0.55 * dir, -1.55 * dir, 0);
-      m.rotation.z += _slashPhase(p, 0, +0.18 * dir, -0.38 * dir, 0);
-    }
+    // Position: up + back during windup, then down + forward on the strike.
+    m.position.x += _slashPhase(p, 0,  0.00, -0.02, 0);
+    m.position.y += _slashPhase(p, 0, +0.14, -0.10, 0);
+    m.position.z += _slashPhase(p, 0, +0.08, -0.26, 0);
+    // Rotation: negative rotation.x rolls the wrist back so the blade points
+    // up overhead during windup; positive rotation.x pitches it down at the
+    // strike peak so the blade leads forward into the target. A tiny roll
+    // adds wrist motion so the stab doesn't look mechanically rigid.
+    m.rotation.x += _slashPhase(p, 0, -0.85, +0.75, 0);
+    m.rotation.z += _slashPhase(p, 0, +0.10, -0.06, 0);
   }
 }
 
@@ -1180,13 +1201,9 @@ export function tryFire() {
 
   const w = WEAPON_DEFS[wState.currentWeapon];
 
-  // --- MELEE (knife): no ammo, short reach, swipe ---
+  // --- MELEE (knife): no ammo, short reach, overhead stab ---
   if (w.melee) {
     wState.fireCooldown = 60 / w.rpm;
-    // S52: bump the swing index BEFORE starting the anim so the view-model
-    // path picks up the new direction this frame. Wrap so the counter can
-    // never overflow over a long session.
-    wState.meleeSwingIndex = (wState.meleeSwingIndex + 1) % 1024;
     wState.meleeAnim = KNIFE_SWIPE_DURATION;
     meleeStrike(w);
     w.sfxFire();
