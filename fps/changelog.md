@@ -26,6 +26,45 @@ Format: newest entries at the top. Each entry lists what was added, what was cha
 
 ## Session log
 
+### 2026-05-17 — Session 51 (Hands on every weapon + right-to-left knife slash)
+
+Two user-driven visual changes.
+
+**1. Hands on every weapon (`weapons.js`).** Added 3 new entries to the `WMAT` palette (`glove`, `cuff`, `sleeve`) and a `buildHand({side})` helper that returns a procedural fist + 4 knuckle ridges + thumb + wrist cuff + forearm sleeve as a single `THREE.Group`. Every weapon builder now adds 1 hand (pistol, knife) or 2 hands (shotgun, SMG, sniper, SAW) at the appropriate grip positions:
+- pistol: right hand on the polymer grip
+- shotgun: right on the trigger, left on the pump grip
+- SMG: right on the pistol grip, left on the magazine/foregrip
+- sniper: right on the wooden grip, left under the barrel/handguard
+- SAW: right on the pistol grip, left supporting under the barrel shroud
+- knife: right hand on the handle
+
+Each hand group is tagged `userData.isHand = true`. In `pickups.js`, `buildWeaponMesh` now walks the cloned builder output and REMOVES every `isHand` subtree before bbox-normalisation — pickups are guns on the ground, no hands attached, and removing (rather than hiding) keeps the hand bounds out of the size-normalisation calculation. Removed at clone-time means each pickup gets a fresh stripped copy; the held weapon's hands remain.
+
+The hand model is intentionally simple — a stylised fist that reads as "hand holding gun" without trying to compete with a hand-rigged authored asset. Knuckle ridges on the +Y/+Z corner, thumb angled by `side`, sleeve trailing back toward the camera. ~8 meshes per hand × 11 hands ≈ 88 extra meshes total in the held view-models (pickups are unaffected — they have zero hand meshes).
+
+**2. Knife slash rewrite (`weapons.js`, `constants.js`).** The old animation was a single forward lunge — gun translates in -Z, rolls slightly. Replaced with a proper right-to-left horizontal slash, three phases:
+- 0.0–0.3 — windup: knife pulls right (+X) and slightly back (-Z), rotates to face right
+- 0.3–0.7 — slash: sweeps from right to left across the field of view, slight forward thrust
+- 0.7–1.0 — recover: returns to ready
+
+Implemented via a new `_slashPhase(p, start, windup, slash, end)` piecewise smoothstep helper. Animation length bumped from 0.22 s → `KNIFE_SWIPE_DURATION = 0.36 s` (still shorter than the 0.42 s cooldown so the visual completes before the next swipe is ready). Because the hand is part of the knife group, it swings with the knife throughout — the player sees the gloved fist arc across the screen.
+
+The strike math (`meleeStrike` → ray cast) is unchanged — it still fires on the same single frame as before (when `tryFire()` is called and `meleeAnim` is armed); only the visual changed.
+
+**Verified.** Battery still ALL GREEN: 10 harnesses, 202 assertions, MAP OK. The harnesses test the recoil/spray/reload math and the pickup proximity/respawn logic — none of them touch the new builder geometry. So this session is browser-only on the visual side: hand positions are approximate first pass, knife slash arc was tuned by feel. Both will likely need a tweak once seen in motion.
+
+**Changed**
+- `src/weapons.js` — added `WMAT.glove` / `WMAT.cuff` / `WMAT.sleeve`; added `buildHand({side})`; added 1–2 hand sub-groups to every weapon builder; added `_slashPhase` helper; replaced the knife lunge with a 3-phase right-to-left slash.
+- `src/constants.js` — added `KNIFE_SWIPE_DURATION` (0.36 s).
+- `src/pickups.js` — `buildWeaponMesh` strips `isHand` subtrees before bbox-normalising for pickup size.
+
+**Known issues**
+- Hand positions per weapon are approximate first guesses. If a hand floats off the grip or clips through the receiver on any gun, call it out (e.g. "SMG right hand is too far back") and I'll dial it.
+- The hand model is stylised — a single fist, no individual finger geometry. Good enough to read as "hand holding gun"; a fuller rigged hand would need an authored .glb.
+- Left-hand "mirroring" is approximate (the thumb side flips but the rest of the geometry is symmetric). If it reads as wrong-handed in play, a full mirror via `scale.x = -1` would work but inverts face winding (would need either `material.side = THREE.BackSide` or a separate left-hand builder).
+
+---
+
 ### 2026-05-17 — Session 50 (Feel pass: per-weapon spray patterns, view-model sway/bob/lag, procedural reload animations)
 
 User asked for closer-to-CS2 weapon feel. Honest scope-setting: matching CS2's polish fully would mean authored bone-rigged glb assets + PBR maps + HDR + multi-layer audio (months of work). What this session does is the 70% that is **pure code**: recoil that's a learnable pattern, a view-model that feels alive, and per-weapon procedural reload animations. Big perceived improvement, zero new assets.
