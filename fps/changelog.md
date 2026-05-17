@@ -26,6 +26,55 @@ Format: newest entries at the top. Each entry lists what was added, what was cha
 
 ## Session log
 
+### 2026-05-17 — Session 50 (Feel pass: per-weapon spray patterns, view-model sway/bob/lag, procedural reload animations)
+
+User asked for closer-to-CS2 weapon feel. Honest scope-setting: matching CS2's polish fully would mean authored bone-rigged glb assets + PBR maps + HDR + multi-layer audio (months of work). What this session does is the 70% that is **pure code**: recoil that's a learnable pattern, a view-model that feels alive, and per-weapon procedural reload animations. Big perceived improvement, zero new assets.
+
+**1. Per-weapon recoil patterns (`constants.js`, `weapons.js`, `player.js`).** Recoil is no longer a single decaying pitch value. `RECOIL_PATTERNS` defines a per-weapon list of `{p, y}` kicks (pitch + yaw, radians). `tryFire()` looks up `pattern[sprayIndex % length]`, adds the kick to both `wState.recoilPitch` and `wState.recoilYaw`, and increments `sprayIndex`. `RECOIL_RESET_TIME = 0.35 s` of not firing snaps `sprayIndex` back to 0 — so each new burst restarts the pattern, which is exactly what makes CS sprays learnable. Single-shot weapons (pistol/shotgun/sniper) get one-entry patterns; SMG has 12 shots; SAW has 15. Both pitch and yaw decay each frame via the existing `RECOIL_DECAY` so the camera returns to neutral when firing stops. Yaw is now applied to `camera.rotation.y` in `player.js` alongside the existing pitch. Switching weapons or resetting clears the spray.
+
+Pattern shape (chosen by feel, not lifted from CS): SMG peaks pitch in the first half of the burst and alternates horizontal direction over ~10 sign flips (verified by harness); SAW does the same but heavier (peaks pitch shot 4, then heavy lateral drift). The patterns wrap with modulo so a 100-round SAW burst stays bounded — last entries are smaller so net drift converges.
+
+**2. View-model sway / bob / lag (`constants.js`, `weapons.js`).** Each frame the active weapon's transform is composed by a new `updateViewModelTransform(dt)`:
+- **LAG** — `dYaw` and `dPitch` since last frame drive a small horizontal/vertical position offset (`VIEW_SWAY_LAG = 0.040`, capped at `VIEW_SWAY_MAX = 0.035 m`), decaying back to zero (`VIEW_SWAY_DECAY = 12 /s`). Turn the camera right, the gun lags left briefly, eases back.
+- **BOB** — figure-eight at footstep cadence (`VIEW_BOB_FREQ = 9 cycles/s`, `VIEW_BOB_AMP = 0.010 m`), scaled by horizontal movement speed (zero at standstill, peaks at sprint). Smoothed by a low-pass so the bob doesn't pop when grounded toggles.
+- **LAND DIP** — feet snapping onto a surface drops the gun by `VIEW_LAND_DIP = 0.040 m`, eased back up (`VIEW_LAND_DIP_DECAY = 9`). Triggered on the airborne→grounded transition.
+
+The whole thing composes against a captured `VIEW_MODEL_BASE` pose so it's stateless — each frame resets to the builder-set transform then adds the deltas. No drift.
+
+**3. Procedural reload animations (`weapons.js`).** Each builder now tags its animated part via `userData.reloadPart`:
+- pistol: `magBase` → `'mag'`
+- shotgun: `pumpMesh` → `'pump'`
+- SMG: `mag` → `'mag'`
+- sniper: `bolt` + `boltKnob` → `'bolt'`
+- SAW: `cover` → `'cover'`
+
+After view-models are built, a `RELOAD_PARTS` map walks each model to find its tagged parts and captures their base pose. While `wState.reloadTimer > 0`, `updateViewModelTransform` computes `progress = 1 - reloadTimer/reloadDuration` (0→1) and runs the matching anim:
+- **mag** — drops out (smoothstep 0.05–0.45), holds low (0.45–0.65), rises back in (0.65–0.95).
+- **pump** — two back-and-forward strokes spread across the reload window (`_triangleN` helper).
+- **bolt** — lift (rotate up, 0–0.20), pull back (0.20–0.55), push forward (0.55–0.85), lower (0.85–1.0).
+- **cover** — hinges open (0–0.25), holds open (0.25–0.75), hinges closed (0.75–1.0).
+
+The whole gun also tilts (`RELOAD_TILT_X`, `RELOAD_TILT_Z`) and dips (`RELOAD_DIP_Y`) during the reload, peaked on a `sin(πx)` hump so it eases in and out. Existing knife-swipe `meleeAnim` was folded into the same composition (was previously a separate write to `km.position.z`).
+
+`tryReload` now stores `wState.reloadDuration` so the anim knows the total length even after `reloadTimer` ticks down.
+
+**Verified.** Battery still ALL GREEN with the extended `harness_weapons.mjs`: 10 harnesses, **202 assertions** (+19). New assertions cover: `RECOIL_PATTERNS` shape + presence for every weapon, single-shot weapons have single-entry patterns, SMG/SAW have multi-entry, every entry has positive pitch + numeric yaw, at least one weapon has horizontal drift, SMG pitch peaks first half, SMG yaw alternates direction (≥3 sign flips), spray state machine (advance + reset after `RECOIL_RESET_TIME`, modulo wrap), and bounds on the new view-sway / reload-anim tunables.
+
+Still browser-only: the *feel* of the sway/bob/recoil/reload anims is subjective. Patterns and amplitudes can be tuned in `constants.js` once you've played with them.
+
+**Changed**
+- `src/constants.js` — `RECOIL_PATTERNS`, `RECOIL_RESET_TIME`; `VIEW_SWAY_*`, `VIEW_BOB_*`, `VIEW_LAND_DIP_*`; `RELOAD_TILT_*`, `RELOAD_DIP_Y`, `RELOAD_MAG_DROP`, `RELOAD_PUMP_TRAVEL`, `RELOAD_BOLT_*`, `RELOAD_COVER_OPEN`.
+- `src/weapons.js` — `wState` gained `recoilYaw`/`sprayIndex`/`sprayResetTimer`/`reloadDuration`; `tryFire` uses pattern lookup; `tryReload` stores duration; `updateWeaponTimers` decays yaw + ticks spray-reset + delegates to `updateViewModelTransform`; new `VIEW_MODEL_BASE` + `RELOAD_PARTS` maps; new `updateViewModelTransform` does sway/bob/dip + per-weapon reload anim + knife lunge composition; reload-animated parts tagged via `userData.reloadPart` in each builder; `switchWeapon` / `resetWeapons` clear the new fields.
+- `src/player.js` — `camera.rotation.y` now adds `wState.recoilYaw`.
+- `dev/harness_weapons.mjs` — +19 assertions on patterns, spray state machine, view tunables.
+
+**Known issues**
+- Pattern numbers, sway/bob amplitudes, reload phase boundaries are all in `constants.js`. Subjective feel — tell me what feels wrong (e.g. "SMG recoils too far right" or "SAW reload looks too long") and I'll dial.
+- The SAW cover hinge approximates the pivot by translating + rotating — close enough in motion but if you stare at it the cover lifts slightly off the rear edge. Could be fixed by re-parenting the cover under a pivot Group; left for later.
+- The sniper bolt animation is the most ambitious — lift, pull, push, lower in one stroke. If it reads as ambiguous, the lift could be removed and just slide.
+
+---
+
 ### 2026-05-17 — Session 49 (Weapon models: richer materials + ~5–8 new parts per gun)
 
 Per-weapon detail pass over all six builders. Two changes intersect: a shared **material palette** so every gun draws from the same vocabulary of metals/polymers/woods, and **additional silhouette-changing parts** so each weapon reads as a distinct, fully-detailed object rather than a primitive composition. Because the existing builders are the single source of truth for BOTH the first-person view model and the world pickup (Session 48), all six are now noticeably richer in both contexts at once.

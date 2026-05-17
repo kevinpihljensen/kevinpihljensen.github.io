@@ -96,6 +96,67 @@ export const RECOIL_SMG = 0.022;
 export const RECOIL_SNIPER = 0.080;
 export const RECOIL_SAW = 0.030;   // M249: medium, between SMG and shotgun
 
+// --- RECOIL PATTERNS (Session 50) ---
+// CS-style spray patterns. Each entry { p, y } is the per-shot kick added to
+// the camera pitch (p, +up) and yaw (y, +right) in radians. tryFire() looks up
+// pattern[sprayIndex % length], adds the kick (recoilPitch += p, recoilYaw +=
+// y) and increments sprayIndex. RECOIL_DECAY brings both back toward zero
+// each frame; RECOIL_RESET_TIME of no firing snaps sprayIndex back to 0 so
+// each new burst restarts the pattern (this is what makes the AK's T pattern
+// learnable in CS — you compensate by pulling DOWN against pitch and LEFT/
+// RIGHT against the deliberate yaw drift).
+// Patterns chosen by feel rather than copy of real CS spreadsheets:
+//   smg : 12 shots — small pitch builds early, then alternating horizontal drift
+//   saw : 15 shots — heavier vertical first, then heavy alternating horizontal
+//   pistol/shotgun/sniper : single-entry (semi-auto / bolt-action)
+export const RECOIL_PATTERNS = {
+  pistol:  [{ p: RECOIL_PISTOL,  y: 0.000 }],
+  shotgun: [{ p: RECOIL_SHOTGUN, y: 0.012 }],
+  sniper:  [{ p: RECOIL_SNIPER,  y: 0.000 }],
+  smg: [
+    { p: 0.020, y:  0.000 }, { p: 0.022, y:  0.004 }, { p: 0.024, y: -0.003 },
+    { p: 0.024, y:  0.006 }, { p: 0.022, y: -0.007 }, { p: 0.020, y:  0.009 },
+    { p: 0.018, y: -0.010 }, { p: 0.016, y:  0.011 }, { p: 0.015, y: -0.012 },
+    { p: 0.014, y:  0.012 }, { p: 0.013, y: -0.013 }, { p: 0.012, y:  0.011 },
+  ],
+  saw: [
+    { p: 0.026, y:  0.000 }, { p: 0.030, y:  0.005 }, { p: 0.032, y: -0.004 },
+    { p: 0.034, y:  0.008 }, { p: 0.032, y: -0.009 }, { p: 0.028, y:  0.012 },
+    { p: 0.024, y: -0.013 }, { p: 0.022, y:  0.014 }, { p: 0.020, y: -0.014 },
+    { p: 0.018, y:  0.015 }, { p: 0.016, y: -0.015 }, { p: 0.015, y:  0.014 },
+    { p: 0.014, y: -0.014 }, { p: 0.013, y:  0.013 }, { p: 0.012, y: -0.012 },
+  ],
+};
+// No fire for this long → spray index resets so a new burst starts at shot 1.
+export const RECOIL_RESET_TIME = 0.35;
+
+// --- VIEW-MODEL SWAY / BOB / LAG (Session 50) ---
+// Each-frame additive offsets to the held weapon's transform so it feels
+// alive: lags slightly when you turn, bobs while running, dips on landing.
+// Tuned conservatively — strong enough to be felt, weak enough to not block
+// the crosshair. Underlying mesh transform is independent (collision/aim
+// use the camera, not the view-model position).
+export const VIEW_SWAY_LAG = 0.040;      // multiplier on yaw/pitch delta → X/Y offset
+export const VIEW_SWAY_MAX = 0.035;      // hard cap so a quick 180° doesn't fling the gun
+export const VIEW_SWAY_DECAY = 12.0;     // how fast the lag offset returns to zero
+export const VIEW_BOB_AMP = 0.010;       // bob amplitude at walk speed
+export const VIEW_BOB_FREQ = 9.0;        // bob cycles/sec at walk speed (≈ 2 steps/sec * 4)
+export const VIEW_LAND_DIP = 0.040;      // m of downward dip when feet hit the ground
+export const VIEW_LAND_DIP_DECAY = 9.0;  // how fast the dip eases back up
+
+// Reload anim — tunables consumed by the procedural reload routines in
+// weapons.js. Each weapon has its own animated part (mag / pump / bolt /
+// cover, tagged at build time via userData.reloadPart) plus a small whole-gun
+// tilt and dip so the reload reads at a glance.
+export const RELOAD_TILT_X = 0.30;       // rad: gun rotates rightward/up during reload
+export const RELOAD_TILT_Z = -0.18;      // rad: gun rolls slightly outward
+export const RELOAD_DIP_Y = -0.04;       // m: drops slightly during reload
+export const RELOAD_MAG_DROP = 0.16;     // m: how far the magazine drops out of view
+export const RELOAD_PUMP_TRAVEL = 0.05;  // m: shotgun pump back-and-forward
+export const RELOAD_BOLT_TRAVEL = 0.04;  // m: sniper bolt back-and-forward
+export const RELOAD_BOLT_ROTATE = 1.0;   // rad: sniper bolt twist (lift bolt before pulling)
+export const RELOAD_COVER_OPEN = 0.9;    // rad: SAW top cover hinges up
+
 // --- ENEMIES ---
 export const HIT_FLASH_TIME = 0.12;
 export const DEATH_ANIM_TIME = 0.18;

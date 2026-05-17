@@ -423,8 +423,10 @@ export function updatePlayer(dt) {
   // Recoil pitch is added on top of the look pitch so it visibly kicks the
   // camera. wState comes from weapons.js — this is a module cycle but it
   // works because we only reference wState inside a function body.
+  // S50: recoil now has both pitch (vertical kick) and yaw (horizontal drift,
+  // applied via per-weapon spray patterns). Both decay each frame.
   camera.rotation.x = player.pitch + wState.recoilPitch;
-  camera.rotation.y = player.yaw;
+  camera.rotation.y = player.yaw   + wState.recoilYaw;
 
   // M15 Stage 3: passive health regen removed. The only way to recover HP is
   // to walk over a health pickup (see src/pickups.js).
