@@ -27,7 +27,7 @@ import {
   CROUCH_TRANSITION_RATE,
   GROUND_FRICTION, GROUND_STOP_SPEED, GROUND_ACCEL, AIR_ACCEL,
   AIR_WISH_SPEED_CAP, MAX_HORIZONTAL_SPEED,
-  PLAYER_MAX_HEALTH, REGEN_DELAY, REGEN_RATE, DAMAGE_FLASH_TIME, DAMAGE_INDICATOR_TIME,
+  PLAYER_MAX_HEALTH, DAMAGE_FLASH_TIME, DAMAGE_INDICATOR_TIME,
   DEFAULT_FOV, SCOPE_FOV,
 } from './constants.js';
 import { sfxPlayerHurt, sfxGameOver } from './audio.js';
@@ -426,13 +426,8 @@ export function updatePlayer(dt) {
   camera.rotation.x = player.pitch + wState.recoilPitch;
   camera.rotation.y = player.yaw;
 
-  // --- HEALTH REGEN ---
-  if (player.regenDelay > 0) {
-    player.regenDelay -= dt;
-    if (player.regenDelay < 0) player.regenDelay = 0;
-  } else if (player.health < player.maxHealth && player.alive) {
-    player.health = Math.min(player.maxHealth, player.health + REGEN_RATE * dt);
-  }
+  // M15 Stage 3: passive health regen removed. The only way to recover HP is
+  // to walk over a health pickup (see src/pickups.js).
   if (player.damageFlashTimer > 0) {
     player.damageFlashTimer -= dt;
     if (player.damageFlashTimer < 0) player.damageFlashTimer = 0;
@@ -449,7 +444,6 @@ export function updatePlayer(dt) {
 export function damagePlayer(amount, sourceX, sourceZ) {
   if (!player.alive) return;
   player.health -= amount;
-  player.regenDelay = REGEN_DELAY;
   player.damageFlashTimer = DAMAGE_FLASH_TIME;
   sfxPlayerHurt();
   if (sourceX !== undefined && sourceZ !== undefined) {
@@ -497,7 +491,6 @@ export function resetPlayer() {
   player.isScoped = false;
   player.health = PLAYER_MAX_HEALTH;
   player.maxHealth = PLAYER_MAX_HEALTH;
-  player.regenDelay = 0;
   player.damageFlashTimer = 0;
   player.alive = true;
   damageIndicator.timer = 0;

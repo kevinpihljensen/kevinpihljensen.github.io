@@ -726,6 +726,24 @@ function finishReload() {
   s.reserve -= toLoad;
 }
 
+// M15 Stage 3: weapon pickups call this on collection. First grab unlocks the
+// weapon (it's owned for the rest of the run); every grab refills the mag and
+// resets reserve to the starting amount, so pickups double as ammo refills.
+// Returns true if this was the first time the weapon was unlocked (caller may
+// use that to differentiate the toast / cue).
+export function unlockWeapon(name) {
+  const def = WEAPON_DEFS[name];
+  if (!def) return false;
+  const wasLocked = !def.unlocked;
+  def.unlocked = true;
+  const s = weaponState[name];
+  if (s) {
+    s.mag = def.magSize;
+    s.reserve = def.reserveStart;
+  }
+  return wasLocked;
+}
+
 export function switchWeapon(name) {
   if (name === wState.currentWeapon) return;
   if (!WEAPON_DEFS[name] || !WEAPON_DEFS[name].unlocked) return;

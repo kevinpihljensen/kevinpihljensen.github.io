@@ -141,9 +141,9 @@ export const HEAVY_PREFERRED_DIST = 14.0;   // tries to hold around this range
 export const HEAVY_BARREL_MAX_RPM = 22.0;   // visual barrel spin (radians/s at full)
 
 // --- PLAYER DAMAGE ---
+// M15 Stage 3: passive regen removed. Health is restored ONLY by walking over
+// HEALTH pickups (see PICKUPS in maplayout.js, src/pickups.js).
 export const PLAYER_MAX_HEALTH = 100;
-export const REGEN_DELAY = 5.0;
-export const REGEN_RATE = 10.0;
 export const DAMAGE_FLASH_TIME = 0.3;
 
 // --- PROJECTILES ---
@@ -197,13 +197,26 @@ export const WAVE_TABLE = [
 export const MAX_WAVE = 10;
 export const BREAK_DURATION = 5.0;
 
-// M10: per-weapon unlock waves. Original design.md only listed shotgun at
-// wave 3. SMG and sniper added per user request, slotted at waves 5 and 7
-// to spread out the progression. Deviation from design.md.
-export const SHOTGUN_UNLOCK_WAVE = 3;
-export const SMG_UNLOCK_WAVE = 5;
-export const SAW_UNLOCK_WAVE = 6;        // M249 SAW (between SMG and sniper)
-export const SNIPER_UNLOCK_WAVE = 7;
+// M15 Stage 3: weapons are no longer unlocked by wave number. Each non-pistol
+// weapon spawns as a PICKUP on the map (see PICKUPS in maplayout.js); walking
+// over it permanently unlocks the weapon for the rest of the run AND tops up
+// its ammo. The wave system only spawns enemies; it owns no weapon state.
+
+// --- PICKUPS (M15 Stage 3) ---
+// Weapon pickups and HEALTH pickups sit at fixed map positions. Walk-over to
+// collect (PICKUP_RADIUS horizontal, ±PICKUP_VERT_TOL vertical so a pickup on
+// a deck doesn't trigger from the ground below it). Collected pickups hide
+// and respawn after PICKUP_RESPAWN seconds, so health pickups remain useful
+// across a wave and weapon pickups double as ammo refills after the first
+// grab. Visuals: a small group that bobs and spins for visibility.
+export const PICKUP_RADIUS = 1.1;          // horizontal collect distance (m)
+export const PICKUP_VERT_TOL = 1.6;        // vertical tolerance — must be on same level (≤ standing height)
+export const PICKUP_RESPAWN = 25.0;        // seconds before a collected pickup returns
+export const PICKUP_HOVER_HEIGHT = 0.9;    // base hover above the surface (m)
+export const PICKUP_BOB_AMP = 0.10;        // bob amplitude (m)
+export const PICKUP_BOB_RATE = 2.2;        // bob frequency (rad/s)
+export const PICKUP_SPIN_RATE = 1.4;       // yaw rotation rate (rad/s)
+export const HEALTH_PICKUP_AMOUNT = 25;    // HP restored per health pickup (capped at PLAYER_MAX_HEALTH)
 
 // Knife: always available melee fallback. Short reach, fast swipe, lethal to
 // light enemies in one hit (kills a 30-HP grunt / 20-HP shooter outright;

@@ -52,7 +52,6 @@ export const player = {
   isScoped: false,      // M10: sniper-scoped (right-click toggle)
   health: PLAYER_MAX_HEALTH,
   maxHealth: PLAYER_MAX_HEALTH,
-  regenDelay: 0,
   damageFlashTimer: 0,
   alive: true,
 };
