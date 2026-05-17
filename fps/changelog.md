@@ -26,36 +26,57 @@ Format: newest entries at the top. Each entry lists what was added, what was cha
 
 ## Session log
 
-### 2026-05-17 — Session 52 (Sniper z-fight fixes + knife model rebuild + CS-style slash)
+### 2026-05-17 — Session 52b (Sniper z-fight fixes + knife model rebuild — layered onto the S52 animation work)
 
-User reported two visible issues. Both fixed.
+A parallel session shipped the CS-style knife slash improvements (S52: reshape `_slashPhase` for ease-out snap, alternating direction via `meleeSwingIndex`, every-4th overhead stab, diagonal pitch arc). This entry covers the two non-animation issues the user reported at the same time, which the parallel session didn't touch:
 
-**1. Sniper clipping between brown and black parts.** The walnut stock's z-range (z 0.09 → 0.35) overlapped with the receiver's (z -0.10 → 0.10) at z=0.09–0.10. Same coplanar problem with the comb base at y=0.0475 sharing the receiver-top plane, and the walnut grip top poking above the receiver bottom. Three small offsets push each interface apart by 5–10 mm so the materials no longer fight each other on the depth buffer:
+**1. Sniper clipping between brown and black parts.** The walnut stock's z-range (z 0.09 → 0.35) overlapped with the receiver's (z -0.10 → 0.10) at z=0.09–0.10 — a coplanar surface battle on the depth buffer that flickers under camera motion. Same problem with the comb base sharing the receiver-top plane, and the walnut grip top poking above the receiver bottom. Three small offsets push each interface apart by 5–10 mm:
 - stock: z 0.22 → 0.245 (front edge moves back from z=0.09 to z=0.115)
 - comb: y 0.06 → 0.067, z 0.17 → 0.195
 - grip: y -0.07 → -0.090
 
 Right hand position dropped y -0.045 → -0.060 to follow the moved grip.
 
-**2. Knife model — disembodied tip + cleaner blade.** The old tip was a 4-sided cone with `rotation.x = π/2` (pointing the apex TOWARD the camera, not forward) and `rotation.y = π/4` (45° spin), so what the player saw was a square wedge floating off the front of the blade at the wrong angle. Fix: bake the rotation into the geometry via `tipGeom.rotateX(-Math.PI/2)` + `tipGeom.rotateZ(Math.PI/4)`, then `scale.y = 0.255` to squash the cone's cross-section to match the blade's flat profile (cone is now blade-shaped, not square-shaped). Base sits flush at z = blade-end. A second narrower tip mesh continues the bright cutting bevel from the blade into the tip.
+**2. Knife model — disembodied tip + cleaner blade.** The old tip was a 4-sided cone with `rotation.x = π/2` (pointing the apex TOWARD the camera, not forward) and `rotation.y = π/4` (45° spin) — what the player saw was a square wedge floating off the front of the blade at the wrong angle. Fix: bake the rotation into the geometry via `tipGeom.rotateX(-Math.PI/2)` + `tipGeom.rotateZ(Math.PI/4)`, then `scale.y = 0.255` to squash the cone's cross-section to match the blade's flat profile (cone is now blade-shaped, not square-shaped). Base sits flush at z = blade-end. A second narrower tip mesh continues the bright cutting bevel from the blade into the tip.
 
-While there, cleaned up the blade itself: replaced the messy saw-teeth boxes (which never quite read as teeth) and the small disjoint fuller bar with a single longer fuller groove on one face; widened blade slightly (0.018 → 0.024) so the proportions read more like a combat knife; kept the paracord wrap, pommel, lanyard hole, glass-breaker spike, and red-accent flair.
+While there, cleaned up the blade itself: dropped the saw-teeth boxes (never quite read as teeth) and the small disjoint fuller bar; replaced with a single longer fuller groove on one face. Widened blade slightly (0.018 → 0.024) so the proportions read more like a combat knife. Kept the paracord wrap, pommel, lanyard hole, glass-breaker spike, and red-accent flair.
 
-**3. Knife slash animation — CS-style snap.** Replaced the 3-phase `_slashPhase` (which had hard boundaries at p=0.3 and p=0.7 with a "stop" at each transition) with two overlapping cosine bells via a new `_bell(p, center, halfWidth)` helper:
-- **windup** bell, centre p=0.15, halfWidth 0.15 — quick lift + cock to the right
-- **slash** bell, centre p=0.50, halfWidth 0.40 — right-to-left sweep with forward thrust
+**Merge.** Both this session and the parallel S52 produced overlapping weapons.js diffs. Resolution kept the parallel session's `_slashPhase` reshape + alternating-direction + overhead-stab in the animation block (already shipped + more elaborate), and this session's sniper z-fix + knife model rebuild stand independently elsewhere in the file. No animation logic from this session ended up in main.
 
-The bells OVERLAP between p≈0.15 and p≈0.30 so the cocked windup transitions straight into the slash without a visible "stop" at the windup peak — that's what makes CS knife swings feel snappy. By p=0.90 both bells are zero, so the last 10% is fully recovered. Yaw still does most of the work (windup +0.40 → slash -1.50 = ~110° of swing); roll cocks then releases; XY translation traces a curve from up-right to down-left with a slight forward thrust at the slash peak.
-
-**Verified.** Battery: 10 harnesses, 202 assertions, ALL GREEN, MAP OK. Visual is browser-only. The harness doesn't cover the new `_bell` helper because the animation isn't math-tested — it's a feel curve — but if you wanted I could pin the bell shape (peak == 1, falloff at ±halfWidth == 0) in `harness_weapons`.
+**Verified.** Battery still ALL GREEN: 10 harnesses, 202 assertions, MAP OK.
 
 **Changed**
-- `src/weapons.js` — sniper stock/comb/grip moved; sniper right-hand y dropped; knife model rebuilt with correctly-oriented tip + scale.y for blade-shape cross-section; `_slashPhase` removed, `_bell` added; knife slash branch in `updateViewModelTransform` rewritten to use the bells.
+- `src/weapons.js` — sniper stock/comb/grip moved; sniper right-hand y dropped; knife model rebuilt with correctly-oriented tip + scale.y for blade-shape cross-section.
+
+---
+
+### 2026-05-17 — Session 52 (CS-style knife slash: snappier strike, alternating arc, overhead stab)
+
+User feedback on S51's knife: the swing felt sluggish at the moment of impact. The S51 `_slashPhase` used a symmetric piecewise smoothstep — windup 0.0–0.3, slash 0.3–0.7, recovery 0.7–1.0 — and `smoothstep` eases the slash IN as well as OUT, so peak amplitude landed dead-centre at p≈0.5 with the velocity tapering toward the impact frame. CS-style knives whip the OTHER way: a quick wind-back, a snap forward, then a long weighty settle. Reshaped accordingly.
+
+**1. Reshaped `_slashPhase` (`weapons.js`).** Three phases, asymmetric, each with the right easing direction:
+- 0.00–0.18 — windup: ease-out (`1-(1-t)^2`), fast pull-back settling into pose
+- 0.18–0.40 — strike: ease-out, snap forward — peak amplitude lands at p=0.40
+- 0.40–1.00 — recovery: smoothstep, slow weighty return to ready
+
+Same total duration (`KNIFE_SWIPE_DURATION = 0.36 s`, untouched), and the function still takes the same `(p, atStart, atWindup, atSlash, atEnd)` signature so the call sites don't change shape — only the easings inside.
+
+**2. Alternating slash direction (`weapons.js`).** Added `wState.meleeSwingIndex`, bumped (modulo 1024) each time `tryFire` arms a melee swing. The view-model animation reads the index and flips a `dir ∈ {+1, -1}` factor on the x-translation and y/z-rotation components — so consecutive primary attacks sweep right→left, then left→right, then right→left, mirroring the CS:GO/CS2 primary cycle. Also added a small pitch component (`rotation.x`) so the arc is diagonal (down-across) rather than perfectly horizontal — reads more like a real swing.
+
+**3. Overhead stab every 4th swing (`weapons.js`).** When `meleeSwingIndex % 4 === 0` (and not the initial 0), the same `_slashPhase` machinery drives a different shape entirely: knife winds UP and BACK (positive `position.y`, negative `rotation.x`), then thrusts DOWN-AND-FORWARD (negative `position.y`, positive `rotation.x`, big `-z`). Breaks up the rhythm of repeated horizontal slashes.
+
+**4. Bumped slash amplitudes slightly (`weapons.js`).** Horizontal slash x-translation from ±0.06/-0.25 to ±0.08/-0.28; yaw from ±0.50/-1.40 to ±0.55/-1.55; roll from ±0.15/-0.30 to ±0.18/-0.38; added a small y-rise/dip and pitch arc. Makes the sweep cover more of the field of view without losing the hand-on-handle read.
+
+Strike math (`meleeStrike` → ray cast, damage, sfx) is unchanged. Cooldown, range, damage, speed buff, sfx — all untouched. Only the view-model animation timing/shape changed.
+
+**Verified.** Battery still ALL GREEN: 10 harnesses, 202 assertions, MAP OK. The harness covers knife damage/range/cooldown/speed-mult; nothing in the suite asserts the animation shape, so this is browser-only on the visual side and was tuned by feel.
+
+**Changed**
+- `src/weapons.js` — added `wState.meleeSwingIndex`; rewrote `_slashPhase` with asymmetric ease-out windup + ease-out snap + smoothstep recovery; rewrote the MELEE block in `updateViewModelTransform` with alternating-direction horizontal slash + every-4th overhead stab + diagonal pitch arc; `tryFire` bumps `meleeSwingIndex` before arming `meleeAnim`.
 
 **Known issues**
-- Hand-position dial: hands across the other guns were eyeball-positioned in S51 and might still be off. Tell me which gun's hand is wrong and I'll adjust.
-- The knife slash motion magnitudes (the +0.06 / -0.32 / etc.) are feel numbers. If the slash is too short, too long, doesn't sweep far enough, or the cocking motion is too pronounced, those are the knobs to tune.
-- The blade is procedural — no shape-from-photograph fidelity to any specific CS knife. To get e.g. an M9 bayonet silhouette specifically would need an authored `.glb`, same as the medkit.
+- Slash amplitudes were tuned by feel (no in-browser session yet this turn). If the new arc reads as too wide or the overhead stab feels out of place, flag it and I'll dial.
+- The strike still registers damage on the same `tryFire` frame as before (p=0). Visually the peak amplitude is now at p≈0.40 (~144 ms in), so there's a subtle disconnect between when the hit registers and when the knife visually "connects". Aligning them would mean delaying `meleeStrike` by ~one-strike-phase — defer until playtest says it matters.
 
 ---
 

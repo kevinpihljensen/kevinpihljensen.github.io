@@ -129,6 +129,11 @@ export const wState = {
   bloom: 0,
   // Knife swipe animation timer (drives the view-model lunge).
   meleeAnim: 0,
+  // S52: alternating-slash counter. Each swipe increments this; the view-model
+  // animation flips the slash arc on odd vs even swings so consecutive attacks
+  // sweep right→left then left→right (CS-style). Also drives a small overhead
+  // stab variant every fourth swing for extra variety.
+  meleeSwingIndex: 0,
   // S50: persistent reload-time storage (the per-weapon w.reloadTime) so the
   // reload animation knows how long the current reload is even after we tick
   // reloadTimer down. Set by tryReload, read by updateViewModelTransform.
@@ -1013,15 +1018,26 @@ function _triangleN(x, n) {
   return _hump(frac);
 }
 
-// Cosine bell: peaks at `center` (=1), eases to 0 at center±halfWidth, 0
-// outside. Used by the knife slash so windup + slash phases can overlap as
-// two co-existing bells (one fading out as the other fades in), which gives
-// the snappy "CS knife" feel of a quick cocking motion that transitions
-// straight into the slash instead of stopping at the windup peak.
-function _bell(p, center, halfWidth) {
-  const x = (p - center) / halfWidth;
-  if (x <= -1 || x >= 1) return 0;
-  return 0.5 * (1 + Math.cos(x * Math.PI));
+// S52: CS-style three-phase slash shape. The strike phase is biased EARLY
+// (peak amplitude at p≈0.40) so the swing snaps forward like a whip, then
+// settles into a slow recovery — instead of the previous symmetric ease that
+// made the slash feel sluggish at the moment of impact.
+//   0.00 – 0.18 : windup     (ease-out: fast pull-back, settling into pose)
+//   0.18 – 0.40 : strike     (ease-out: snap toward the slash peak)
+//   0.40 – 1.00 : recovery   (smoothstep: long, weighty return to ready)
+function _slashPhase(p, atStart, atWindup, atSlash, atEnd) {
+  if (p <= 0.18) {
+    const t = p / 0.18;
+    const ease = 1 - (1 - t) * (1 - t);
+    return atStart + ease * (atWindup - atStart);
+  }
+  if (p <= 0.40) {
+    const t = (p - 0.18) / 0.22;
+    const ease = 1 - (1 - t) * (1 - t);
+    return atWindup + ease * (atSlash - atWindup);
+  }
+  const t = (p - 0.40) / 0.60;
+  return atSlash + _smoothstep(t) * (atEnd - atSlash);
 }
 
 function updateViewModelTransform(dt) {
@@ -1139,29 +1155,43 @@ function updateViewModelTransform(dt) {
     }
   }
 
-  // 4. MELEE slash (knife) — S52 rewrite for a CS-style horizontal slash.
-  // Two overlapping cosine bells:
-  //   * WINDUP — peaks at p=0.15, fades by p=0.30. Lifts the knife up + right,
-  //     cocks the wrist, pulls back a touch.
-  //   * SLASH  — peaks at p=0.50, fades by p=0.90. Sweeps the knife from
-  //     right to left with a slight forward thrust and an arc that ends low
-  //     and left. After p=0.90 both bells are zero so the knife is back at
-  //     the ready pose.
-  // Overlap between p≈0.15 and p≈0.30 gives the snap-from-cocked-to-swung
-  // transition without a "stop" at the windup peak. The whole knife group
-  // (blade + handle + hand) animates together so the hand stays on the
-  // grip throughout.
+  // 4. MELEE slash (knife) — S52 CS-style swing.
+  //   Phases (see _slashPhase): WINDUP (0→0.18), STRIKE (0.18→0.40),
+  //   RECOVER (0.40→1.0). The strike snaps forward early so the impact
+  //   frame feels punchy, then the knife eases back to a ready pose.
+  //
+  //   Swings alternate direction (right→left then left→right) on
+  //   consecutive primaries — wState.meleeSwingIndex flips dir each swipe.
+  //   Every fourth swing is an OVERHEAD STAB instead of a horizontal
+  //   slash: the knife pulls high, then thrusts down-and-forward.
+  //
+  //   The whole knife group (blade + handle + hand) animates together so
+  //   the hand looks like it's holding the knife throughout.
   if (key === 'knife' && wState.meleeAnim > 0) {
     const p = 1 - wState.meleeAnim / KNIFE_SWIPE_DURATION;
-    const windup = _bell(p, 0.15, 0.15);
-    const slash  = _bell(p, 0.50, 0.40);
-    // Position offsets (camera-local; X = right, Y = up, Z = back-toward-camera)
-    m.position.x += windup * (+0.06) + slash * (-0.32);   // R → L sweep
-    m.position.y += windup * (+0.08) + slash * (-0.04);   // up → slight dip
-    m.position.z += windup * (+0.06) + slash * (-0.10);   // back → forward thrust
-    // Rotation: yaw is the dominant slash motion; roll cocks then uncocks.
-    m.rotation.y += windup * (+0.40) + slash * (-1.50);
-    m.rotation.z += windup * (+0.50) + slash * (-0.45);
+    const swingN = wState.meleeSwingIndex;
+    const isStab = (swingN > 0) && (swingN % 4 === 0);
+    if (isStab) {
+      // Overhead stab — wind up high and back, then thrust forward + down.
+      m.position.x += _slashPhase(p, 0, -0.02, +0.02, 0);
+      m.position.y += _slashPhase(p, 0, +0.10, -0.07, 0);
+      m.position.z += _slashPhase(p, 0, +0.06, -0.22, 0);
+      m.rotation.x += _slashPhase(p, 0, -0.55, +0.65, 0);
+      m.rotation.z += _slashPhase(p, 0, +0.05, -0.08, 0);
+    } else {
+      // Horizontal slash — direction alternates each swing. dir = +1 means
+      // pull right then sweep left (S51 original); dir = -1 mirrors it.
+      const dir = (swingN % 2 === 1) ? +1 : -1;
+      m.position.x += _slashPhase(p, 0, +0.08 * dir, -0.28 * dir, 0);
+      m.position.y += _slashPhase(p, 0, +0.05,       -0.04,       0);
+      m.position.z += _slashPhase(p, 0, -0.05,       +0.07,       0);
+      // Yaw sweep is the dominant motion; add a touch of pitch so the slash
+      // arcs diagonally (down-across) and a roll so the blade rotates into
+      // the cut like a real swing.
+      m.rotation.x += _slashPhase(p, 0, -0.18,        +0.22,       0);
+      m.rotation.y += _slashPhase(p, 0, +0.55 * dir, -1.55 * dir, 0);
+      m.rotation.z += _slashPhase(p, 0, +0.18 * dir, -0.38 * dir, 0);
+    }
   }
 }
 
@@ -1192,7 +1222,11 @@ export function tryFire() {
   // --- MELEE (knife): no ammo, short reach, swipe ---
   if (w.melee) {
     wState.fireCooldown = 60 / w.rpm;
-    wState.meleeAnim = KNIFE_SWIPE_DURATION;   // S51: right-to-left slash anim
+    // S52: bump the swing index BEFORE starting the anim so the view-model
+    // path picks up the new direction this frame. Wrap so the counter can
+    // never overflow over a long session.
+    wState.meleeSwingIndex = (wState.meleeSwingIndex + 1) % 1024;
+    wState.meleeAnim = KNIFE_SWIPE_DURATION;
     meleeStrike(w);
     w.sfxFire();
     return;
