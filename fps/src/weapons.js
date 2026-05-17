@@ -479,13 +479,15 @@ export function buildSmgModel() {
 }
 export function buildSniperModel() {
   const g = new THREE.Group();
-  // Long walnut stock
+  // Long walnut stock. S52: moved back 0.025 (z 0.22→0.245) so its front edge
+  // sits flush with the receiver's rear (no z-overlap = no z-fighting).
   const stock = new THREE.Mesh(new THREE.BoxGeometry(0.065, 0.10, 0.26), WMAT.walnut());
-  stock.position.set(0, -0.005, 0.22);
+  stock.position.set(0, -0.005, 0.245);
   g.add(stock);
-  // Stock comb (raised cheek piece — lighter walnut to show grain step)
+  // Stock comb (raised cheek piece — lighter walnut to show grain step).
+  // S52: lifted y 0.06→0.067 so its base sits clear of the receiver top.
   const comb = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.025, 0.16), WMAT.walnutLight());
-  comb.position.set(0, 0.06, 0.17);
+  comb.position.set(0, 0.067, 0.195);
   g.add(comb);
   // Receiver (blued steel)
   const receiver = new THREE.Mesh(new THREE.BoxGeometry(0.065, 0.085, 0.20), WMAT.bluedSteel());
@@ -532,9 +534,10 @@ export function buildSniperModel() {
   mount1.position.set(0, 0.06, -0.10); g.add(mount1);
   const mount2 = new THREE.Mesh(new THREE.BoxGeometry(0.025, 0.025, 0.025), WMAT.darkSteel());
   mount2.position.set(0, 0.06, 0.02); g.add(mount2);
-  // Walnut grip
+  // Walnut grip. S52: dropped y -0.07→-0.090 so the top of the grip sits
+  // flush under the receiver bottom (was poking up into it = z-fighting).
   const grip = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.10, 0.05), WMAT.walnut());
-  grip.position.set(0, -0.07, 0.09);
+  grip.position.set(0, -0.090, 0.09);
   grip.rotation.x = -0.15;
   g.add(grip);
   // Trigger guard
@@ -586,9 +589,10 @@ export function buildSniperModel() {
     vent.position.set(0, 0.039 + i * -0.018, -0.66);
     g.add(vent);
   }
-  // S51: hands — right on the grip, left under the barrel/handguard
+  // S51/52: hands — right on the grip (dropped to match new grip y),
+  // left under the barrel/handguard.
   const rHand = buildHand({ side: 'right' });
-  rHand.position.set(0.010, -0.045, 0.085);
+  rHand.position.set(0.010, -0.060, 0.085);
   g.add(rHand);
   const lHand = buildHand({ side: 'left' });
   lHand.position.set(-0.010, -0.020, -0.230);
@@ -703,75 +707,110 @@ export function buildSawModel() {
 }
 function buildKnifeModel() {
   const g = new THREE.Group();
-  // Blade body (polished steel)
-  const blade = new THREE.Mesh(new THREE.BoxGeometry(0.018, 0.006, 0.20), WMAT.polishedSteel());
-  blade.position.set(0, 0, -0.13);
+
+  // --- BLADE ---
+  // Main blade body — flat: wide (X), thin (Y). Centre at z=-0.115, length 0.17.
+  // Z range: [-0.20, -0.03]. Local frame: +X = back of blade (spine), -X = edge.
+  const blade = new THREE.Mesh(new THREE.BoxGeometry(0.024, 0.005, 0.17), WMAT.polishedSteel());
+  blade.position.set(0, 0, -0.115);
   g.add(blade);
-  // Bevel / edge — slightly brighter strip running down the cutting edge
-  const bevel = new THREE.Mesh(new THREE.BoxGeometry(0.006, 0.005, 0.20),
-                               wmat({ color: 0xe6e9ef, roughness: 0.15, metalness: 0.85 }));
-  bevel.position.set(0.008, 0, -0.13);
+  // Cutting bevel — brighter strip running down the -X edge of the blade.
+  const bevel = new THREE.Mesh(
+    new THREE.BoxGeometry(0.006, 0.004, 0.17),
+    wmat({ color: 0xe6e9ef, roughness: 0.12, metalness: 0.92 }),
+  );
+  bevel.position.set(-0.011, 0, -0.115);
   g.add(bevel);
-  // Point — angled cone tip
-  const tip = new THREE.Mesh(new THREE.ConeGeometry(0.012, 0.05, 4), WMAT.polishedSteel());
-  tip.rotation.set(Math.PI / 2, Math.PI / 4, 0);
-  tip.position.set(0, 0, -0.255);
+  // Fuller — slim recessed groove running along the side of the blade.
+  // Visually a darker strip set into one flat face.
+  const fuller = new THREE.Mesh(new THREE.BoxGeometry(0.005, 0.0026, 0.13), WMAT.darkSteel());
+  fuller.position.set(0.002, 0.0026, -0.115);
+  g.add(fuller);
+
+  // --- TIP ---
+  // S52 fix: the old cone was 4-sided (square cross-section) and rotated
+  // toward the camera with a 45° spin, which read as a disembodied square
+  // wedge floating off the blade. Now: a 4-sided cone with the rotation
+  // baked into the geometry (apex pointing -Z = forward), then scale.y
+  // squashes the cone's cross-section to match the blade's flat profile.
+  // Base sits flush with the blade's front face (z=-0.20).
+  const tipGeom = new THREE.ConeGeometry(0.014, 0.05, 4);
+  tipGeom.rotateX(-Math.PI / 2);                  // apex (+Y) → -Z (forward)
+  tipGeom.rotateZ(Math.PI / 4);                   // align the 4 facets with X/Y
+  const tip = new THREE.Mesh(tipGeom, WMAT.polishedSteel());
+  tip.scale.y = 0.255;                            // 0.005 / (0.014*√2) ≈ blade thickness
+  tip.position.set(0, 0, -0.225);                 // base at z=-0.20, apex at z=-0.25
   g.add(tip);
-  // Cross guard
-  const cg = new THREE.Mesh(new THREE.BoxGeometry(0.045, 0.012, 0.018), WMAT.darkSteel());
-  cg.position.set(0, 0, -0.025);
+  // Tip bevel — narrow bright strip continuing the cutting edge to the apex.
+  // Same scaling trick. Pulled slightly to the -X side to read as the edge.
+  const tipBevelGeom = new THREE.ConeGeometry(0.014, 0.05, 4);
+  tipBevelGeom.rotateX(-Math.PI / 2);
+  tipBevelGeom.rotateZ(Math.PI / 4);
+  const tipBevel = new THREE.Mesh(
+    tipBevelGeom,
+    wmat({ color: 0xe6e9ef, roughness: 0.12, metalness: 0.92 }),
+  );
+  tipBevel.scale.y = 0.255;
+  tipBevel.position.set(-0.0035, 0, -0.225);
+  tipBevel.scale.x = 0.45;                        // narrower than the main tip
+  g.add(tipBevel);
+
+  // --- CROSS GUARD ---
+  // Sits between the blade and the handle. Slightly larger than before so
+  // it reads at first-person scale.
+  const cg = new THREE.Mesh(new THREE.BoxGeometry(0.048, 0.014, 0.020), WMAT.darkSteel());
+  cg.position.set(0, 0, -0.020);
   g.add(cg);
-  // Handle core — dark polymer
-  const handle = new THREE.Mesh(new THREE.CylinderGeometry(0.013, 0.011, 0.11, 8), WMAT.polymer());
+  // Red accent stripe on the cross guard (signature flair).
+  const accent = new THREE.Mesh(new THREE.BoxGeometry(0.048, 0.003, 0.003), WMAT.redAccent());
+  accent.position.set(0, -0.0065, -0.020);
+  g.add(accent);
+
+  // --- HANDLE ---
+  // Core (polymer cylinder, slightly tapered toward the pommel).
+  const handle = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.013, 0.011, 0.11, 10),
+    WMAT.polymer(),
+  );
   handle.rotation.x = Math.PI / 2;
   handle.position.set(0, 0, 0.045);
   g.add(handle);
-  // Pommel — small heavy cap
-  const pommel = new THREE.Mesh(new THREE.SphereGeometry(0.013, 8, 6), WMAT.darkSteel());
-  pommel.position.set(0, 0, 0.105);
-  g.add(pommel);
-  // --- M48 detail additions ---
-  // Blade fuller — narrow recessed groove running most of the blade length.
-  // Modelled as a slightly darker (so it reads "recessed") inset bar.
-  const fuller = new THREE.Mesh(new THREE.BoxGeometry(0.004, 0.003, 0.16), WMAT.darkSteel());
-  fuller.position.set(-0.003, 0.002, -0.15);
-  g.add(fuller);
-  // Saw-back teeth on the spine of the blade — 6 small cone notches
+  // Paracord-wrap bands — alternating dark/light ridges along the handle.
   for (let i = 0; i < 6; i++) {
-    const tooth = new THREE.Mesh(new THREE.ConeGeometry(0.0035, 0.012, 3), WMAT.polishedSteel());
-    tooth.rotation.x = Math.PI / 2;
-    tooth.position.set(-0.009, 0.003, -0.06 - i * 0.024);
-    g.add(tooth);
-  }
-  // Paracord wrap on the handle — alternating dark/light bands
-  for (let i = 0; i < 6; i++) {
-    const isDark = i % 2 === 0;
-    const ringMat = isDark ? WMAT.polymer() : wmat({ color: 0x9a9591, roughness: 0.85, metalness: 0.04 });
-    const wrap = new THREE.Mesh(new THREE.CylinderGeometry(0.014, 0.012, 0.018, 8), ringMat);
+    const ringMat = i % 2 === 0
+      ? WMAT.polymer()
+      : wmat({ color: 0x8a8278, roughness: 0.85, metalness: 0.04 });
+    const wrap = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.0145, 0.0125, 0.016, 10),
+      ringMat,
+    );
     wrap.rotation.x = Math.PI / 2;
-    wrap.position.set(0, 0, 0.0 + i * 0.018);
+    wrap.position.set(0, 0, 0.000 + i * 0.018);
     g.add(wrap);
   }
-  // Lanyard hole through the pommel (small dark cylinder passing through)
-  const lanyard = new THREE.Mesh(new THREE.CylinderGeometry(0.0035, 0.0035, 0.020, 8), WMAT.rubber());
+  // Pommel cap.
+  const pommel = new THREE.Mesh(new THREE.SphereGeometry(0.0135, 10, 8), WMAT.darkSteel());
+  pommel.position.set(0, 0, 0.108);
+  g.add(pommel);
+  // Lanyard hole through the pommel — small horizontal cylinder.
+  const lanyard = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.0035, 0.0035, 0.024, 8),
+    WMAT.rubber(),
+  );
   lanyard.rotation.z = Math.PI / 2;
   lanyard.position.set(0, 0, 0.110);
   g.add(lanyard);
-  // Glass-breaker spike sticking out the back of the pommel
+  // Glass-breaker spike out the back of the pommel (cone apex pointing +Z).
   const spike = new THREE.Mesh(new THREE.ConeGeometry(0.005, 0.020, 4), WMAT.polishedSteel());
-  spike.rotation.x = -Math.PI / 2;
+  spike.rotation.x = Math.PI / 2;                 // apex → +Z (away from blade)
   spike.position.set(0, 0, 0.128);
   g.add(spike);
-  // Small red accent on the cross guard (signature flair)
-  const accent = new THREE.Mesh(new THREE.BoxGeometry(0.046, 0.003, 0.003), WMAT.redAccent());
-  accent.position.set(0, -0.006, -0.025);
-  g.add(accent);
-  // S51: right hand gripping the knife handle. Knife handle is a cylinder
-  // along the Z axis at z=0.045; the hand wraps it. The slash anim swings
-  // the whole knife group so the hand stays with the knife throughout.
+
+  // --- HAND (S51) gripping the handle ---
   const rHand = buildHand({ side: 'right' });
   rHand.position.set(0.008, -0.005, 0.060);
   g.add(rHand);
+
   g.position.set(0.17, -0.15, -0.34);
   g.rotation.set(0.10, -0.12, 0);
   return g;
@@ -974,13 +1013,15 @@ function _triangleN(x, n) {
   return _hump(frac);
 }
 
-// Three-phase piecewise smoothstep — start → windup peak (at p=0.3) → slash
-// peak (at p=0.7) → end. Used for the knife slash so the swing has a clean
-// "wind back, snap forward, recover" shape rather than a single sin pulse.
-function _slashPhase(p, atStart, atWindup, atSlash, atEnd) {
-  if (p <= 0.3) return atStart  + _smoothstep(p / 0.3)         * (atWindup - atStart);
-  if (p <= 0.7) return atWindup + _smoothstep((p - 0.3) / 0.4) * (atSlash  - atWindup);
-  return            atSlash  + _smoothstep((p - 0.7) / 0.3) * (atEnd    - atSlash);
+// Cosine bell: peaks at `center` (=1), eases to 0 at center±halfWidth, 0
+// outside. Used by the knife slash so windup + slash phases can overlap as
+// two co-existing bells (one fading out as the other fades in), which gives
+// the snappy "CS knife" feel of a quick cocking motion that transitions
+// straight into the slash instead of stopping at the windup peak.
+function _bell(p, center, halfWidth) {
+  const x = (p - center) / halfWidth;
+  if (x <= -1 || x >= 1) return 0;
+  return 0.5 * (1 + Math.cos(x * Math.PI));
 }
 
 function updateViewModelTransform(dt) {
@@ -1098,18 +1139,29 @@ function updateViewModelTransform(dt) {
     }
   }
 
-  // 4. MELEE slash (knife) — S51 right-to-left horizontal slash.
-  //   0.0 → 0.3 : windup — knife pulls right, slightly back, rotates to face right
-  //   0.3 → 0.7 : slash  — sweeps from right to left, slight forward thrust
-  //   0.7 → 1.0 : recover — returns to ready
-  // The whole knife group (blade + handle + hand) animates together so the
-  // hand looks like it's holding the knife throughout.
+  // 4. MELEE slash (knife) — S52 rewrite for a CS-style horizontal slash.
+  // Two overlapping cosine bells:
+  //   * WINDUP — peaks at p=0.15, fades by p=0.30. Lifts the knife up + right,
+  //     cocks the wrist, pulls back a touch.
+  //   * SLASH  — peaks at p=0.50, fades by p=0.90. Sweeps the knife from
+  //     right to left with a slight forward thrust and an arc that ends low
+  //     and left. After p=0.90 both bells are zero so the knife is back at
+  //     the ready pose.
+  // Overlap between p≈0.15 and p≈0.30 gives the snap-from-cocked-to-swung
+  // transition without a "stop" at the windup peak. The whole knife group
+  // (blade + handle + hand) animates together so the hand stays on the
+  // grip throughout.
   if (key === 'knife' && wState.meleeAnim > 0) {
     const p = 1 - wState.meleeAnim / KNIFE_SWIPE_DURATION;
-    m.position.x += _slashPhase(p, 0, +0.06, -0.25, 0);
-    m.position.z += _slashPhase(p, 0, -0.04, +0.05, 0);
-    m.rotation.y += _slashPhase(p, 0, +0.50, -1.40, 0);
-    m.rotation.z += _slashPhase(p, 0, +0.15, -0.30, 0);
+    const windup = _bell(p, 0.15, 0.15);
+    const slash  = _bell(p, 0.50, 0.40);
+    // Position offsets (camera-local; X = right, Y = up, Z = back-toward-camera)
+    m.position.x += windup * (+0.06) + slash * (-0.32);   // R → L sweep
+    m.position.y += windup * (+0.08) + slash * (-0.04);   // up → slight dip
+    m.position.z += windup * (+0.06) + slash * (-0.10);   // back → forward thrust
+    // Rotation: yaw is the dominant slash motion; roll cocks then uncocks.
+    m.rotation.y += windup * (+0.40) + slash * (-1.50);
+    m.rotation.z += windup * (+0.50) + slash * (-0.45);
   }
 }
 

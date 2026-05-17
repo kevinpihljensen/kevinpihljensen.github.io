@@ -26,6 +26,39 @@ Format: newest entries at the top. Each entry lists what was added, what was cha
 
 ## Session log
 
+### 2026-05-17 — Session 52 (Sniper z-fight fixes + knife model rebuild + CS-style slash)
+
+User reported two visible issues. Both fixed.
+
+**1. Sniper clipping between brown and black parts.** The walnut stock's z-range (z 0.09 → 0.35) overlapped with the receiver's (z -0.10 → 0.10) at z=0.09–0.10. Same coplanar problem with the comb base at y=0.0475 sharing the receiver-top plane, and the walnut grip top poking above the receiver bottom. Three small offsets push each interface apart by 5–10 mm so the materials no longer fight each other on the depth buffer:
+- stock: z 0.22 → 0.245 (front edge moves back from z=0.09 to z=0.115)
+- comb: y 0.06 → 0.067, z 0.17 → 0.195
+- grip: y -0.07 → -0.090
+
+Right hand position dropped y -0.045 → -0.060 to follow the moved grip.
+
+**2. Knife model — disembodied tip + cleaner blade.** The old tip was a 4-sided cone with `rotation.x = π/2` (pointing the apex TOWARD the camera, not forward) and `rotation.y = π/4` (45° spin), so what the player saw was a square wedge floating off the front of the blade at the wrong angle. Fix: bake the rotation into the geometry via `tipGeom.rotateX(-Math.PI/2)` + `tipGeom.rotateZ(Math.PI/4)`, then `scale.y = 0.255` to squash the cone's cross-section to match the blade's flat profile (cone is now blade-shaped, not square-shaped). Base sits flush at z = blade-end. A second narrower tip mesh continues the bright cutting bevel from the blade into the tip.
+
+While there, cleaned up the blade itself: replaced the messy saw-teeth boxes (which never quite read as teeth) and the small disjoint fuller bar with a single longer fuller groove on one face; widened blade slightly (0.018 → 0.024) so the proportions read more like a combat knife; kept the paracord wrap, pommel, lanyard hole, glass-breaker spike, and red-accent flair.
+
+**3. Knife slash animation — CS-style snap.** Replaced the 3-phase `_slashPhase` (which had hard boundaries at p=0.3 and p=0.7 with a "stop" at each transition) with two overlapping cosine bells via a new `_bell(p, center, halfWidth)` helper:
+- **windup** bell, centre p=0.15, halfWidth 0.15 — quick lift + cock to the right
+- **slash** bell, centre p=0.50, halfWidth 0.40 — right-to-left sweep with forward thrust
+
+The bells OVERLAP between p≈0.15 and p≈0.30 so the cocked windup transitions straight into the slash without a visible "stop" at the windup peak — that's what makes CS knife swings feel snappy. By p=0.90 both bells are zero, so the last 10% is fully recovered. Yaw still does most of the work (windup +0.40 → slash -1.50 = ~110° of swing); roll cocks then releases; XY translation traces a curve from up-right to down-left with a slight forward thrust at the slash peak.
+
+**Verified.** Battery: 10 harnesses, 202 assertions, ALL GREEN, MAP OK. Visual is browser-only. The harness doesn't cover the new `_bell` helper because the animation isn't math-tested — it's a feel curve — but if you wanted I could pin the bell shape (peak == 1, falloff at ±halfWidth == 0) in `harness_weapons`.
+
+**Changed**
+- `src/weapons.js` — sniper stock/comb/grip moved; sniper right-hand y dropped; knife model rebuilt with correctly-oriented tip + scale.y for blade-shape cross-section; `_slashPhase` removed, `_bell` added; knife slash branch in `updateViewModelTransform` rewritten to use the bells.
+
+**Known issues**
+- Hand-position dial: hands across the other guns were eyeball-positioned in S51 and might still be off. Tell me which gun's hand is wrong and I'll adjust.
+- The knife slash motion magnitudes (the +0.06 / -0.32 / etc.) are feel numbers. If the slash is too short, too long, doesn't sweep far enough, or the cocking motion is too pronounced, those are the knobs to tune.
+- The blade is procedural — no shape-from-photograph fidelity to any specific CS knife. To get e.g. an M9 bayonet silhouette specifically would need an authored `.glb`, same as the medkit.
+
+---
+
 ### 2026-05-17 — Session 51 (Hands on every weapon + right-to-left knife slash)
 
 Two user-driven visual changes.
