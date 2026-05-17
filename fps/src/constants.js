@@ -88,6 +88,10 @@ export const RAYCAST_RANGE = 200;
 export const HEADSHOT_MULTIPLIER = 2.5;  // M10: head-meshes deal this much extra damage
 export const DECAL_LIFE = 5.0;
 export const MAX_DECALS = 60;
+// S54: blood splat lifetime (seconds) and pool cap. Splats fade their opacity
+// linearly over the lifetime, then are disposed.
+export const BLOOD_LIFE = 1.4;
+export const MAX_BLOOD = 80;
 export const MUZZLE_FLASH_TIME = 0.045;
 export const RECOIL_DECAY = 9.0;
 export const RECOIL_PISTOL = 0.018;

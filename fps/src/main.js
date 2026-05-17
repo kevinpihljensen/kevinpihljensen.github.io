@@ -11,7 +11,7 @@ import { updatePlayer } from './player.js';
 import { updateEnemies } from './enemies.js';
 import { updateProjectiles } from './projectiles.js';
 import { updateWeaponTimers, processAutoFire } from './weapons.js';
-import { updateDecals } from './decals.js';
+import { updateDecals, updateBlood } from './decals.js';
 import { updatePickups } from './pickups.js';
 import { updateWave } from './wave.js';
 import { setGameState, updateHUD, updateToast } from './hud.js';
@@ -39,6 +39,7 @@ function loop() {
     updatePickups(dt);
     updateWave(dt);
     updateDecals(dt);
+    updateBlood(dt);
     updateHUD(dt);
     updateToast(dt);
   }

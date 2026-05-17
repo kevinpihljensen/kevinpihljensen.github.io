@@ -8,7 +8,7 @@ import { state, game } from './state.js';
 import { GAME_STATE, WAVE_TABLE, MAX_WAVE, BREAK_DURATION } from './constants.js';
 import { enemies, makeEnemy, pickSpawnPoint, clearEnemies, resetSpawnMemory } from './enemies.js';
 import { projectiles, clearProjectiles } from './projectiles.js';
-import { decals, clearDecals } from './decals.js';
+import { decals, clearDecals, clearBlood } from './decals.js';
 import { resetWeapons } from './weapons.js';
 import { resetPlayer } from './player.js';
 import { resetPickups } from './pickups.js';
@@ -71,6 +71,7 @@ export function resetGame() {
   clearEnemies();
   clearProjectiles();
   clearDecals();
+  clearBlood();
   resetWeapons();
   resetPlayer();
   resetPickups();
@@ -91,6 +92,7 @@ export function startMapTest() {
   clearEnemies();
   clearProjectiles();
   clearDecals();
+  clearBlood();
   resetWeapons();        // pistol is unlocked + selected by default
   resetPlayer();
   resetPickups();
