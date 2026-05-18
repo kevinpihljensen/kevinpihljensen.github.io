@@ -191,6 +191,16 @@ export const AI_PEEK_OUT_TIME = 1.4;        // ranged enemy stays exposed this l
 export const AI_PEEK_HIDE_TIME = 1.1;       // then hides behind cover this long
 export const AI_GRUNT_STRAFE_CHANCE = 0.55; // fraction of grunts that juke vs beeline
 
+// --- ENEMY JUMP (S55g) ---
+// Grunts and shooters can hop short obstacles (crates, low ledges). Peak
+// height = v²/(2g) ≈ 0.76 m; combined with the 0.6 m step-up this lets
+// them clear ~1.4 m. They are also willing to walk off elevated decks when
+// the player is visibly below — see navGoal's drop-off branch.
+export const ENEMY_JUMP_VY = 5.5;
+export const ENEMY_MAX_JUMP_HEIGHT = 1.4;
+export const ENEMY_JUMP_COOLDOWN = 0.7;
+export const ENEMY_TERMINAL_VY = -25;
+
 // --- JETPACK (S55) ---
 // New flying enemy. Hovers above the player, fires a 3-round burst from a
 // carbine, then reloads. Worse aim than the ground shooter (weaker lead +

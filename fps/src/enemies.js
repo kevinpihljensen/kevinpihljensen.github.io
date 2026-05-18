@@ -42,6 +42,7 @@ import {
   AI_LEAD_STRENGTH_SHOOTER, AI_LEAD_STRENGTH_HEAVY,
   AI_SCATTER_RADIUS, AI_SCATTER_STRENGTH,
   GRAVITY,
+  ENEMY_JUMP_VY, ENEMY_MAX_JUMP_HEIGHT, ENEMY_JUMP_COOLDOWN, ENEMY_TERMINAL_VY,
 } from './constants.js';
 import { sfxEnemyDeath, sfxShooterFire } from './audio.js';
 import { spawnProjectile } from './projectiles.js';
@@ -764,8 +765,15 @@ export function makeEnemy(type, x, z) {
     flyState: 'idle',
     burstLeft: 0,              // rounds still to fire in the current burst
     burstTickTimer: 0,         // seconds until the next round of the burst
-    burstCooldown: 0,          // seconds until the next burst can start
-    hoverTargetY: 0,           // current chosen hover altitude (relative to player floor)
+    burstCooldown: 0,              // seconds until the next burst can start
+    hoverTargetY: 0,               // current chosen hover altitude (relative to player floor)
+
+    // --- S55g JUMP STATE ---
+    // Grunts + shooters can jump short obstacles and fall off elevated decks.
+    // velocityY drives gravity-integrated vertical motion in stepMove.
+    canJump: (type === 'grunt' || type === 'shooter'),
+    velocityY: 0,
+    jumpCooldown: 0,
   };
 
   // M13: register the grunt's knife meshes as shootable + enemy-tagged, just
@@ -911,18 +919,48 @@ function stepMove(enemy, vx, vz, dt) {
     enemy.position.x = res.x;
     enemy.position.z = res.z;
   }
-  // Vertical: snap to / fall toward the surface below (within step-up).
+
+  // S55g: ledge-hop. If this enemy can jump, is on (or near) the ground, and
+  // a walkable surface ahead sits within ENEMY_MAX_JUMP_HEIGHT but above the
+  // step-up limit, give a vertical impulse so we land on it.
+  if (enemy.canJump && enemy.velocityY <= 0.01 && enemy.jumpCooldown <= 0) {
+    const sp = Math.hypot(vx, vz);
+    if (sp > 0.3) {
+      const lookDist = enemy.def.radius + 0.4;
+      const lookX = enemy.position.x + (vx / sp) * lookDist;
+      const lookZ = enemy.position.z + (vz / sp) * lookDist;
+      const aheadY = groundHeightAt(
+        lookX, lookZ, enemy.position.y + ENEMY_MAX_JUMP_HEIGHT, enemy.def.radius
+      );
+      if (aheadY !== null) {
+        const rise = aheadY - enemy.position.y;
+        if (rise > 0.6 && rise < ENEMY_MAX_JUMP_HEIGHT) {
+          enemy.velocityY = ENEMY_JUMP_VY;
+          enemy.jumpCooldown = ENEMY_JUMP_COOLDOWN;
+        }
+      }
+    }
+  }
+  if (enemy.jumpCooldown > 0) enemy.jumpCooldown -= dt;
+
+  // Vertical: gravity-integrated. velocityY < 0 = falling, > 0 = rising. The
+  // ground probe extends up to STEP above current position so small step-ups
+  // (ramp gradients, low ledges within step-up) snap cleanly.
   const STEP = 0.6;
+  enemy.velocityY -= GRAVITY * dt;
+  if (enemy.velocityY < ENEMY_TERMINAL_VY) enemy.velocityY = ENEMY_TERMINAL_VY;
+  const proposedY = enemy.position.y + enemy.velocityY * dt;
+  const probeMaxY = Math.max(enemy.position.y, proposedY) + STEP;
   const gY = groundHeightAt(
-    enemy.position.x, enemy.position.z,
-    enemy.position.y + STEP, enemy.def.radius
+    enemy.position.x, enemy.position.z, probeMaxY, enemy.def.radius
   );
   const groundY = gY === null ? 0 : gY;
-  if (enemy.position.y > groundY) {
-    enemy.position.y -= Math.min(enemy.position.y - groundY, GRAVITY * dt * dt + 0.25);
-    if (enemy.position.y < groundY) enemy.position.y = groundY;
-  } else {
+  if (proposedY <= groundY) {
+    // Landed (or never left ground / sub-frame ramp step-up).
     enemy.position.y = groundY;
+    enemy.velocityY = 0;
+  } else {
+    enemy.position.y = proposedY;
   }
 }
 
@@ -965,6 +1003,17 @@ function navGoal(enemy) {
   if (enemy.navVantage && (enemy.noLosTimer === 0 || rampLinks.length === 0)) {
     enemy.navVantage = false;
     enemy.navRamp = -1;
+  }
+
+  // S55g: drop-off. When the player is visibly BELOW us, skip the down-ramp
+  // detour — go direct. stepMove's gravity-integrated fall handles the drop
+  // when the enemy walks off the deck edge. Gated to grunt/shooter (heavies
+  // are reluctant; jetpacks fly). Disabled when seeking vantage (we just
+  // climbed for sight — don't immediately drop back down).
+  if (dy < -FLOOR_EPS && enemy._saw && !enemy.navVantage &&
+      (enemy.type === 'grunt' || enemy.type === 'shooter')) {
+    enemy.navRamp = -1;
+    return null;
   }
 
   if (sameFloor && !enemy.navVantage) {
