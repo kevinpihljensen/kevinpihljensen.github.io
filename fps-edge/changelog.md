@@ -26,6 +26,45 @@ Format: newest entries at the top. Each entry lists what was added, what was cha
 
 ## Session log
 
+### 2026-05-18 — fps-edge: Quake-flavoured procedural textures
+
+Closes the "looks like grey boxes" gap. The Edge in the live browser now
+gets dark-rust metal, weathered sandstone, and grimy concrete panels
+selected per-brush based on the original Quake texture names.
+
+**Textures (`src/textures.js`)**
+- `makeQuakeMetalTexture` — dark cool-grey base with fbm rust patches
+  (warm-red bias on the mask), 4×4 panel grooves with inner-edge highlight,
+  rivets at every panel corner, vertical grime streaks.
+- `makeQuakeStoneTexture` — hammer-dressed 4×4 staggered block layout
+  (warm brown blocks with per-block tint, top-bevel highlight + bottom
+  shadow), deep mortar grooves, fbm shading inside each block, vertical
+  weathering streaks.
+- `makeQuakeFloorTexture` — warm brown concrete with heavy grime stains,
+  2×2 panel grooves, hairline cracks.
+
+**Material dispatch (`src/kit.js`)**
+- New `MAT.qmetal`, `MAT.qstone`, `MAT.qfloor` entries pointing at the
+  Quake textures. Default `MAT.box` / `MAT.wall` / `MAT.overhang` switched
+  from RIDGEPOINT's wood/brick to the Quake metal/stone variants so all
+  imported brushes look Quake-flavoured by default.
+- `box({ ..., kind })` now selects `MAT[kind]` — falls back to `MAT.box`
+  if kind missing.
+
+**Per-brush material (`dev/import_edge.py`, `src/arena.js`)**
+- New `classify_material(tex_names)` reads the original Quake face textures
+  and returns `'qmetal'` / `'qstone'` / `'qfloor'`. Family scoring catches
+  Edge's specific textures: `metal*`, `cop1_*`, `plat_top*`, `lgmetal*`,
+  `lead*` → qmetal; `e2u3/blum*`, `rock*`, `wbrick*`, `green3*` → qstone;
+  `*floor*` → qfloor.
+- Importer stamps `mat` on every brush dict (and on the stair-step
+  brushes derived from slope brushes), then emits `kind: '...'` in the
+  LAYOUT box entries.
+- `arena.js` passes `e.kind` through to `box()`.
+
+**Distribution on The Edge**: 652 qmetal, 346 qstone, 134 qfloor out of
+1132 boxes. Battery still ALL GREEN. fps/ unchanged: zero line diff.
+
 ### 2026-05-18 — fps-edge: multi-y BFS, fps-render Edge poses → ALL GREEN
 
 After landing elevators, the validator still flagged 16 pickups as unreachable.

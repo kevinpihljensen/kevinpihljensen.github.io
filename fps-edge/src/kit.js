@@ -43,7 +43,8 @@ import * as THREE from 'three';
 import { scene } from './scene.js';
 import { makeBoxSolid, makeRampSolid, shootables, clamp } from './collision.js';
 import { makeFloorTexture, makeBrickTexture, makeWoodTexture,
-         makeConcreteTexture, makeMetalTexture } from './textures.js';
+         makeConcreteTexture, makeMetalTexture,
+         makeQuakeMetalTexture, makeQuakeStoneTexture, makeQuakeFloorTexture } from './textures.js';
 
 // --- MATERIALS (shared; DoubleSide on structure so a winding mistake can
 // never read as see-through — the user requires structure be opaque) ---
@@ -67,14 +68,29 @@ metalTex.repeat.set(2, 2);
 const overhangTex = makeConcreteTexture();
 overhangTex.repeat.set(2, 2);
 
+// fps-edge: Quake-flavoured procedural textures for the imported Edge brushes.
+// Repeats target the typical 1–4 m brush footprint at our 1 unit = 1 m scale —
+// one tile per ~2 m of surface reads as a panel / block at human scale.
+const qMetalTex = makeQuakeMetalTexture(); qMetalTex.repeat.set(1, 1);
+const qStoneTex = makeQuakeStoneTexture(); qStoneTex.repeat.set(1, 1);
+const qFloorTex = makeQuakeFloorTexture(); qFloorTex.repeat.set(2, 2);
+
 const MAT = {
   floor:   new THREE.MeshStandardMaterial({ map: floorTex,    roughness: 0.92, metalness: 0.05, side: THREE.DoubleSide }),
   deck:    new THREE.MeshStandardMaterial({ map: concreteTex, color: 0xb5b8bd, roughness: 0.85, metalness: 0.12, side: THREE.DoubleSide }),
   ramp:    new THREE.MeshStandardMaterial({ map: concreteRampTex, color: 0xa2a6ac, roughness: 0.85, metalness: 0.18, side: THREE.DoubleSide }),
   stair:   new THREE.MeshStandardMaterial({ map: metalTex,    color: 0x9aa1ac, roughness: 0.65, metalness: 0.40, side: THREE.DoubleSide }),
-  box:     new THREE.MeshStandardMaterial({ map: woodTex,     color: 0xc7b290, roughness: 0.80, metalness: 0.05, side: THREE.DoubleSide }),
-  wall:    new THREE.MeshStandardMaterial({ map: brickTex,    color: 0xd0c8bd, roughness: 0.85, metalness: 0.08, side: THREE.DoubleSide }),
-  overhang:new THREE.MeshStandardMaterial({ map: overhangTex, color: 0xa0a4aa, roughness: 0.85, metalness: 0.18, side: THREE.DoubleSide }),
+  // fps-edge defaults: every imported box / wall / overhang gets a
+  // Quake-flavoured material. The original RIDGEPOINT brick / wood look
+  // doesn't fit a Quake fortress.
+  box:     new THREE.MeshStandardMaterial({ map: qMetalTex,   color: 0x9e8b76, roughness: 0.78, metalness: 0.35, side: THREE.DoubleSide }),
+  wall:    new THREE.MeshStandardMaterial({ map: qStoneTex,   color: 0xb8a98c, roughness: 0.90, metalness: 0.10, side: THREE.DoubleSide }),
+  overhang:new THREE.MeshStandardMaterial({ map: qMetalTex,   color: 0xa39282, roughness: 0.78, metalness: 0.35, side: THREE.DoubleSide }),
+  // Kind-specific overrides selected by box({kind:'...'}) — used by the
+  // importer to give floor / stone / metal brushes the right material.
+  qmetal:  new THREE.MeshStandardMaterial({ map: qMetalTex,   color: 0x9e8b76, roughness: 0.78, metalness: 0.35, side: THREE.DoubleSide }),
+  qstone:  new THREE.MeshStandardMaterial({ map: qStoneTex,   color: 0xb8a98c, roughness: 0.90, metalness: 0.10, side: THREE.DoubleSide }),
+  qfloor:  new THREE.MeshStandardMaterial({ map: qFloorTex,   color: 0x9e8a70, roughness: 0.92, metalness: 0.08, side: THREE.DoubleSide }),
 };
 
 function addMesh(geo, mat, castShadow) {
@@ -128,11 +144,14 @@ export function platform({ cx, cz, top, sx, sz, thick = 0.6 }) {
 // Solid cuboid you can stand on / hide behind. Walkable top = base + sy.
 // (You cannot walk UP onto it — a box riser body-blocks like a wall. Jump
 // onto it, or go around. Use stairs/ramp for no-jump ascent.)
-export function box({ cx, cz, base = 0, sx, sy, sz }) {
+export function box({ cx, cz, base = 0, sx, sy, sz, kind }) {
   const x0 = cx - sx / 2, x1 = cx + sx / 2;
   const z0 = cz - sz / 2, z1 = cz + sz / 2;
   makeBoxSolid(x0, x1, base, base + sy, z0, z1);
-  const m = new THREE.Mesh(new THREE.BoxGeometry(sx, sy, sz), MAT.box);
+  // fps-edge: `kind` selects a Quake-flavoured material — 'qmetal' / 'qstone'
+  // / 'qfloor'. Default falls back to MAT.box (the engine-wide default).
+  const mat = (kind && MAT[kind]) || MAT.box;
+  const m = new THREE.Mesh(new THREE.BoxGeometry(sx, sy, sz), mat);
   m.position.set(cx, base + sy / 2, cz);
   m.castShadow = true; m.receiveShadow = true;
   scene.add(m); shootables.push(m);

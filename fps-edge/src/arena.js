@@ -26,7 +26,11 @@ for (const e of LAYOUT) {
       break;
     }
     case 'box': {
-      const h = box({ cx: e.cx, cz: e.cz, base: e.base, sx: e.sx, sy: e.sy, sz: e.sz });
+      // fps-edge: pass the brush `kind` ('qmetal' / 'qstone' / 'qfloor')
+      // emitted by the importer so each AABB gets a material matching the
+      // dominant face texture in the original Quake brush. Legacy maps
+      // without `kind` fall through to MAT.box default.
+      const h = box({ cx: e.cx, cz: e.cz, base: e.base, sx: e.sx, sy: e.sy, sz: e.sz, kind: e.kind });
       if (e.id) H[e.id] = h;
       break;
     }

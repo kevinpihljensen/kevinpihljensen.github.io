@@ -144,6 +144,25 @@ def brush_aabb(planes):
 
 # ───────────────────────── classify ─────────────────────────
 
+# Texture-name → engine MAT bucket. The kit's MAT entries are 'qmetal'
+# (rust panel), 'qstone' (sandstone blocks), 'qfloor' (grimy concrete).
+def classify_material(tex_names):
+    floors = sum(1 for t in tex_names if 'floor' in t)
+    metals = sum(1 for t in tex_names
+                 if any(s in t for s in ('metal', 'cop', 'plat_top', 'lgmetal',
+                                          'mmetal', 'nmetal', 'lead', 'met5',
+                                          'tech', 'comp')))
+    stones = sum(1 for t in tex_names
+                 if any(s in t for s in ('blum', 'blume', 'rock', 'wbrick',
+                                          'wizmet', 'green3', 'stone', 'brick')))
+    # Tie-breaker order: floor wins (it's the deck the player stands on),
+    # then stone (warm sandstone), then metal (default for Edge's industrial
+    # interior).
+    if floors >= max(metals, stones) and floors > 0: return 'qfloor'
+    if stones >  metals: return 'qstone'
+    return 'qmetal'
+
+
 def find_top_face(planes):
     """Return (normal, d) of the face with the highest dot-with-UP."""
     best, best_dot = None, -2
@@ -274,18 +293,22 @@ def main():
         if top is None:
             skipped['no_top'] += 1; continue
 
+        mat = classify_material(texs)
+
         if SLOPE_TOP_MIN < top_dot < SLOPE_TOP_MAX:
-            # Sloped walkable top → stair-step approximation.
+            # Sloped walkable top → stair-step approximation; the steps
+            # inherit the parent brush's material.
             steps = slope_to_steps(planes, qmin, qmax, top)
             if steps:
                 for s in steps:
-                    boxes.append({'q': s, 'kind': 'slope'})
+                    boxes.append({'q': s, 'kind': 'slope', 'mat': mat})
                 skipped['slope_to_steps'] += 1
                 continue
         # Default: emit as single AABB.
         boxes.append({
             'q': (qmin[0], qmin[1], qmin[2], qmax[0], qmax[1], qmax[2]),
             'kind': 'box',
+            'mat': mat,
         })
 
     # ── func_plat (elevator) extraction ──
@@ -539,9 +562,11 @@ def main():
         sx = ex1 - ex0; sy = ey1 - ey0; sz = ez1 - ez0
         if min(sx, sy, sz) < 0.05: continue
         cx_ = (ex0 + ex1) / 2; cz_ = (ez0 + ez1) / 2
+        mat = b.get('mat', 'qmetal')
         out.append(
             f"  {{ t: 'box', cx: {cx_:.2f}, cz: {cz_:.2f}, "
-            f"base: {ey0:.2f}, sx: {sx:.2f}, sy: {sy:.2f}, sz: {sz:.2f} }},"
+            f"base: {ey0:.2f}, sx: {sx:.2f}, sy: {sy:.2f}, sz: {sz:.2f}, "
+            f"kind: '{mat}' }},"
         )
         n_emitted += 1
     for tp in tp_engine:

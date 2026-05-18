@@ -485,3 +485,182 @@ export function makePillarTexture() {
   tex.anisotropy = 8;
   return tex;
 }
+
+// ============================================================================
+// QUAKE-FLAVOURED TEXTURES (fps-edge)
+//
+// The Edge's .map uses Quake 1 textures (metal2_4, e2u3/blum12_1, etc.) which
+// are dark industrial / sandstone surfaces. These procedural variants give
+// the imported AABBs that feel without bundling any actual Quake assets.
+// ============================================================================
+
+// QUAKE METAL — dark rust-and-grime panel. Cool grey base with warm rust
+// patches via fbm, panel grooves on a 4-square grid, rivets at the corners
+// of each panel.
+export function makeQuakeMetalTexture() {
+  const N = 512;
+  const c = makeCanvas(N);
+  const ctx = c.getContext('2d');
+  const id = ctx.createImageData(N, N);
+  const d = id.data;
+  for (let y = 0; y < N; y++) {
+    for (let x = 0; x < N; x++) {
+      const base = 38 + fbm(x / 60, y / 60, 4, 41) * 28;       // 38..66 cool grey
+      const rust = fbm(x / 28 + 31, y / 28 + 11, 5, 53);       // 0..1 rust mask
+      const rustAmt = Math.max(0, rust - 0.55) * 1.4;          // bias toward sparse
+      const r = Math.min(255, base * (1 + rustAmt * 0.9));     // warm boost
+      const g = Math.min(255, base * (1 + rustAmt * 0.15));
+      const b = Math.min(255, base * (1 - rustAmt * 0.15));
+      const i = (y * N + x) * 4;
+      d[i] = r; d[i + 1] = g; d[i + 2] = b; d[i + 3] = 255;
+    }
+  }
+  ctx.putImageData(id, 0, 0);
+  // Panel grooves — 4×4 grid.
+  ctx.strokeStyle = 'rgba(8,7,5,0.85)';
+  ctx.lineWidth = 2;
+  const step = N / 4;
+  for (let i = 0; i <= 4; i++) {
+    ctx.beginPath(); ctx.moveTo(i * step, 0); ctx.lineTo(i * step, N); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(0, i * step); ctx.lineTo(N, i * step); ctx.stroke();
+  }
+  // Inner-edge highlight (panel lip).
+  ctx.strokeStyle = 'rgba(140,128,110,0.20)';
+  ctx.lineWidth = 1;
+  for (let i = 1; i < 4; i++) {
+    ctx.beginPath(); ctx.moveTo(i * step + 1.5, 0); ctx.lineTo(i * step + 1.5, N); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(0, i * step + 1.5); ctx.lineTo(N, i * step + 1.5); ctx.stroke();
+  }
+  // Rivets at every panel corner.
+  for (let gy = 0; gy <= 4; gy++) {
+    for (let gx = 0; gx <= 4; gx++) {
+      drawBolt(ctx, gx * step + 4, gy * step + 4, 2.5);
+    }
+  }
+  // Long vertical scratch / grime streaks.
+  ctx.strokeStyle = 'rgba(10,8,6,0.30)';
+  ctx.lineWidth = 1;
+  for (let k = 0; k < 18; k++) {
+    const x = Math.random() * N;
+    const y0 = Math.random() * N * 0.4;
+    const y1 = y0 + 40 + Math.random() * 140;
+    ctx.beginPath(); ctx.moveTo(x, y0); ctx.lineTo(x + (Math.random() - 0.5) * 6, y1); ctx.stroke();
+  }
+  return finalize(c);
+}
+
+// QUAKE STONE — sandstone / lead-grey wall blocks. Warm brown base with
+// fbm shading, hammer-dressed irregular blocks (4×3 layout, slightly
+// staggered), deep mortar grooves, occasional weathering streaks.
+export function makeQuakeStoneTexture() {
+  const N = 512;
+  const c = makeCanvas(N);
+  const ctx = c.getContext('2d');
+  // Mortar / pit base.
+  ctx.fillStyle = '#2a221a';
+  ctx.fillRect(0, 0, N, N);
+  // Stone block bodies. 4 columns × 3 rows of ~120 × 160 px, with column
+  // offset on alternate rows for a brick-like stagger.
+  const cols = 4, rows = 4;
+  const bw = N / cols, bh = N / rows;
+  for (let r = 0; r < rows; r++) {
+    const offset = (r % 2) * bw * 0.5;
+    for (let cIx = -1; cIx <= cols; cIx++) {
+      const bx = cIx * bw + offset;
+      const by = r * bh;
+      // Per-block tint (warm-brown noise).
+      const tint = 0.85 + Math.random() * 0.30;
+      // Block body — slightly inset for a mortar groove visual.
+      const inset = 4;
+      const id = ctx.createImageData(bw - inset * 2, bh - inset * 2);
+      const dd = id.data;
+      for (let y = 0; y < bh - inset * 2; y++) {
+        for (let x = 0; x < bw - inset * 2; x++) {
+          const n = fbm((bx + x) / 22, (by + y) / 22, 4, 13);
+          const v = (52 + n * 60) * tint;
+          const [rr, gg, bb] = tinted(v, 1.08, 0.92, 0.74);
+          const i = (y * id.width + x) * 4;
+          dd[i] = rr; dd[i + 1] = gg; dd[i + 2] = bb; dd[i + 3] = 255;
+        }
+      }
+      ctx.putImageData(id, bx + inset, by + inset);
+      // Top highlight + bottom shadow strips on each block for a fake bevel.
+      ctx.fillStyle = 'rgba(220,200,170,0.16)';
+      ctx.fillRect(bx + inset, by + inset, bw - inset * 2, 2);
+      ctx.fillStyle = 'rgba(10,7,4,0.42)';
+      ctx.fillRect(bx + inset, by + bh - inset - 3, bw - inset * 2, 3);
+    }
+  }
+  // Weathering streaks running vertically — irregular dark drips.
+  ctx.strokeStyle = 'rgba(18,12,6,0.30)';
+  ctx.lineWidth = 1;
+  for (let k = 0; k < 14; k++) {
+    let x = Math.random() * N;
+    let y = Math.random() * N * 0.4;
+    const len = 60 + Math.random() * 200;
+    ctx.beginPath(); ctx.moveTo(x, y);
+    for (let s = 0; s < len; s += 5) {
+      x += (Math.random() - 0.5) * 0.8;
+      y += 5;
+      ctx.lineTo(x, y);
+    }
+    ctx.stroke();
+  }
+  return finalize(c);
+}
+
+// QUAKE FLOOR — darker, grimier variant of the existing floor: warm brown
+// concrete with deep mortar grooves between 2×2 panels and more aggressive
+// dirt staining than the stock floor texture.
+export function makeQuakeFloorTexture() {
+  const N = 512;
+  const c = makeCanvas(N);
+  const ctx = c.getContext('2d');
+  const id = ctx.createImageData(N, N);
+  const d = id.data;
+  for (let y = 0; y < N; y++) {
+    for (let x = 0; x < N; x++) {
+      const n = fbm(x / 56, y / 56, 5, 91);
+      const base = 44 + n * 48;
+      const [r, g, b] = tinted(base, 1.10, 0.95, 0.72);  // warm brown
+      const i = (y * N + x) * 4;
+      d[i] = r; d[i + 1] = g; d[i + 2] = b; d[i + 3] = 255;
+    }
+  }
+  ctx.putImageData(id, 0, 0);
+  // Heavy grime stains.
+  for (let s = 0; s < 9; s++) {
+    const sx = Math.random() * N, sy = Math.random() * N;
+    const sr = 50 + Math.random() * 90;
+    const grad = ctx.createRadialGradient(sx, sy, 0, sx, sy, sr);
+    grad.addColorStop(0, 'rgba(10,7,4,0.65)');
+    grad.addColorStop(0.6, 'rgba(20,14,8,0.25)');
+    grad.addColorStop(1, 'rgba(0,0,0,0)');
+    ctx.fillStyle = grad;
+    ctx.fillRect(sx - sr, sy - sr, sr * 2, sr * 2);
+  }
+  // 2×2 panel grooves.
+  ctx.strokeStyle = 'rgba(8,5,2,0.85)';
+  ctx.lineWidth = 4;
+  const step = N / 2;
+  for (let i = 0; i <= 2; i++) {
+    ctx.beginPath(); ctx.moveTo(i * step, 0); ctx.lineTo(i * step, N); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(0, i * step); ctx.lineTo(N, i * step); ctx.stroke();
+  }
+  // Hairline cracks.
+  ctx.strokeStyle = 'rgba(15,10,5,0.55)';
+  ctx.lineWidth = 1;
+  for (let k = 0; k < 18; k++) {
+    let x = Math.random() * N, y = Math.random() * N;
+    const len = 30 + Math.random() * 100;
+    let ang = Math.random() * Math.PI * 2;
+    ctx.beginPath(); ctx.moveTo(x, y);
+    for (let s = 0; s < len; s += 4) {
+      ang += (Math.random() - 0.5) * 0.7;
+      x += Math.cos(ang) * 4; y += Math.sin(ang) * 4;
+      ctx.lineTo(x, y);
+    }
+    ctx.stroke();
+  }
+  return finalize(c);
+}
