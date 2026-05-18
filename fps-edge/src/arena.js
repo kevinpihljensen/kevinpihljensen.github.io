@@ -10,6 +10,7 @@ import {
 import { LAYOUT, wallBoxes } from './maplayout.js';
 import { registerTeleporter } from './teleporters.js';
 import { registerElevator } from './elevators.js';
+import { registerWater } from './water.js';
 
 const H = {};   // id -> kit handle (platform/box/connector foot)
 
@@ -61,6 +62,7 @@ for (const e of LAYOUT) {
       break;
     case 'water':
       water({ cx: e.cx, cz: e.cz, base: e.base, sx: e.sx, sy: e.sy, sz: e.sz });
+      registerWater(e);    // for swimming physics
       break;
     default:
       console.warn('arena: unknown layout entry', e.t);

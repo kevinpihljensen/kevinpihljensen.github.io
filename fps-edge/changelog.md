@@ -26,6 +26,58 @@ Format: newest entries at the top. Each entry lists what was added, what was cha
 
 ## Session log
 
+### 2026-05-18 — fps-edge: clipping mitigation, lighter floor, swimming physics
+
+User feedback round 2: "do clipping mitigation; another texture is still
+very dark brown; can you work on swimming physics inside the water area?"
+
+**Clipping mitigation (`dev/import_edge.py`)**
+- Heavily-diagonal brush filter: count faces whose normal isn't axis-
+  aligned (`max(|nx|,|ny|,|nz|) < 0.99`). When a brush has ≥3 diagonal
+  faces AND its AABB volume is ≥ 6 m³ AND it's not already going through
+  the slope→stairs path, drop it. These are the wedge / cut / bevel
+  brushes whose AABBs over-enclose their true volume and feed the
+  clipping report.
+- Pickup-protection: pre-extract every pickup's Quake position; any
+  brush that has a pickup XZ inside its footprint AND a pickup ≤ 1 m
+  above its top is kept regardless of the diagonal filter (pickups need
+  their landing surface).
+- 116 brushes pruned. Clipping pairs 981 → 523 (47% drop); total
+  interpenetration volume 10,000 → 3,841 m³ (62% drop). All 28 pickups
+  still reachable, 0 floating.
+
+**qfloor lightened (`src/textures.js`, `src/kit.js`)**
+- `makeQuakeFloorTexture` base brightness 110–180 (was 44–92), tint
+  1.06/1.00/0.86 light warm sand (was 1.10/0.95/0.72 mud-brown). Grime
+  stains, panel grooves, and crack lines softened to match.
+- `MAT.qfloor` color shifted from `0x9e8a70` to `0xc8b89a`.
+
+**Swimming physics (`src/water.js`, `src/state.js`, `src/constants.js`, `src/player.js`, `src/arena.js`, `src/main.js`)**
+- New `src/water.js` registers each `t: 'water'` LAYOUT entry as a
+  trigger volume. `updateWaterState(dt)` runs once per frame from
+  `main.js` BEFORE `updatePlayer` and sets `player.inWater` if the
+  capsule torso (feet + 0.9 m) overlaps any water AABB.
+- `state.js` exposes `player.inWater` + `player.waterTop`.
+- `constants.js` adds: `WATER_GRAVITY=6` (was 20), `WATER_BUOYANCY=4.5`
+  (counters most of gravity), `WATER_SWIM_UP/_DOWN=3.6` (Space/Ctrl
+  target velocities), `WATER_SPEED_MULT=0.55`, `WATER_DRAG=2.8` (1/s
+  exponential horizontal decay), `WATER_VY_DAMP=2.2` (vertical
+  damping toward swim target).
+- `player.js` updatePlayer branch:
+  - wishSpeed × `WATER_SPEED_MULT` when in water.
+  - Normal jump path suppressed in water (avoids double-fire on entry).
+  - Vertical step: damp velocityY toward a target based on input
+    (Space → up, Ctrl → down, neither → gentle buoyant drift), then
+    apply small residual `WATER_GRAVITY − WATER_BUOYANCY` so falling
+    into water decelerates over a few frames.
+  - Horizontal: exponential drag on velocityX/Z each frame; the
+    wish-accelerate code that runs later still pushes toward
+    wishSpeed, so input feels like swimming, no input means slow stop.
+
+**Verified**: 101/101 engine-pure harnesses PASS. EDGE MAP OK with
+1005 solids, 0 unreachable, 0 floating, 523 clipping pairs (down from
+981). fps/ unchanged: zero line diff.
+
 ### 2026-05-18 — fps-edge: lighter stone, water surfaces, clipping detector + auto-prune
 
 User feedback: "the one dark texture is a little too dark, try more grey-ish
