@@ -2,7 +2,7 @@
 // the kit math mirror against REAL collision.js, then asserts the key
 // numeric invariants — connector seam continuity, spawn clearance, bounds,
 // the flush BRIDGE join, and the raised-floor under-lane (the fix).
-import { LAYOUT, SPAWN } from '../src/maplayout.js';
+import { LAYOUT, SPAWN, wallBoxes } from '../src/maplayout.js';
 import { makeBoxSolid, makeRampSolid, groundHeightAt, collideCapsule }
   from '../src/collision.js';
 import { ARENA_PLAYABLE_HALF } from '../src/constants.js';
@@ -37,10 +37,15 @@ for(const e of LAYOUT){
     makeBoxSolid(x0,x1,b,b+e.sy,z0,z1);
     const hnd={top:b+e.sy,x0,x1,z0,z1,cx:e.cx,cz:e.cz}; if(e.id)H[e.id]=hnd;
     if(e.id==='CATWALK_HE')CATWALK_HE={...hnd,yMin:b};}
-  else if(e.t==='wall'){const b=e.base||0,t=e.thick==null?0.5:e.thick; let x0,x1,z0,z1;
-    if(e.axis==='x'){x0=e.cx-e.length/2;x1=e.cx+e.length/2;z0=e.cz-t/2;z1=e.cz+t/2;}
-    else{z0=e.cz-e.length/2;z1=e.cz+e.length/2;x0=e.cx-t/2;x1=e.cx+t/2;}
-    makeBoxSolid(x0,x1,b,b+e.height,z0,z1,{noWalk:true});}
+  else if(e.t==='wall'){
+    // S55b: decompose into the wallBoxes() segments so doorways/windows in
+    // the LAYOUT actually become gaps in the simulated collision (matches
+    // what arena.js + kit.solidBox build at runtime). Without this, the
+    // harness reads every wall as one solid box and bogus-fails any test
+    // that walks an external connector THROUGH a building doorway.
+    for(const r of wallBoxes(e))
+      makeBoxSolid(r.x0,r.x1,r.y0,r.y1,r.z0,r.z1,{noWalk:true});
+  }
   else if(e.t==='rampTo'||e.t==='stairsTo'){const P=H[e.to];
     const c=solve(P,e.side,e.run,e.width,e.fromY||0);
     makeRampSolid(c.axis,c.loPos,c.hiPos,c.loY,c.hiY,c.c0,c.c1,e.thick==null?0.6:e.thick,{skirtSolid:true});
@@ -90,5 +95,29 @@ ok('CATWALK_HE abuts HILLTOP east edge (x0==HILLTOP.x1)',
      Math.hypot(res.x-bx,res.z-bz)<0.05, `x=${f(res.x)} z=${f(res.z)}`);
   ok('ground under CATWALK_HE is walkable floor (y=0)',
      Math.abs(groundHeightAt(bx,bz,CATWALK_HE.yMin-0.1,R)-0)<1e-6); }
+
+// 6. S55b: every external connector lets the player walk onto its target
+// deck without being ejected by a wall body sitting in the landing zone.
+// For each connector, sample a point ~0.5m short of the deck edge along the
+// stair surface and verify collideCapsule does not horizontally displace
+// the capsule. This catches the "external stair passes through a building
+// wall" bug class — fixed by adding tall doorways through walls/parapets
+// where each connector lands.
+for(const {to,c} of conns){
+  // Pick a sample BELOW the deck top: 0.5 m short of hiPos along the run
+  // axis, with the surface y at that point.
+  const dirSign = Math.sign(c.hiPos - c.loPos) || 1;
+  const samplePos = c.hiPos - dirSign * 0.5;        // 0.5 m short of deck edge
+  const slope = (c.hiY - c.loY) / (c.hiPos - c.loPos);
+  const sy = slope * samplePos + (c.loY - slope * c.loPos);
+  const cf = (c.c0 + c.c1) / 2;
+  const sx = c.axis === 'z' ? cf : samplePos;
+  const sz = c.axis === 'z' ? samplePos : cf;
+  // Feet on the slope surface; collideCapsule should NOT move us horizontally.
+  const res = collideCapsule(sx, sy, sz, R, BODY);
+  const moved = Math.hypot(res.x - sx, res.z - sz);
+  ok(`connector landing → ${to}: capsule at the top of the stair not ejected`,
+     moved < 0.05, `moved=${f(moved)} at (${f(sx)}, ${f(sz)}) y=${f(sy)}`);
+}
 console.log(`\n================  ${pass}/${total} PASS  ================`);
 if(pass!==total) process.exit(1);
