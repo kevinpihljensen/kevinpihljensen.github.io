@@ -7,6 +7,7 @@ import {
   ground, platform, connectRamp, connectStairs, box, wall, overhang, perimeter, solidBox,
 } from './kit.js';
 import { LAYOUT, wallBoxes } from './maplayout.js';
+import { registerTeleporter } from './teleporters.js';
 
 const H = {};   // id -> kit handle (platform/box/connector foot)
 
@@ -45,6 +46,9 @@ for (const e of LAYOUT) {
     }
     case 'overhang':
       overhang({ axis: e.axis, loPos: e.loPos, hiPos: e.hiPos, loY: e.loY, hiY: e.hiY, c0: e.c0, c1: e.c1, thick: e.thick });
+      break;
+    case 'teleporter':
+      registerTeleporter(e);
       break;
     default:
       console.warn('arena: unknown layout entry', e.t);

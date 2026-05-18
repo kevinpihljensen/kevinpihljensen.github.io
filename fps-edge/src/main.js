@@ -17,6 +17,7 @@ import { updatePickups } from './pickups.js';
 import { updateWave, updateArena } from './wave.js';
 import { setGameState, updateHUD, updateToast } from './hud.js';
 import { updateAudioListener } from './audio.js';
+import { applyTeleport } from './teleporters.js';
 
 // Initial UI state: title overlay shown, no HUD, no canvas focus.
 setGameState(GAME_STATE.TITLE);
@@ -41,6 +42,7 @@ function loop() {
     updateEnemies(dt);
     updateProjectiles(dt);
     updatePlayer(dt);
+    applyTeleport(dt);    // Edge: warp player if they entered a slipgate
     updateWeaponTimers(dt);
     updatePickups(dt);
     updateWave(dt);

@@ -1,79 +1,83 @@
 #!/usr/bin/env python3
-"""Convert a Quake .map (text brush format) to engine LAYOUT entries.
+"""Quake .map → engine LAYOUT importer (v2).
 
-Approach: each brush is the intersection of half-spaces defined by its planes.
-Compute brush vertices as the set of points where 3 planes meet AND lie inside
-every other half-space; the AABB of those vertices is the brush bound.
+v2 over v1 (single-AABB-per-brush): classifies brushes by their TOP face
+orientation and converts slope brushes into stair-step stacks so sloped
+floors stay walkable. Also extracts teleporter trigger volumes as a new
+LAYOUT entry type, and drops sub-volume decorative trim brushes.
 
-Lossy by design: Quake brushes are arbitrary convex polyhedra (sloped
-surfaces, angled walls); AABB conversion fattens every brush to its tightest
-axis-aligned bound. Sloped floors become stepped boxes, angled walls become
-thicker rectangles. This is the inherent gap between Quake's geometry
-vocabulary and our engine's LAYOUT vocabulary.
+Pipeline:
+  parse_map      → list of entities (each with kv + brushes)
+  parse_brush    → list of (normal, d) half-spaces + face texture names
+  classify       → 'box' | 'slope' | 'sky' | 'water' | 'special' | 'trim'
+  brush_aabb     → axis-aligned bound via plane-triple vertex enumeration
+  slope_to_steps → for slope brushes, emit N step-box entries
+  q2engine       → Quake (x east, y north, z up) → engine (x east, y up, z south)
+  emit           → write src/maplayout.js
 
-Filters: skips sky/trigger/clip brushes; drops brushes flagged as part of
-'func_*' entities other than func_wall (elevators don't translate); merges
-near-duplicate brushes; drops sub-threshold sliver brushes (decorative trim).
+Output LAYOUT entries:
+  { t: 'ground', ... }       — engine perimeter floor
+  { t: 'perimeter', ... }    — engine perimeter walls
+  { t: 'box', cx, cz, base, sx, sy, sz, kind } — every walkable / blocking solid
+  { t: 'teleporter', x0..z1, dx, dy, dz }      — NEW: trigger volume + dest
 
-Output: writes src/maplayout.js with a LAYOUT array of `box` entries (one per
-brush) plus PICKUPS + SPAWN_ANCHORS extracted from point entities.
+PICKUPS + SPAWN + SPAWN_ANCHORS extracted from point entities.
 """
 
+import math
+import os
 import re
 import sys
-import os
-import math
-import numpy as np
 from collections import defaultdict
+
+import numpy as np
 
 SRC = os.path.join(os.path.dirname(__file__), 'source', 'q2dm1q1restoration.map')
 OUT = os.path.join(os.path.dirname(__file__), '..', 'src', 'maplayout.js')
 
-# Quake -> engine scale and axis. Player capsule is ~1.7m, Quake player is 56u.
-# 56 u / 1.7 m ≈ 33 u/m. Use 32 for round numbers.
+# Quake 1 unit ≈ 3 cm; player is 56 u tall ≈ 1.7 m → 32 u/m.
 S = 1.0 / 32.0
 
-# Texture filters: brushes with these texture prefixes on any face are dropped.
-SKIP_TEXTURE_PREFIXES = ('sky', 'trigger', 'clip', '*', 'origin')
+# Trim brushes below this volume are dropped (m³). Many Quake brushes are
+# 2-unit thick decorative chamfers / lighting trim that bloat the box list.
+MIN_BRUSH_VOLUME = 0.008
 
-# Minimum brush volume (m³) to keep. Sliver trim brushes below this are noise.
-MIN_BRUSH_VOLUME = 0.02
+# Per-step rise for slope→stairs conversion (m). Engine step-up limit is
+# 0.6 m so anything ≤ 0.4 walks smoothly.
+SLOPE_STEP_RISE = 0.35
 
-# Texture name → engine surface kind. We pick a kit-friendly bucket so the
-# arena builder can later assign procedural materials. Defaults to 'wall'.
-def classify_texture(tex_names):
-    if any(t.startswith('sky') for t in tex_names): return 'sky'
-    floors = sum(1 for t in tex_names if 'floor' in t)
-    metals = sum(1 for t in tex_names if 'metal' in t or 'cop' in t)
-    if floors > metals: return 'floor'
-    return 'metal'
+# Top-face dot product (with world UP) classifications:
+#  ≥ 0.98 → flat top (axis-aligned floor/ceiling/deck) → emit as box
+#  0.40 - 0.98 → sloped top (walkable ramp) → emit as stairs
+#  < 0.40 → no walkable top (wall/cap) → emit as box
+SLOPE_TOP_MIN = 0.40
+SLOPE_TOP_MAX = 0.98
 
+# Textures that mark a brush as non-renderable / non-solid.
+SKIP_TEX_PREFIXES = ('sky', 'trigger', 'clip', '*', 'origin')
+WATER_TEX_PREFIXES = ('*04', '*water', '*slime')
+
+
+# ───────────────────────── parse ─────────────────────────
 
 def parse_map(path):
-    """Yield (depth-1 entity dict, list of brush dicts) tuples."""
     text = open(path, encoding='utf-8', errors='replace').read()
     lines = text.split('\n')
-    entities = []
-    i = 0
-    n = len(lines)
+    entities, i, n = [], 0, len(lines)
     while i < n:
-        line = lines[i].strip()
-        if line == '{':
-            # entity block
+        if lines[i].strip() == '{':
             ent = {'kv': {}, 'brushes': []}
             i += 1
             while i < n and lines[i].strip() != '}':
                 s = lines[i].strip()
                 if s == '{':
-                    # brush
-                    brush_planes = []
+                    bp = []
                     i += 1
                     while i < n and lines[i].strip() != '}':
                         bl = lines[i].strip()
-                        if bl and not bl.startswith('//'):
-                            brush_planes.append(bl)
+                        if bl and not bl.startswith('//'): bp.append(bl)
                         i += 1
-                    ent['brushes'].append(brush_planes)
+                    ent['brushes'].append(bp)
                 else:
                     m = re.match(r'"([^"]+)"\s+"([^"]*)"', s)
                     if m: ent['kv'][m.group(1)] = m.group(2)
@@ -92,242 +96,400 @@ PLANE_RE = re.compile(
 
 
 def parse_brush(plane_lines):
-    """→ (list of (n, d) planes, list of texture names). Returns (None, None)
-    if the brush has fewer than 4 valid planes."""
-    planes = []
-    texs = []
+    planes, texs = [], []
     for line in plane_lines:
         m = PLANE_RE.match(line)
         if not m: continue
-        coords = [float(m.group(k+1)) for k in range(9)]
-        tex = m.group(10)
-        p1 = np.array(coords[0:3])
-        p2 = np.array(coords[3:6])
-        p3 = np.array(coords[6:9])
-        # Quake plane: normal = cross(p3-p1, p2-p1) (CCW when looking from
-        # outside the brush). Brush interior satisfies n·p + d ≤ 0.
+        c = [float(m.group(k+1)) for k in range(9)]
+        p1, p2, p3 = np.array(c[0:3]), np.array(c[3:6]), np.array(c[6:9])
+        # Quake .map: brush interior satisfies n·p + d ≤ 0, with the normal
+        # pointing OUT of the brush. The plane's points are wound so that
+        # cross(p3-p1, p2-p1) gives the outward normal.
         nrm = np.cross(p3 - p1, p2 - p1)
         ln = np.linalg.norm(nrm)
         if ln < 1e-4: continue
         nrm = nrm / ln
         d = -float(np.dot(nrm, p1))
         planes.append((nrm, d))
-        texs.append(tex)
+        texs.append(m.group(10))
     if len(planes) < 4: return None, None
     return planes, texs
 
 
 def brush_aabb(planes):
-    """Compute AABB of the convex polyhedron defined by half-spaces
-    n·p + d ≤ 0. Returns (qmin, qmax) in Quake units or None if degenerate."""
+    """AABB of the convex polyhedron n·p + d ≤ 0."""
     n = len(planes)
     verts = []
     EPS = 1e-3
     for i in range(n):
-        for j in range(i+1, n):
-            for k in range(j+1, n):
+        for j in range(i + 1, n):
+            for k in range(j + 1, n):
                 A = np.array([planes[i][0], planes[j][0], planes[k][0]])
-                det = np.linalg.det(A)
-                if abs(det) < 1e-4: continue
+                if abs(np.linalg.det(A)) < 1e-4: continue
                 b = -np.array([planes[i][1], planes[j][1], planes[k][1]])
                 try:
                     p = np.linalg.solve(A, b)
                 except np.linalg.LinAlgError:
                     continue
-                # Inside all other half-spaces?
                 ok = True
                 for m in range(n):
                     if m in (i, j, k): continue
                     if np.dot(planes[m][0], p) + planes[m][1] > EPS:
                         ok = False; break
                 if ok: verts.append(p)
-    if not verts: return None
+    if not verts: return None, None
     V = np.array(verts)
-    qmin = V.min(axis=0)
-    qmax = V.max(axis=0)
-    return qmin, qmax
+    return V, (V.min(axis=0), V.max(axis=0))
 
 
-def q2engine(qmin, qmax):
-    """Quake (X east, Y north, Z up) → engine (X east, Y up, Z south).
-    Returns (x0, y0, z0, x1, y1, z1) in metres."""
-    ex0 = qmin[0] * S
-    ex1 = qmax[0] * S
-    ey0 = qmin[2] * S
-    ey1 = qmax[2] * S
-    # Mirror Quake Y into engine -Z so the map isn't reflected.
-    ez0 = -qmax[1] * S
-    ez1 = -qmin[1] * S
-    return ex0, ey0, ez0, ex1, ey1, ez1
+# ───────────────────────── classify ─────────────────────────
 
+def find_top_face(planes):
+    """Return (normal, d) of the face with the highest dot-with-UP."""
+    best, best_dot = None, -2
+    for n, d in planes:
+        if n[2] > best_dot:
+            best_dot, best = n[2], (n, d)
+    return best, best_dot
+
+
+def top_y_at(top, qx, qy):
+    n, d = top
+    if abs(n[2]) < 1e-4: return None
+    return -(d + n[0] * qx + n[1] * qy) / n[2]
+
+
+def slope_to_steps(planes, qmin, qmax, top):
+    """Generate stair-step boxes that approximate a sloped top face.
+
+    Returns a list of (qx0, qy0, qz0, qx1, qy1, qz1) tuples in Quake coords
+    or None if the brush is too small / too steep / not really sloped.
+    """
+    n, d = top
+    # Slope direction: horizontal projection of -n (downhill direction).
+    nx, ny = n[0], n[1]
+    horiz = math.hypot(nx, ny)
+    if horiz < 0.05: return None  # too close to flat
+
+    # Choose dominant horizontal axis.
+    axis = 'x' if abs(nx) >= abs(ny) else 'y'
+
+    qx0, qy0, qz_bot = qmin
+    qx1, qy1, qz_top_box = qmax  # qmax z is the brush top BOUND (not slope top)
+
+    # Sample top Y at the four corners of the brush footprint.
+    z_x0y0 = top_y_at(top, qx0, qy0)
+    z_x1y0 = top_y_at(top, qx1, qy0)
+    z_x0y1 = top_y_at(top, qx0, qy1)
+    z_x1y1 = top_y_at(top, qx1, qy1)
+    if None in (z_x0y0, z_x1y0, z_x0y1, z_x1y1): return None
+
+    if axis == 'x':
+        # Slope runs along X. Mid-Y top heights:
+        zLo = (z_x0y0 + z_x0y1) / 2
+        zHi = (z_x1y0 + z_x1y1) / 2
+    else:
+        zLo = (z_x0y0 + z_x1y0) / 2
+        zHi = (z_x0y1 + z_x1y1) / 2
+
+    # Clip top heights to brush bound (don't go above the AABB top).
+    zLo = min(zLo, qz_top_box); zHi = min(zHi, qz_top_box)
+    rise = abs(zHi - zLo)
+    if rise < 0.2 / S: return None  # negligible slope at engine scale
+
+    # Steps in Quake units.
+    step_rise_q = SLOPE_STEP_RISE / S  # m → quake units
+    n_steps = max(2, int(math.ceil(rise / step_rise_q)))
+    n_steps = min(n_steps, 16)  # cap so we don't explode the box count
+
+    boxes = []
+    increasing = zHi > zLo
+    for i in range(n_steps):
+        t0 = i / n_steps
+        t1 = (i + 1) / n_steps
+        # Step top at the MIDPOINT of the strip (gives smoother walking).
+        tm = (t0 + t1) / 2
+        if increasing:
+            stepTop = zLo + (zHi - zLo) * tm
+        else:
+            stepTop = zLo + (zHi - zLo) * tm
+
+        if axis == 'x':
+            sx0 = qx0 + t0 * (qx1 - qx0)
+            sx1 = qx0 + t1 * (qx1 - qx0)
+            boxes.append((sx0, qy0, qz_bot, sx1, qy1, stepTop))
+        else:
+            sy0 = qy0 + t0 * (qy1 - qy0)
+            sy1 = qy0 + t1 * (qy1 - qy0)
+            boxes.append((qx0, sy0, qz_bot, qx1, sy1, stepTop))
+    return boxes
+
+
+# ───────────────────────── coord transform ─────────────────────────
+
+def q2engine_box(qmin, qmax):
+    return (qmin[0] * S, qmin[2] * S, -qmax[1] * S,
+            qmax[0] * S, qmax[2] * S, -qmin[1] * S)
+
+
+def q2engine_pt(qx, qy, qz):
+    return (qx * S, qz * S, -qy * S)
+
+
+# ───────────────────────── main ─────────────────────────
 
 def main():
     ents = parse_map(SRC)
-    print(f"parsed {len(ents)} entities", file=sys.stderr)
-
-    # World brushes come from entity[0] (worldspawn). Func_wall brushes are
-    # solid too (static, non-moving). Other func_* (plat, train, door) are
-    # dynamic — skip for now.
     world = ents[0]
-    classname0 = world['kv'].get('classname', '?')
-    assert classname0 == 'worldspawn', f"first entity is {classname0!r}"
+    assert world['kv'].get('classname') == 'worldspawn'
 
-    all_brushes = list(world['brushes'])
+    # World + func_wall brushes are solid static geometry.
+    static_brushes = list(world['brushes'])
     for e in ents[1:]:
         if e['kv'].get('classname') == 'func_wall':
-            all_brushes.extend(e['brushes'])
+            static_brushes.extend(e['brushes'])
 
+    # First pass: parse + categorise all static brushes.
     boxes = []
     skipped = defaultdict(int)
-    for brush in all_brushes:
+    for brush in static_brushes:
         planes, texs = parse_brush(brush)
         if planes is None:
             skipped['parse_fail'] += 1; continue
-        # Skip if any face is sky/trigger/clip.
-        if any(any(t.startswith(p) for p in SKIP_TEXTURE_PREFIXES) for t in texs):
+        if any(any(t.startswith(p) for p in SKIP_TEX_PREFIXES) for t in texs):
             skipped['sky_or_special'] += 1; continue
-        bb = brush_aabb(planes)
+        if any(any(t.startswith(p) for p in WATER_TEX_PREFIXES) for t in texs):
+            skipped['water'] += 1; continue
+        V, bb = brush_aabb(planes)
         if bb is None:
             skipped['no_verts'] += 1; continue
         qmin, qmax = bb
-        x0, y0, z0, x1, y1, z1 = q2engine(qmin, qmax)
-        vol = (x1 - x0) * (y1 - y0) * (z1 - z0)
+        # Volume gate (in Quake units, converted to m³).
+        vol = ((qmax[0] - qmin[0]) * (qmax[1] - qmin[1]) * (qmax[2] - qmin[2])) * (S ** 3)
         if vol < MIN_BRUSH_VOLUME:
             skipped['too_small'] += 1; continue
-        kind = classify_texture(texs)
-        boxes.append({'x0': x0, 'y0': y0, 'z0': z0, 'x1': x1, 'y1': y1, 'z1': z1, 'kind': kind})
-    print(f"kept {len(boxes)} boxes; skipped: {dict(skipped)}", file=sys.stderr)
 
-    # Extents.
-    xs = [b['x0'] for b in boxes] + [b['x1'] for b in boxes]
-    ys = [b['y0'] for b in boxes] + [b['y1'] for b in boxes]
-    zs = [b['z0'] for b in boxes] + [b['z1'] for b in boxes]
-    minX, maxX = min(xs), max(xs)
-    minY, maxY = min(ys), max(ys)
-    minZ, maxZ = min(zs), max(zs)
-    # Translate so the map is centred at the origin on XZ and the floor sits at y=0.
-    cx = (minX + maxX) / 2
-    cz = (minZ + maxZ) / 2
-    floorY = minY
+        # Classify by top-face orientation.
+        top, top_dot = find_top_face(planes)
+        if top is None:
+            skipped['no_top'] += 1; continue
+
+        if SLOPE_TOP_MIN < top_dot < SLOPE_TOP_MAX:
+            # Sloped walkable top → stair-step approximation.
+            steps = slope_to_steps(planes, qmin, qmax, top)
+            if steps:
+                for s in steps:
+                    boxes.append({'q': s, 'kind': 'slope'})
+                skipped['slope_to_steps'] += 1
+                continue
+        # Default: emit as single AABB.
+        boxes.append({
+            'q': (qmin[0], qmin[1], qmin[2], qmax[0], qmax[1], qmax[2]),
+            'kind': 'box',
+        })
+
+    # Second pass: parse teleporter triggers + their destinations.
+    tp_dests = {}
+    for e in ents:
+        if e['kv'].get('classname') == 'info_teleport_destination':
+            nm = e['kv'].get('targetname')
+            o = e['kv'].get('origin')
+            if nm and o:
+                qx, qy, qz = [float(v) for v in o.split()]
+                tp_dests[nm] = (qx, qy, qz)
+    teleporters = []
+    for e in ents:
+        if e['kv'].get('classname') != 'trigger_teleport': continue
+        tgt = e['kv'].get('target')
+        if tgt not in tp_dests: continue
+        # Compute trigger AABB (union of all its brushes).
+        bnd = None
+        for brush in e['brushes']:
+            planes, _texs = parse_brush(brush)
+            if planes is None: continue
+            _V, bb = brush_aabb(planes)
+            if bb is None: continue
+            qmn, qmx = bb
+            if bnd is None: bnd = [qmn.copy(), qmx.copy()]
+            else:
+                for i in range(3):
+                    bnd[0][i] = min(bnd[0][i], qmn[i])
+                    bnd[1][i] = max(bnd[1][i], qmx[i])
+        if bnd is None: continue
+        teleporters.append({
+            'trigger_q': (bnd[0][0], bnd[0][1], bnd[0][2], bnd[1][0], bnd[1][1], bnd[1][2]),
+            'dest_q': tp_dests[tgt],
+            'name': tgt,
+        })
+
+    # Compute extents from box AABBs.
+    xs, ys, zs = [], [], []
     for b in boxes:
-        b['x0'] -= cx; b['x1'] -= cx
-        b['z0'] -= cz; b['z1'] -= cz
-        b['y0'] -= floorY; b['y1'] -= floorY
-    print(f"extents (engine m): x={maxX-minX:.1f}  y={maxY-minY:.1f}  z={maxZ-minZ:.1f}", file=sys.stderr)
-    print(f"centred at ({cx:.1f}, _, {cz:.1f}); floor lifted by {floorY:.1f}", file=sys.stderr)
+        qx0, qy0, qz0, qx1, qy1, qz1 = b['q']
+        xs += [qx0, qx1]; ys += [qy0, qy1]; zs += [qz0, qz1]
+    qcx = (min(xs) + max(xs)) / 2
+    qcy = (min(ys) + max(ys)) / 2
+    qcz_floor = min(zs)
 
-    # Half-extent for the perimeter (round up to nearest 5m).
-    half = max(maxX - cx, cx - minX, maxZ - cz, cz - minZ)
-    half = math.ceil(half / 5) * 5 + 2
+    def transform_box(qbox):
+        qx0, qy0, qz0, qx1, qy1, qz1 = qbox
+        # Centre on XZ and lift floor to engine y=0.
+        qx0 -= qcx; qx1 -= qcx
+        qy0 -= qcy; qy1 -= qcy
+        qz0 -= qcz_floor; qz1 -= qcz_floor
+        # Quake (x,y,z=up) → engine (x, z=Q_y mirrored, y=Q_z).
+        ex0 = qx0 * S; ex1 = qx1 * S
+        ey0 = qz0 * S; ey1 = qz1 * S
+        ez0 = -qy1 * S; ez1 = -qy0 * S
+        return (ex0, ey0, ez0, ex1, ey1, ez1)
 
-    # Extract point entities for SPAWN / SPAWN_ANCHORS / PICKUPS.
-    spawns = []
-    pickups = []
+    def transform_pt(qx, qy, qz):
+        qx -= qcx; qy -= qcy; qz -= qcz_floor
+        return (qx * S, qz * S, -qy * S)
+
+    # Compute engine extents → choose perimeter half.
+    minX = minY = minZ = float('inf')
+    maxX = maxY = maxZ = float('-inf')
+    for b in boxes:
+        ex0, ey0, ez0, ex1, ey1, ez1 = transform_box(b['q'])
+        minX = min(minX, ex0); maxX = max(maxX, ex1)
+        minY = min(minY, ey0); maxY = max(maxY, ey1)
+        minZ = min(minZ, ez0); maxZ = max(maxZ, ez1)
+    half = math.ceil(max(maxX - minX, maxZ - minZ) / 2 / 5) * 5 + 2
+    # Perimeter height = max box height + 4 m clearance.
+    perim_h = math.ceil(maxY + 4)
+
+    # Extract pickups + spawns from point entities.
     weapon_map = {
         'weapon_supershotgun': 'shotgun',
-        'weapon_nailgun': 'smg',
+        'weapon_nailgun':      'smg',
         'weapon_supernailgun': 'saw',
-        'weapon_lightning': 'sniper',
-        # RL/GL not modelled — convert to health
-        'weapon_rocketlauncher': None,
-        'weapon_grenadelauncher': None,
+        'weapon_lightning':    'sniper',
+        # RL / GL — no engine equivalent yet; convert to extra health.
+        'weapon_rocketlauncher':   None,
+        'weapon_grenadelauncher':  None,
     }
+    spawns_dm, spawns_start = [], []
+    pickups = []
     for e in ents:
         cn = e['kv'].get('classname', '')
         o = e['kv'].get('origin')
         if not o: continue
         try:
             qx, qy, qz = [float(v) for v in o.split()]
-        except ValueError: continue
-        ex = qx * S - cx
-        ey = qz * S - floorY
-        ez = -qy * S - cz
-        if cn == 'info_player_deathmatch' or cn == 'info_player_start':
-            spawns.append({'x': ex, 'y': ey, 'z': ez, 'kind': cn})
+        except ValueError:
+            continue
+        ex, ey, ez = transform_pt(qx, qy, qz)
+        if cn == 'info_player_deathmatch':
+            spawns_dm.append({'x': ex, 'y': ey, 'z': ez})
+        elif cn == 'info_player_start':
+            spawns_start.append({'x': ex, 'y': ey, 'z': ez})
         elif cn in weapon_map:
             w = weapon_map[cn]
             if w is None: continue
             pickups.append({'kind': 'weapon', 'what': w, 'x': ex, 'y': ey, 'z': ez})
         elif cn == 'item_health':
             pickups.append({'kind': 'health', 'x': ex, 'y': ey, 'z': ez})
-        # Armor / ammo: skip (engine has no equivalents)
 
-    # Pick the deathmatch spawn closest to (0,0) as the canonical SPAWN; the
-    # rest become SPAWN_ANCHORS.
-    spawns_dm = [s for s in spawns if s['kind'] == 'info_player_deathmatch']
-    if not spawns_dm:
-        spawns_dm = spawns
-    spawns_dm.sort(key=lambda s: s['x']**2 + s['z']**2)
-    spawn0 = spawns_dm[0] if spawns_dm else {'x': 0, 'y': 0, 'z': 0}
+    # Anchor list: prefer DM spawns, fall back to single_player.
+    all_spawns = spawns_dm or spawns_start
+    # Initial SPAWN = the one closest to the geometric centre.
+    all_spawns.sort(key=lambda s: s['x']**2 + s['z']**2)
+    spawn0 = all_spawns[0] if all_spawns else {'x': 0, 'y': 0, 'z': 0}
 
-    # --- Write maplayout.js ---
-    lines = []
-    lines.append('// maplayout.js — THE EDGE (auto-imported from Quake .map by dev/import_edge.py).')
-    lines.append('//')
-    lines.append('// Source: q2dm1q1restoration by Chuma (restoration of Tim Willits\'s Q1 conversion')
-    lines.append('// of q2dm1 "The Edge"). See dev/source/README.md for credits.')
-    lines.append('//')
-    lines.append('// THIS FILE IS GENERATED. Edit dev/import_edge.py and re-run instead.')
-    lines.append('//')
-    lines.append('// Generator strategy: each Quake brush → AABB → one `box` LAYOUT entry.')
-    lines.append('// Lossy by design: sloped/angled brushes become axis-aligned boxes, fattening')
-    lines.append('// the bound. The map will read as a blocky stair-step approximation of The')
-    lines.append('// Edge, not a faithful Quake port.')
-    lines.append('')
-    lines.append(f"export const SPAWN = {{ x: {spawn0['x']:.2f}, z: {spawn0['z']:.2f} }};")
-    lines.append('')
-    lines.append('export const SPAWN_ANCHORS = [')
-    lines.append(f"  {{ id: 'C', x: {spawn0['x']:.2f}, z: {spawn0['z']:.2f} }},")
-    for i, s in enumerate(spawns_dm[1:6]):
-        lines.append(f"  {{ id: '{i+1}', x: {s['x']:.2f}, z: {s['z']:.2f} }},")
-    lines.append('];')
-    lines.append('')
-    lines.append('// Quake doors / windows are full brushes — we can\'t carve apertures from')
-    lines.append('// the AABB output. wallBoxes stays as a stub for engine compatibility.')
-    lines.append('export function wallBoxes(e) {')
-    lines.append('  const base = e.base || 0, H = e.height, t = e.thick == null ? 0.5 : e.thick;')
-    lines.append('  const L = e.length, axis = e.axis;')
-    lines.append('  const lmin = (axis === \'x\' ? e.cx : e.cz) - L / 2;')
-    lines.append('  const lmax = (axis === \'x\' ? e.cx : e.cz) + L / 2;')
-    lines.append('  const c0 = (axis === \'x\' ? e.cz : e.cx) - t / 2;')
-    lines.append('  const c1 = (axis === \'x\' ? e.cz : e.cx) + t / 2;')
-    lines.append('  if (axis === \'x\') return [{ x0: lmin, x1: lmax, y0: base, y1: base + H, z0: c0, z1: c1 }];')
-    lines.append('  return [{ x0: c0, x1: c1, y0: base, y1: base + H, z0: lmin, z1: lmax }];')
-    lines.append('}')
-    lines.append('')
-    lines.append('// DOORWAYS empty — Quake doesn\'t have the engine\'s aperture concept.')
-    lines.append('export const DOORWAYS = [];')
-    lines.append('')
-    lines.append('export const LAYOUT = [')
-    lines.append(f'  {{ t: \'ground\', half: {half}, y: 0 }},')
-    lines.append(f'  {{ t: \'perimeter\', half: {half}, height: 18, thick: 1.0 }},')
+    # Transform teleporters.
+    tp_engine = []
+    for tp in teleporters:
+        ex0, ey0, ez0, ex1, ey1, ez1 = transform_box(tp['trigger_q'])
+        dx, dy, dz = transform_pt(*tp['dest_q'])
+        tp_engine.append({
+            'x0': ex0, 'y0': ey0, 'z0': ez0,
+            'x1': ex1, 'y1': ey1, 'z1': ez1,
+            'dx': dx, 'dy': dy, 'dz': dz,
+            'name': tp['name'],
+        })
+
+    # ─────── emit src/maplayout.js ───────
+    out = []
+    out.append('// maplayout.js — THE EDGE (auto-imported from Quake .map by dev/import_edge.py v2).')
+    out.append('//')
+    out.append('// Source: q2dm1q1restoration by Chuma (restoration of Tim Willits\'s Q1')
+    out.append('// conversion of his own Q2 q2dm1 "The Edge"). See dev/source/README.md.')
+    out.append('//')
+    out.append('// THIS FILE IS GENERATED. Edit dev/import_edge.py and re-run.')
+    out.append('//')
+    out.append('// v2 over v1: slope brushes (top face at 5–66° tilt) become stair-step')
+    out.append('// stacks instead of inflated AABBs, so sloped floors remain walkable.')
+    out.append('// Teleporter triggers + destinations are emitted as a new LAYOUT entry')
+    out.append('// type (\'teleporter\') consumed by the runtime.')
+    out.append('')
+    out.append(f"export const SPAWN = {{ x: {spawn0['x']:.2f}, z: {spawn0['z']:.2f} }};")
+    out.append('')
+    out.append('// All deathmatch spawn points from the .map. The engine\'s arena')
+    out.append('// mode picks one at random per respawn.')
+    out.append('export const SPAWN_ANCHORS = [')
+    out.append(f"  {{ id: 'C', x: {spawn0['x']:.2f}, z: {spawn0['z']:.2f} }},")
+    for i, s in enumerate(all_spawns[1:]):
+        out.append(f"  {{ id: 's{i+1}', x: {s['x']:.2f}, z: {s['z']:.2f} }},")
+    out.append('];')
+    out.append('')
+    out.append('// Quake brushes don\'t have the engine\'s aperture concept; wallBoxes')
+    out.append('// is a stub kept for engine compatibility.')
+    out.append('export function wallBoxes(e) {')
+    out.append('  const base = e.base || 0, H = e.height, t = e.thick == null ? 0.5 : e.thick;')
+    out.append('  const L = e.length, axis = e.axis;')
+    out.append('  const lmin = (axis === \'x\' ? e.cx : e.cz) - L / 2;')
+    out.append('  const lmax = (axis === \'x\' ? e.cx : e.cz) + L / 2;')
+    out.append('  const c0 = (axis === \'x\' ? e.cz : e.cx) - t / 2;')
+    out.append('  const c1 = (axis === \'x\' ? e.cz : e.cx) + t / 2;')
+    out.append('  if (axis === \'x\') return [{ x0: lmin, x1: lmax, y0: base, y1: base + H, z0: c0, z1: c1 }];')
+    out.append('  return [{ x0: c0, x1: c1, y0: base, y1: base + H, z0: lmin, z1: lmax }];')
+    out.append('}')
+    out.append('')
+    out.append('export const DOORWAYS = [];')
+    out.append('')
+    out.append('export const LAYOUT = [')
+    out.append(f'  {{ t: \'ground\', half: {half}, y: 0 }},')
+    out.append(f'  {{ t: \'perimeter\', half: {half}, height: {perim_h}, thick: 1.0 }},')
+    n_emitted = 0
     for b in boxes:
-        cx_ = (b['x0'] + b['x1']) / 2
-        cz_ = (b['z0'] + b['z1']) / 2
-        sx_ = b['x1'] - b['x0']
-        sy_ = b['y1'] - b['y0']
-        sz_ = b['z1'] - b['z0']
-        base_ = b['y0']
-        # Skip zero-thickness slivers in any axis.
-        if min(sx_, sy_, sz_) < 0.05: continue
-        lines.append(
+        ex0, ey0, ez0, ex1, ey1, ez1 = transform_box(b['q'])
+        sx = ex1 - ex0; sy = ey1 - ey0; sz = ez1 - ez0
+        if min(sx, sy, sz) < 0.05: continue
+        cx_ = (ex0 + ex1) / 2; cz_ = (ez0 + ez1) / 2
+        out.append(
             f"  {{ t: 'box', cx: {cx_:.2f}, cz: {cz_:.2f}, "
-            f"base: {base_:.2f}, sx: {sx_:.2f}, sy: {sy_:.2f}, sz: {sz_:.2f} }},"
+            f"base: {ey0:.2f}, sx: {sx:.2f}, sy: {sy:.2f}, sz: {sz:.2f} }},"
         )
-    lines.append('];')
-    lines.append('')
-    lines.append('export const PICKUPS = [')
+        n_emitted += 1
+    for tp in tp_engine:
+        out.append(
+            f"  {{ t: 'teleporter', name: '{tp['name']}', "
+            f"x0: {tp['x0']:.2f}, y0: {tp['y0']:.2f}, z0: {tp['z0']:.2f}, "
+            f"x1: {tp['x1']:.2f}, y1: {tp['y1']:.2f}, z1: {tp['z1']:.2f}, "
+            f"dx: {tp['dx']:.2f}, dy: {tp['dy']:.2f}, dz: {tp['dz']:.2f} }},"
+        )
+    out.append('];')
+    out.append('')
+    out.append('export const PICKUPS = [')
     for p in pickups:
         if p['kind'] == 'weapon':
-            lines.append(f"  {{ kind: 'weapon', what: '{p['what']}', x: {p['x']:.2f}, z: {p['z']:.2f}, y: {p['y']:.2f} }},")
+            out.append(f"  {{ kind: 'weapon', what: '{p['what']}', x: {p['x']:.2f}, z: {p['z']:.2f}, y: {p['y']:.2f} }},")
         else:
-            lines.append(f"  {{ kind: 'health', x: {p['x']:.2f}, z: {p['z']:.2f}, y: {p['y']:.2f} }},")
-    lines.append('];')
+            out.append(f"  {{ kind: 'health', x: {p['x']:.2f}, z: {p['z']:.2f}, y: {p['y']:.2f} }},")
+    out.append('];')
 
-    out_text = '\n'.join(lines) + '\n'
     with open(OUT, 'w') as f:
-        f.write(out_text)
-    print(f"wrote {OUT} ({len(boxes)} boxes, {len(spawns_dm)} spawns, {len(pickups)} pickups)", file=sys.stderr)
+        f.write('\n'.join(out) + '\n')
+
+    print(f"parsed {len(ents)} entities", file=sys.stderr)
+    print(f"static brushes processed: {len(static_brushes)}", file=sys.stderr)
+    print(f"skipped: {dict(skipped)}", file=sys.stderr)
+    print(f"emitted: {n_emitted} boxes + {len(tp_engine)} teleporters", file=sys.stderr)
+    print(f"  {len(all_spawns)} spawns, {len(pickups)} pickups", file=sys.stderr)
+    print(f"engine extents: x=[{minX:.1f},{maxX:.1f}] y=[{minY:.1f},{maxY:.1f}] z=[{minZ:.1f},{maxZ:.1f}]", file=sys.stderr)
+    print(f"perimeter half={half}, height={perim_h}", file=sys.stderr)
+    print(f"wrote {OUT}", file=sys.stderr)
 
 
 if __name__ == '__main__':
