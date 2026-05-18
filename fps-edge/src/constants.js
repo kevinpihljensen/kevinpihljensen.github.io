@@ -42,11 +42,13 @@ export const GRAVITY = 20.0;
 // motion instead of a single jump.
 export const WATER_GRAVITY    = 6.0;
 export const WATER_BUOYANCY   = 4.5;
-export const WATER_SWIM_UP    = 3.6;
-export const WATER_SWIM_DOWN  = 3.6;
+export const WATER_SWIM_UP    = 4.0;     // steady ascent in water (was 3.6)
+export const WATER_SWIM_DOWN  = 4.0;
 export const WATER_SPEED_MULT = 0.55;
 export const WATER_DRAG       = 2.8;
-export const WATER_VY_DAMP    = 2.2;
+export const WATER_VY_DAMP    = 4.5;     // tighter so swim-up reaches target fast (was 2.2)
+export const WATER_EXIT_VY    = 8.4;     // pop-out kick at the surface — peaks 1.76 m above water,
+                                          // plus 0.6 m step-up = 2.36 m bank clearance.
 
 export const EYE_HEIGHT_STAND = 1.6;
 export const EYE_HEIGHT_CROUCH = 1.2;

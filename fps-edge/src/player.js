@@ -31,7 +31,7 @@ import {
   PLAYER_MAX_HEALTH, DAMAGE_FLASH_TIME, DAMAGE_INDICATOR_TIME,
   DEFAULT_FOV, SCOPE_FOV, ARENA_PLAYER_RESPAWN_DELAY,
   WATER_GRAVITY, WATER_BUOYANCY, WATER_SWIM_UP, WATER_SWIM_DOWN,
-  WATER_SPEED_MULT, WATER_DRAG, WATER_VY_DAMP,
+  WATER_SPEED_MULT, WATER_DRAG, WATER_VY_DAMP, WATER_EXIT_VY,
 } from './constants.js';
 import { sfxPlayerHurt, sfxGameOver } from './audio.js';
 import { setGameState } from './hud.js';
@@ -221,7 +221,9 @@ export function updatePlayer(dt) {
   // disabled, in which case friction also applies on the jump frame so a
   // chained jump bleeds speed like a normal stop (no bhop speed preservation).
   // Normal single jumps still work; you just can't build/keep speed.
-  if (player.isGrounded && (!willJump || !game.bhopEnabled)) {
+  // fps-edge: bhop is also disabled in water (feet wet) — even standing on
+  // a brush beneath ankle-deep water shouldn't let you build hop speed.
+  if (player.isGrounded && (!willJump || !game.bhopEnabled || player.feetInWater)) {
     const speed = Math.hypot(player.velocityX, player.velocityZ);
     if (speed > 0.0001) {
       const control = Math.max(speed, GROUND_STOP_SPEED);
@@ -361,13 +363,13 @@ export function updatePlayer(dt) {
     player.velocityY += (targetVy - player.velocityY) * damp;
     player.velocityY -= (WATER_GRAVITY - WATER_BUOYANCY) * dt;
     // Surface-jump pop: when the player's head is at/above the water
-    // surface AND they're holding Space, hit them with a real JUMP_VELOCITY
-    // kick so they clear the bank lip. Without this the gentle 3.6 m/s
-    // swim-up can't climb out of a typical Quake water pit — you just bob
-    // at the surface forever.
+    // surface AND they're holding Space, hit them with WATER_EXIT_VY
+    // (8.4 m/s, peak 1.76 m above water) so they clear the bank lip.
+    // Without this the gentle swim-up can't escape a typical Quake water
+    // pit and you bob at the surface forever.
     const headY = player.position.y + EYE_HEIGHT_STAND;
-    if (jumpInput && !ctrlDown && headY >= player.waterTop - 0.25) {
-      if (player.velocityY < JUMP_VELOCITY) player.velocityY = JUMP_VELOCITY;
+    if (jumpInput && !ctrlDown && headY >= player.waterTop - 0.35) {
+      if (player.velocityY < WATER_EXIT_VY) player.velocityY = WATER_EXIT_VY;
     }
     // Horizontal drag — exponential decay.
     const hDamp = 1 - Math.exp(-WATER_DRAG * dt);
@@ -409,10 +411,20 @@ export function updatePlayer(dt) {
   );
 
   if (gY !== null && qNext <= gY + 0.001) {
-    // The (compressed) feet have reached the surface — stand on it.
-    player.position.y = gY;
-    player.velocityY = 0;
-    player.isGrounded = true;
+    // The (compressed) feet have reached the surface.
+    if (player.inWater) {
+      // Swimming + touching the floor: snap position to the floor BUT
+      // keep velocityY (so Space can drive us upward) and don't mark
+      // grounded (no bhop, no jump-from-ground in water).
+      player.position.y = gY;
+      player.isGrounded = false;
+      if (player.velocityY < 0) player.velocityY = 0;
+    } else {
+      // Normal ground contact — stand on it.
+      player.position.y = gY;
+      player.velocityY = 0;
+      player.isGrounded = true;
+    }
   } else {
     player.position.y = nextY;
     player.isGrounded = false;

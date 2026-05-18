@@ -17,7 +17,7 @@ import { updatePickups } from './pickups.js';
 import { updateWave, updateArena } from './wave.js';
 import { setGameState, updateHUD, updateToast } from './hud.js';
 import { updateAudioListener } from './audio.js';
-import { applyTeleport } from './teleporters.js';
+import { applyTeleport, updateTeleporters } from './teleporters.js';
 import { updateElevators } from './elevators.js';
 import { updateWaterState } from './water.js';
 
@@ -50,6 +50,7 @@ function loop() {
                           // physics this frame.
     updatePlayer(dt);
     applyTeleport(dt);    // Edge: warp player if they entered a slipgate
+    updateTeleporters(dt); // Edge: shimmer animation on portal meshes
     updateWeaponTimers(dt);
     updatePickups(dt);
     updateWave(dt);

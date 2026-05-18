@@ -29,25 +29,30 @@ export function clearWaters() {
   waters.length = 0;
 }
 
-// Test the player's TORSO (capsule centre at feetY + ~0.9 m) against every
-// water volume. We use the torso point — not the feet — so wading ankle-
-// deep through a thin water sheet doesn't trigger full swimming physics.
+// Two overlap tests per frame:
+//   feetInWater = player FEET (capsule bottom = position.y) overlap a water
+//                 volume → "wading" state. Disables bhop, keeps player
+//                 standing on ground beneath, no swim physics yet.
+//   inWater     = player TORSO (feet + ~0.9 m) overlap a water volume →
+//                 full swim physics: reduced gravity, buoyancy, no jump.
+// Both flags can be true simultaneously (deep water with feet on bottom).
 const TORSO_OFFSET = 0.9;
 export function updateWaterState(_dt) {
   const px = player.position.x;
   const pz = player.position.z;
-  const py = player.position.y + TORSO_OFFSET;
+  const feetY  = player.position.y;
+  const torsoY = feetY + TORSO_OFFSET;
   const r = PLAYER_RADIUS;
-  let inside = false;
+  let feetIn = false, torsoIn = false;
   let bestTop = 0;
   for (let i = 0; i < waters.length; i++) {
     const w = waters[i];
     if (px + r < w.x0 || px - r > w.x1) continue;
     if (pz + r < w.z0 || pz - r > w.z1) continue;
-    if (py < w.y0 || py > w.y1) continue;
-    inside = true;
-    if (w.top > bestTop) bestTop = w.top;
+    if (feetY  >= w.y0 && feetY  <= w.y1) { feetIn  = true; if (w.top > bestTop) bestTop = w.top; }
+    if (torsoY >= w.y0 && torsoY <= w.y1) { torsoIn = true; if (w.top > bestTop) bestTop = w.top; }
   }
-  player.inWater = inside;
-  player.waterTop = inside ? bestTop : 0;
+  player.feetInWater = feetIn;
+  player.inWater     = torsoIn;
+  player.waterTop    = (feetIn || torsoIn) ? bestTop : 0;
 }

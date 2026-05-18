@@ -610,6 +610,45 @@ export function makeQuakeStoneTexture() {
   return finalize(c);
 }
 
+// PORTAL — purple shimmer for teleporter trigger volumes. fbm-based swirl
+// + brighter "stars" peppered on top. Designed to TILE seamlessly via the
+// repeat wrap so a per-frame texture.offset scroll reads as fluid drift.
+export function makePortalTexture() {
+  const N = 256;
+  const c = makeCanvas(N);
+  const ctx = c.getContext('2d');
+  const id = ctx.createImageData(N, N);
+  const d = id.data;
+  for (let y = 0; y < N; y++) {
+    for (let x = 0; x < N; x++) {
+      // Two fbm fields at different scales for layered swirl.
+      const a = fbm(x / 40, y / 40, 5, 13);
+      const b = fbm(x / 18 + 5, y / 18 + 7, 4, 91);
+      const n = (a * 0.65 + b * 0.35);
+      // Map noise → magenta/violet ramp with bright core.
+      const lift = Math.pow(n, 1.6);
+      const r = Math.min(255, 80 + lift * 220);
+      const g = Math.min(255,  20 + lift *  80);
+      const bl = Math.min(255, 160 + lift * 95);
+      const i = (y * N + x) * 4;
+      d[i] = r; d[i + 1] = g; d[i + 2] = bl; d[i + 3] = 255;
+    }
+  }
+  ctx.putImageData(id, 0, 0);
+  // Hot bright "spark" points sprinkled on top.
+  for (let k = 0; k < 60; k++) {
+    const sx = Math.random() * N, sy = Math.random() * N;
+    const sr = 1 + Math.random() * 2.5;
+    const grad = ctx.createRadialGradient(sx, sy, 0, sx, sy, sr * 3);
+    grad.addColorStop(0, 'rgba(255,220,255,0.95)');
+    grad.addColorStop(0.4, 'rgba(220,160,255,0.4)');
+    grad.addColorStop(1, 'rgba(140,40,180,0)');
+    ctx.fillStyle = grad;
+    ctx.fillRect(sx - sr * 3, sy - sr * 3, sr * 6, sr * 6);
+  }
+  return finalize(c);
+}
+
 // QUAKE FLOOR — light tan concrete with grime. Lightened from the original
 // dark-brown version per playtest. Sits between qstone (cool grey) and
 // qmetal (rust): warm sandstone concrete that reads as "floor" without

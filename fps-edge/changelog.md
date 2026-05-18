@@ -26,6 +26,56 @@ Format: newest entries at the top. Each entry lists what was added, what was cha
 
 ## Session log
 
+### 2026-05-18 — fps-edge: water polish (exit-pop, bottom-stuck, no Jesus-bhop) + purple shimmer portals
+
+User playtest reports four issues from the swim build: exit-pop too weak
+(needed a duckjump to clear the bank), pressing Space at the water bottom
+didn't lift the player, you could bhop across the water surface like
+Jesus, and the teleporters were invisible. All four addressed:
+
+**Water exit boost** (`src/constants.js`, `src/player.js`)
+- `WATER_EXIT_VY = 8.4` (new constant); the surface-jump pop uses this
+  instead of `JUMP_VELOCITY=6`. Peak height above the surface: v²/(2g) =
+  70.56/40 = 1.76 m. Plus the 0.6 m step-up clearance = 2.36 m total
+  bank-clearing reach without ducking.
+- `WATER_SWIM_UP/DOWN = 4.0` (was 3.6) — slightly faster steady ascent.
+- `WATER_VY_DAMP = 4.5` (was 2.2) — tighter damping so the player
+  reaches swim speed in ~0.7 s instead of ~1.4 s.
+- Surface-pop trigger band widened: head-≥-waterTop-0.35 m (was 0.25 m).
+
+**Bottom-stuck fix** (`src/player.js`)
+- The vertical ground-snap (the `if (gY !== null && qNext <= gY +
+  0.001)` branch) was zeroing `velocityY` every frame at the water
+  floor — the swim-up acceleration would build a tiny upward velocity,
+  the step would land it within 0.001 m of the floor, and the snap
+  immediately reset to zero. Result: player pinned to the bottom.
+- Fix: in that branch, when `player.inWater` is true, snap position to
+  floor BUT keep `velocityY` (only clamp to ≥ 0). Don't mark grounded
+  either — player is swimming, not standing.
+
+**No-Jesus-bhop** (`src/water.js`, `src/state.js`, `src/player.js`)
+- New `player.feetInWater` flag (alongside the existing torso-based
+  `player.inWater`). Set in `updateWaterState` when the player's
+  feet AABB-overlaps any water volume.
+- Friction-skip condition in `updatePlayer` widened: bhop's friction
+  skip now requires `!player.feetInWater` too. Standing on a brush
+  beneath ankle-deep water no longer lets you build hop speed.
+
+**Shimmer portals** (`src/textures.js`, `src/teleporters.js`, `src/main.js`)
+- New `makePortalTexture()` — fbm-based purple/magenta swirl + 60
+  bright spark points sprinkled on top. Seamless via RepeatWrapping.
+- `registerTeleporter()` now also builds a `MeshBasicMaterial` box at
+  the trigger volume with the portal texture (additive blending,
+  `depthWrite: false`, `renderOrder: 2` so it draws after opaque and
+  after water). Each trigger gets its own `texture.clone()` so offset
+  animation is independent.
+- New `updateTeleporters(dt)`: scrolls `texture.offset` (0.18 u/s X,
+  0.09 u/s Y per portal, with per-portal phase stagger) and pulses
+  `material.opacity` between 0.55 and 0.85 at 3 Hz so each portal
+  twinkles. Wired into `main.js` after `applyTeleport(dt)`.
+
+Battery: 101/101 engine-pure + EDGE MAP OK. fps/ unchanged.
+
 ### 2026-05-18 — fps-edge: swimming physics + lighter qfloor (no diagonal-prune)
 
 Re-applies the SAFE parts of the previous (reverted) commit 03bbedc.

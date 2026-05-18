@@ -54,7 +54,8 @@ export const player = {
   pitch: 0,
   isGrounded: true,
   isCrouching: false,
-  inWater: false,           // fps-edge: capsule centre is inside a water volume
+  inWater: false,           // fps-edge: capsule TORSO is inside a water volume → swim physics
+  feetInWater: false,       // fps-edge: capsule FEET overlap a water volume → wading (no bhop)
   waterTop: 0,              // fps-edge: y of the surface of the water we're in
   // Smooth stance amount: 0 = fully standing, 1 = fully crouched. Lerps
   // quickly toward the target each frame; the camera eye height AND the
