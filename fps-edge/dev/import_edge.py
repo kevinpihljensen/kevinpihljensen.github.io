@@ -270,15 +270,31 @@ def main():
 
     # First pass: parse + categorise all static brushes.
     boxes = []
+    water_brushes = []   # NEW: water surfaces (rendered as translucent volumes)
     skipped = defaultdict(int)
     for brush in static_brushes:
         planes, texs = parse_brush(brush)
         if planes is None:
             skipped['parse_fail'] += 1; continue
-        if any(any(t.startswith(p) for p in SKIP_TEX_PREFIXES) for t in texs):
+        # Order matters: check water FIRST since water texture names begin
+        # with '*' which is also in SKIP_TEX_PREFIXES (Quake conventions
+        # prefix special-purpose textures with '*').
+        is_water = any(any(t.startswith(p) for p in WATER_TEX_PREFIXES) for t in texs)
+        if any(any(t.startswith(p) for p in SKIP_TEX_PREFIXES) for t in texs) and not is_water:
             skipped['sky_or_special'] += 1; continue
-        if any(any(t.startswith(p) for p in WATER_TEX_PREFIXES) for t in texs):
-            skipped['water'] += 1; continue
+        if is_water:
+            V, bb = brush_aabb(planes)
+            if bb is None:
+                skipped['water_no_verts'] += 1; continue
+            qmin, qmax = bb
+            vol = ((qmax[0] - qmin[0]) * (qmax[1] - qmin[1]) * (qmax[2] - qmin[2])) * (S ** 3)
+            if vol < MIN_BRUSH_VOLUME:
+                skipped['water_too_small'] += 1; continue
+            water_brushes.append({
+                'q': (qmin[0], qmin[1], qmin[2], qmax[0], qmax[1], qmax[2]),
+            })
+            skipped['water'] += 1
+            continue
         V, bb = brush_aabb(planes)
         if bb is None:
             skipped['no_verts'] += 1; continue
@@ -310,6 +326,40 @@ def main():
             'kind': 'box',
             'mat': mat,
         })
+
+    # ── prune fully-contained AABBs of the same material ──
+    # The AABB-from-Quake-brush conversion inflates diagonal brushes; when
+    # several diagonal brushes pile up in the same region, smaller brushes
+    # end up entirely inside a larger one's AABB. Those interior brushes
+    # add nothing visually (the outer brush already covers them) and
+    # contribute to clipping/z-fighting. Drop them.
+    # O(n²) in Python but fast enough for ~1100 boxes.
+    n_before = len(boxes)
+    sorted_idx = sorted(range(len(boxes)),
+                        key=lambda k: -((boxes[k]['q'][3] - boxes[k]['q'][0]) *
+                                        (boxes[k]['q'][4] - boxes[k]['q'][1]) *
+                                        (boxes[k]['q'][5] - boxes[k]['q'][2])))
+    keep_mask = [True] * len(boxes)
+    for ki in range(len(sorted_idx)):
+        i = sorted_idx[ki]
+        if not keep_mask[i]: continue
+        ai = boxes[i]
+        amat = ai.get('mat')
+        ax0, ay0, az0, ax1, ay1, az1 = ai['q']
+        # Only consider smaller boxes (later in size-sorted order).
+        for kj in range(ki + 1, len(sorted_idx)):
+            j = sorted_idx[kj]
+            if not keep_mask[j]: continue
+            bj = boxes[j]
+            if bj.get('mat') != amat: continue
+            bx0, by0, bz0, bx1, by1, bz1 = bj['q']
+            # B fully inside A?
+            if (bx0 >= ax0 - 1e-3 and bx1 <= ax1 + 1e-3 and
+                by0 >= ay0 - 1e-3 and by1 <= ay1 + 1e-3 and
+                bz0 >= az0 - 1e-3 and bz1 <= az1 + 1e-3):
+                keep_mask[j] = False
+    boxes = [boxes[k] for k in range(len(boxes)) if keep_mask[k]]
+    skipped['contained_in_larger'] = n_before - len(boxes)
 
     # ── func_plat (elevator) extraction ──
     # Each func_plat has 1+ brushes; the PLATE is the largest-XZ-area brush
@@ -475,6 +525,21 @@ def main():
     all_spawns.sort(key=lambda s: s['x']**2 + s['z']**2)
     spawn0 = all_spawns[0] if all_spawns else {'x': 0, 'y': 0, 'z': 0}
 
+    # Transform water brushes (engine AABB only — runtime renders them as
+    # translucent volumes, no collision).
+    water_engine = []
+    for w in water_brushes:
+        ex0, ey0, ez0, ex1, ey1, ez1 = transform_box(w['q'])
+        if min(ex1 - ex0, ey1 - ey0, ez1 - ez0) < 0.05: continue
+        water_engine.append({
+            'cx': (ex0 + ex1) / 2,
+            'cz': (ez0 + ez1) / 2,
+            'sx': ex1 - ex0,
+            'sy': ey1 - ey0,
+            'sz': ez1 - ez0,
+            'base': ey0,
+        })
+
     # Transform elevators.
     el_engine = []
     for lift in elevators:
@@ -585,6 +650,12 @@ def main():
             f"speed: {lift['speed']:.2f}, wait: {lift['wait']:.2f}, "
             f"startsAtTop: {str(lift['starts_at_top']).lower()} }},"
         )
+    for w in water_engine:
+        out.append(
+            f"  {{ t: 'water', "
+            f"cx: {w['cx']:.2f}, cz: {w['cz']:.2f}, "
+            f"base: {w['base']:.2f}, sx: {w['sx']:.2f}, sy: {w['sy']:.2f}, sz: {w['sz']:.2f} }},"
+        )
     out.append('];')
     out.append('')
     out.append('export const PICKUPS = [')
@@ -601,7 +672,7 @@ def main():
     print(f"parsed {len(ents)} entities", file=sys.stderr)
     print(f"static brushes processed: {len(static_brushes)}", file=sys.stderr)
     print(f"skipped: {dict(skipped)}", file=sys.stderr)
-    print(f"emitted: {n_emitted} boxes + {len(tp_engine)} teleporters + {len(el_engine)} elevators", file=sys.stderr)
+    print(f"emitted: {n_emitted} boxes + {len(tp_engine)} teleporters + {len(el_engine)} elevators + {len(water_engine)} water", file=sys.stderr)
     print(f"  {len(all_spawns)} spawns, {len(pickups)} pickups", file=sys.stderr)
     print(f"engine extents: x=[{minX:.1f},{maxX:.1f}] y=[{minY:.1f},{maxY:.1f}] z=[{minZ:.1f},{maxZ:.1f}]", file=sys.stderr)
     print(f"perimeter half={half}, height={perim_h}", file=sys.stderr)

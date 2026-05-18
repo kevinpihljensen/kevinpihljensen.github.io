@@ -26,6 +26,54 @@ Format: newest entries at the top. Each entry lists what was added, what was cha
 
 ## Session log
 
+### 2026-05-18 — fps-edge: lighter stone, water surfaces, clipping detector + auto-prune
+
+User feedback: "the one dark texture is a little too dark, try more grey-ish
+stone... I see some clipping here and there... can we get that water part
+factored in?" Three changes:
+
+**Stone texture (`src/textures.js`)**
+- `makeQuakeStoneTexture` rebalanced: base brightness 118-188 (was 52-112),
+  tint near-neutral with a faint warm cast (was 1.08/0.92/0.74, now
+  1.02/1.00/0.96). Bevel + mortar grooves preserved. Block tint variance
+  unchanged so per-block contrast still reads. The matching MAT entry's
+  color in `kit.js` widened from `0xb8a98c` (warm brown) to `0xcfcec8`
+  (cool neutral grey).
+
+**Water (`dev/import_edge.py`, `src/arena.js`, `src/kit.js`)**
+- Importer no longer drops water brushes. New `WATER_TEX_PREFIXES`
+  (`*04`, `*water`, `*slime`) checked BEFORE the generic `*` skip filter
+  so water brushes (which start with `*` in Quake convention) are
+  retained and emitted as `{ t: 'water', cx, cz, base, sx, sy, sz }`
+  LAYOUT entries. Two water volumes import: the big slipgate river
+  (30×9×31 m) and a thin water sheet (14×0.5×15 m).
+- `kit.js` new `water({...})` helper builds a translucent blue-green
+  `MeshStandardMaterial` (`opacity 0.55`, `depthWrite: false` so layered
+  volumes composite without occluding each other, `renderOrder: 1` so
+  it draws after opaque geometry). No collision — the player can walk
+  /swim through.
+- `arena.js` dispatches `case 'water'`; `edge_validate.mjs` ignores the
+  case in its reachability checks.
+
+**Clipping detection (`dev/edge_validate.mjs`)**
+- Pairwise AABB volume-overlap check using sweep-and-prune on X axis.
+  Reports clipping pair count, total interpenetration volume, and the
+  top 12 offenders by overlap volume (with face dims + brush centres).
+- Threshold: ≥ 0.05 m³ overlap. Adjacent brushes that share a face have
+  overlap = 0 and don't count.
+- Current state: 981 clipping pairs, ~10000 m³ total interpenetration —
+  inherent to Quake brush → AABB conversion (diagonal brushes inflate).
+  Informational, doesn't fail the battery.
+
+**Auto-prune contained brushes (`dev/import_edge.py`)**
+- After classifying boxes, drop any brush whose AABB is fully inside a
+  larger AABB of the SAME material. Pruning is size-sorted (biggest
+  brushes considered first as containers); 16 brushes pruned this run.
+
+**Verified**: 101/101 engine-pure harnesses PASS. EDGE MAP OK with
+1116 solids (was 1132), 0 unreachable pickups, 0 floating pickups.
+fps/ unchanged: zero line diff.
+
 ### 2026-05-18 — fps-edge: Quake-flavoured procedural textures
 
 Closes the "looks like grey boxes" gap. The Edge in the live browser now

@@ -549,18 +549,19 @@ export function makeQuakeMetalTexture() {
   return finalize(c);
 }
 
-// QUAKE STONE — sandstone / lead-grey wall blocks. Warm brown base with
-// fbm shading, hammer-dressed irregular blocks (4×3 layout, slightly
-// staggered), deep mortar grooves, occasional weathering streaks.
+// QUAKE STONE — light grey hammer-dressed sandstone. Cool-grey base with
+// fbm shading, 4×3 staggered block layout, deep mortar grooves, occasional
+// weathering streaks. (S55h: lightened + de-warmed from the original
+// dark-brown version per playtest — it was reading too close to the
+// metal texture and felt oppressive.)
 export function makeQuakeStoneTexture() {
   const N = 512;
   const c = makeCanvas(N);
   const ctx = c.getContext('2d');
-  // Mortar / pit base.
-  ctx.fillStyle = '#2a221a';
+  // Mortar / pit base — neutral dark grey.
+  ctx.fillStyle = '#383838';
   ctx.fillRect(0, 0, N, N);
-  // Stone block bodies. 4 columns × 3 rows of ~120 × 160 px, with column
-  // offset on alternate rows for a brick-like stagger.
+  // Stone block bodies. 4 columns × 4 rows, alternating-row offset stagger.
   const cols = 4, rows = 4;
   const bw = N / cols, bh = N / rows;
   for (let r = 0; r < rows; r++) {
@@ -568,33 +569,33 @@ export function makeQuakeStoneTexture() {
     for (let cIx = -1; cIx <= cols; cIx++) {
       const bx = cIx * bw + offset;
       const by = r * bh;
-      // Per-block tint (warm-brown noise).
-      const tint = 0.85 + Math.random() * 0.30;
-      // Block body — slightly inset for a mortar groove visual.
+      // Per-block lightness variation; tint is near-neutral with a faint
+      // warm cast so it reads as STONE rather than concrete.
+      const tint = 0.88 + Math.random() * 0.28;
       const inset = 4;
       const id = ctx.createImageData(bw - inset * 2, bh - inset * 2);
       const dd = id.data;
       for (let y = 0; y < bh - inset * 2; y++) {
         for (let x = 0; x < bw - inset * 2; x++) {
           const n = fbm((bx + x) / 22, (by + y) / 22, 4, 13);
-          const v = (52 + n * 60) * tint;
-          const [rr, gg, bb] = tinted(v, 1.08, 0.92, 0.74);
+          const v = (118 + n * 70) * tint;             // 118..188 base (was 52..112)
+          const [rr, gg, bb] = tinted(v, 1.02, 1.00, 0.96);  // near-neutral warm cast
           const i = (y * id.width + x) * 4;
           dd[i] = rr; dd[i + 1] = gg; dd[i + 2] = bb; dd[i + 3] = 255;
         }
       }
       ctx.putImageData(id, bx + inset, by + inset);
-      // Top highlight + bottom shadow strips on each block for a fake bevel.
-      ctx.fillStyle = 'rgba(220,200,170,0.16)';
+      // Bevel highlight + shadow per block.
+      ctx.fillStyle = 'rgba(245,245,240,0.18)';
       ctx.fillRect(bx + inset, by + inset, bw - inset * 2, 2);
-      ctx.fillStyle = 'rgba(10,7,4,0.42)';
+      ctx.fillStyle = 'rgba(25,25,28,0.40)';
       ctx.fillRect(bx + inset, by + bh - inset - 3, bw - inset * 2, 3);
     }
   }
-  // Weathering streaks running vertically — irregular dark drips.
-  ctx.strokeStyle = 'rgba(18,12,6,0.30)';
+  // Weathering streaks — sparser + lighter than the dark version.
+  ctx.strokeStyle = 'rgba(40,40,45,0.22)';
   ctx.lineWidth = 1;
-  for (let k = 0; k < 14; k++) {
+  for (let k = 0; k < 10; k++) {
     let x = Math.random() * N;
     let y = Math.random() * N * 0.4;
     const len = 60 + Math.random() * 200;

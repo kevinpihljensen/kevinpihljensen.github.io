@@ -84,12 +84,12 @@ const MAT = {
   // Quake-flavoured material. The original RIDGEPOINT brick / wood look
   // doesn't fit a Quake fortress.
   box:     new THREE.MeshStandardMaterial({ map: qMetalTex,   color: 0x9e8b76, roughness: 0.78, metalness: 0.35, side: THREE.DoubleSide }),
-  wall:    new THREE.MeshStandardMaterial({ map: qStoneTex,   color: 0xb8a98c, roughness: 0.90, metalness: 0.10, side: THREE.DoubleSide }),
+  wall:    new THREE.MeshStandardMaterial({ map: qStoneTex,   color: 0xcfcec8, roughness: 0.92, metalness: 0.06, side: THREE.DoubleSide }),
   overhang:new THREE.MeshStandardMaterial({ map: qMetalTex,   color: 0xa39282, roughness: 0.78, metalness: 0.35, side: THREE.DoubleSide }),
   // Kind-specific overrides selected by box({kind:'...'}) — used by the
   // importer to give floor / stone / metal brushes the right material.
   qmetal:  new THREE.MeshStandardMaterial({ map: qMetalTex,   color: 0x9e8b76, roughness: 0.78, metalness: 0.35, side: THREE.DoubleSide }),
-  qstone:  new THREE.MeshStandardMaterial({ map: qStoneTex,   color: 0xb8a98c, roughness: 0.90, metalness: 0.10, side: THREE.DoubleSide }),
+  qstone:  new THREE.MeshStandardMaterial({ map: qStoneTex,   color: 0xcfcec8, roughness: 0.92, metalness: 0.06, side: THREE.DoubleSide }),
   qfloor:  new THREE.MeshStandardMaterial({ map: qFloorTex,   color: 0x9e8a70, roughness: 0.92, metalness: 0.08, side: THREE.DoubleSide }),
 };
 
@@ -156,6 +156,28 @@ export function box({ cx, cz, base = 0, sx, sy, sz, kind }) {
   m.castShadow = true; m.receiveShadow = true;
   scene.add(m); shootables.push(m);
   return { top: base + sy, x0, x1, z0, z1, cx, cz };
+}
+
+// --- WATER VOLUME (fps-edge) ----------------------------------------------
+// Translucent blue-green volume — pure cosmetic, no collision so the player
+// can walk / swim through it. Edge's slipgate river runs through one of
+// these and triggers the teleporter.
+const WATER_MAT = new THREE.MeshStandardMaterial({
+  color: 0x2b6c8e,
+  transparent: true,
+  opacity: 0.55,
+  roughness: 0.25,
+  metalness: 0.10,
+  depthWrite: false,    // don't z-write so layered translucent volumes
+                        // composite without occluding each other
+  side: THREE.DoubleSide,
+});
+export function water({ cx, cz, base = 0, sx, sy, sz }) {
+  const m = new THREE.Mesh(new THREE.BoxGeometry(sx, sy, sz), WATER_MAT);
+  m.position.set(cx, base + sy / 2, cz);
+  m.renderOrder = 1;    // draw after opaque geometry
+  scene.add(m);
+  return { x0: cx - sx / 2, x1: cx + sx / 2, z0: cz - sz / 2, z1: cz + sz / 2, top: base + sy };
 }
 
 // --- TEXT LABEL (in-world floating sprite) --------------------------------

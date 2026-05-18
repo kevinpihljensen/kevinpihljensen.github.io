@@ -104,6 +104,10 @@ for (const e of LAYOUT) {
       );
       break;
     }
+    case 'water':
+      // Translucent decorative volume, no collision — ignored by the
+      // validator's reachability / pickup-surface checks.
+      break;
     case 'rampTo':
     case 'stairsTo':
     case 'overhang':
@@ -387,7 +391,56 @@ if (unreachable === 0) {
 }
 issues += unreachable;
 
-// (5) Performance hint.
+// (5) Clipping check: pairwise AABB overlap. Adjacent brushes that share
+// a face don't count (overlap volume = 0). Diagonal Quake brushes whose
+// AABBs got inflated by the import — those overlap in VOLUME and z-fight
+// at run-time. Report up to the top N by overlap volume.
+log('');
+log('--- clipping (AABB volume overlap) ---');
+{
+  // Restrict to "real" geometry boxes (not perimeter walls — those touch
+  // the corner boxes by design and would flood the report).
+  const items = solids.filter(s => s.kind === 'box' && s.walkable !== false);
+  const itemsAll = items;
+  // Sweep & prune on X: sort by minX, only test pairs whose X spans overlap.
+  itemsAll.sort((a, b) => a.minX - b.minX);
+  const EPS = 0.01;        // edges touching exactly → not a clip
+  const MIN_REPORT_VOL = 0.05;
+  let clipCount = 0;
+  let totalOverlapVol = 0;
+  const worst = [];
+  for (let i = 0; i < itemsAll.length; i++) {
+    const a = itemsAll[i];
+    for (let j = i + 1; j < itemsAll.length; j++) {
+      const b = itemsAll[j];
+      if (b.minX >= a.maxX - EPS) break;        // sweep cutoff
+      const ox = Math.min(a.maxX, b.maxX) - Math.max(a.minX, b.minX);
+      if (ox <= EPS) continue;
+      const oy = Math.min(a.maxY, b.maxY) - Math.max(a.minY, b.minY);
+      if (oy <= EPS) continue;
+      const oz = Math.min(a.maxZ, b.maxZ) - Math.max(a.minZ, b.minZ);
+      if (oz <= EPS) continue;
+      const v = ox * oy * oz;
+      if (v < MIN_REPORT_VOL) continue;
+      clipCount++;
+      totalOverlapVol += v;
+      worst.push({ a, b, vol: v, ox, oy, oz });
+    }
+  }
+  worst.sort((x, y) => y.vol - x.vol);
+  log(`  clipping pairs: ${clipCount}  (overlap volume ≥ ${MIN_REPORT_VOL} m³)`);
+  log(`  total interpenetration volume: ${totalOverlapVol.toFixed(2)} m³`);
+  const TOP = 12;
+  if (worst.length) log(`  top ${Math.min(TOP, worst.length)} offenders:`);
+  for (let k = 0; k < Math.min(TOP, worst.length); k++) {
+    const w = worst[k];
+    const acx = (w.a.minX + w.a.maxX) / 2, acy = (w.a.minY + w.a.maxY) / 2, acz = (w.a.minZ + w.a.maxZ) / 2;
+    const bcx = (w.b.minX + w.b.maxX) / 2, bcy = (w.b.minY + w.b.maxY) / 2, bcz = (w.b.minZ + w.b.maxZ) / 2;
+    log(`    ${w.vol.toFixed(2)} m³  (${w.ox.toFixed(2)}×${w.oy.toFixed(2)}×${w.oz.toFixed(2)})  A(${acx.toFixed(1)},${acy.toFixed(1)},${acz.toFixed(1)}) ↔ B(${bcx.toFixed(1)},${bcy.toFixed(1)},${bcz.toFixed(1)})`);
+  }
+}
+
+// (6) Performance hint.
 log('');
 log('--- performance hint ---');
 log(`  solids: ${solids.length} (engine collision iterates this list per capsule step)`);

@@ -5,6 +5,7 @@
 
 import {
   ground, platform, connectRamp, connectStairs, box, wall, overhang, perimeter, solidBox,
+  water,
 } from './kit.js';
 import { LAYOUT, wallBoxes } from './maplayout.js';
 import { registerTeleporter } from './teleporters.js';
@@ -57,6 +58,9 @@ for (const e of LAYOUT) {
       break;
     case 'elevator':
       registerElevator(e);
+      break;
+    case 'water':
+      water({ cx: e.cx, cz: e.cz, base: e.base, sx: e.sx, sy: e.sy, sz: e.sz });
       break;
     default:
       console.warn('arena: unknown layout entry', e.t);
