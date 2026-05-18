@@ -127,18 +127,43 @@ where it fixes a bug. See `dev/harness_ai.mjs` for the established style.
 
 ## 6. Verification tooling (`dev/`)
 
-- `./test-all.sh` — one command: syntax check + 9 harnesses + mapviz.
-  Current baseline: **142 assertions, ALL GREEN; MAP OK.**
+- `./test-all.sh` — one command: syntax check + 10 harnesses + mapviz.
+  Current baseline: **216 assertions, ALL GREEN; MAP OK; geomWarns=0.**
 - Individual harness: `cd dev && node harness_ai.mjs`.
-- `node dev/mapviz.mjs` — writes `dev/map_report.txt` and SVG plans
-  (`map_plan_*.svg`, `map_oblique.svg`) into `dev/`. These are
-  generated; `.gitignore` excludes them. Convert to PNG with
-  `cairosvg` if you need to look. Report covers overlap/clearance,
-  connector-seam continuity, reachability, and route-graph/loop flow.
+- `node dev/mapviz.mjs` — writes `dev/map_report.txt` plus SVG
+  floorplans (one per tier), an oblique isometric, and **4 elevation
+  cross-sections** (looking N / S / E / W) into `dev/`. All generated;
+  `.gitignore` excludes them. Report covers overlap/clearance,
+  connector-seam continuity, reachability, route-graph/loop flow, AND
+  a **geometry warnings** section (`geomWarns` in SUMMARY) that
+  auto-flags suspicious patterns the test suite alone wouldn't notice:
+  wall body intruding into a deck volume (z-fight at deck top),
+  doorways opening into a connector wedge body (the stair-trap bug
+  class), doorway too narrow for a standing capsule, lintel too low.
+- `bash dev/render-map.sh` — runs mapviz then converts every SVG to
+  PNG via `python3 -c "import cairosvg"`. Read the PNGs to **see**
+  the map: the elevation cross-sections are the view that makes
+  wall-pokes-through-deck and stair-wedge-abutting-doorway visually
+  obvious before they hit playtest.
+
+**Visibility workflow for map edits.** After any `maplayout.js` change:
+
+1. `cd dev && bash test-all.sh` — confirm ALL GREEN + MAP OK +
+   `geomWarns=0`.
+2. `bash dev/render-map.sh` — refresh the PNGs.
+3. Read at least `map_oblique.png` (overview) plus the elevation view
+   that faces the edited area (e.g. `map_elev_from_south.png` if you
+   touched something north of spawn). Verify walls don't poke through
+   deck tops; stair wedges meet decks cleanly at the top edge; no
+   building has a doorway right next to a stair wedge at ground level.
+4. If the change touched a building's wall heights, also Read the
+   per-tier floorplan at the building's deck height to confirm the
+   deck stack reads cleanly.
 
 Harnesses cover: AI (LOS/elevation/nav/scatter/cross-floor fire),
-arena seams, weapons (SAW bloom + knife), doors/windows, raised-floor,
-duck-jump, kit builders, combat, crouch. Keep them green.
+arena seams + clipping + connector-landing pose, weapons (SAW bloom +
+knife), doors/windows, raised-floor, duck-jump, kit builders, combat,
+crouch, pickups (positions + collect/respawn). Keep them green.
 
 ## 7. Changelog discipline
 

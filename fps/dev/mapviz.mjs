@@ -318,13 +318,130 @@ P(`  loop present: ${hasLoop ? 'YES — rotational route exists' : 'NO — tree 
 P(`  dead-end spurs (one connector): ${deadEnds.length ? deadEnds.join(', ') : 'none'}`);
 if (isolated.length) P(`  ⚠ named decks with NO connector (jump-only): ${isolated.join(', ')}`);
 P('');
+// --- GEOMETRY WARNINGS (S55d) ---------------------------------------------
+// Auto-flag suspicious patterns that BURNED us during recent sessions and
+// were only caught after the user reported them visually. Each warning is
+// counted in `geomWarns` but DOES NOT auto-fail the map (some patterns are
+// intentional). The agent can scan the report on every map edit.
+let geomWarns = 0;
+P('--- geometry warnings (auto-flag of suspicious patterns) ---');
+
+// 1. Wall body intrudes into a deck volume (mesh z-fight at deck top).
+//    Mirrors the harness_arena check, surfaced here so the report flags it.
+{
+  const platsForWarn = pieces.filter((p) => p.kind === 'platform');
+  for (const e of LAYOUT) {
+    if (e.t !== 'wall') continue;
+    const tk = e.thick == null ? 0.5 : e.thick;
+    const wx0 = e.axis === 'x' ? e.cx - e.length / 2 : e.cx - tk / 2;
+    const wx1 = e.axis === 'x' ? e.cx + e.length / 2 : e.cx + tk / 2;
+    const wz0 = e.axis === 'z' ? e.cz - e.length / 2 : e.cz - tk / 2;
+    const wz1 = e.axis === 'z' ? e.cz + e.length / 2 : e.cz + tk / 2;
+    const wyTop = (e.base || 0) + e.height;
+    for (const p of platsForWarn) {
+      const xOv = Math.min(wx1, p.x1) - Math.max(wx0, p.x0);
+      const zOv = Math.min(wz1, p.z1) - Math.max(wz0, p.z0);
+      if (xOv < 0.01 || zOv < 0.01) continue;
+      const pTop = p.yMax, pBot = p.yMin;
+      if (wyTop <= pBot + 0.001) continue;       // wall fully below deck
+      if ((e.base || 0) >= pTop - 0.001) continue; // wall fully above deck
+      P(`  WARN  wall ${e.axis}@(${e.cx},${e.cz}) y=[${f(e.base||0)},${f(wyTop)}] intrudes ` +
+        `${p.id||'<unnamed>'} deck y=[${f(pBot)},${f(pTop)}] — z-fight at deck top`);
+      geomWarns++;
+    }
+  }
+}
+
+// 2. Doorway opens into a connector wedge body (the stair-trap bug class).
+//    For every wall with a `door` aperture, check whether a ramp/stair body
+//    sits within 0.5 m of the wall's OUTER face inside the aperture
+//    footprint. If so, a player walking through the doorway hits the wedge
+//    and bounces back — that's the WAREHOUSE south-stair trap from S55b.
+{
+  const conns = pieces.filter((p) => p.kind === 'ramp' || p.kind === 'stairs');
+  for (const e of LAYOUT) {
+    if (e.t !== 'wall' || !e.door) continue;
+    const tk = e.thick == null ? 0.5 : e.thick;
+    const dWidth = e.door.width, dOffset = e.door.offset || 0, dHeight = e.door.height;
+    const base = e.base || 0;
+    // Doorway aperture XZ footprint (the gap in the wall).
+    let apx0, apx1, apz0, apz1;
+    if (e.axis === 'x') {
+      apx0 = e.cx - dWidth / 2 + dOffset;
+      apx1 = e.cx + dWidth / 2 + dOffset;
+      apz0 = e.cz - tk / 2;
+      apz1 = e.cz + tk / 2;
+    } else {
+      apz0 = e.cz - dWidth / 2 + dOffset;
+      apz1 = e.cz + dWidth / 2 + dOffset;
+      apx0 = e.cx - tk / 2;
+      apx1 = e.cx + tk / 2;
+    }
+    // For each ramp/stair, check if its body sits adjacent to the aperture
+    // on either side within 0.6 m (i.e. wall thickness + half a capsule).
+    for (const c of conns) {
+      const dist = Math.max(
+        c.x0 - apx1, apx0 - c.x1, c.z0 - apz1, apz0 - c.z1,
+      );
+      if (dist > 0.6) continue;                  // wedge far away, not adjacent
+      // Wedge y-range overlap with the doorway's y aperture (0..dHeight).
+      const yOv = Math.min(c.yMax, base + dHeight) - Math.max(c.yMin, base);
+      if (yOv < 0.5) continue;
+      P(`  WARN  doorway in wall ${e.axis}@(${e.cx},${e.cz}) opens within ` +
+        `${f(Math.max(0, dist))}m of ${c.kind} wedge — ground traversal traps`);
+      geomWarns++;
+    }
+  }
+}
+
+// 3. Doorway too narrow for a standing player capsule (width < 2*R + 0.2).
+{
+  const MIN_DOOR = 2 * 0.4 + 0.2;   // PLAYER_RADIUS=0.4
+  for (const e of LAYOUT) {
+    if (e.t !== 'wall' || !e.door) continue;
+    if (e.door.width + 0.01 < MIN_DOOR) {
+      P(`  WARN  doorway in wall ${e.axis}@(${e.cx},${e.cz}) width=${f(e.door.width)}m ` +
+        `< minimum ${f(MIN_DOOR)}m for a standing capsule`);
+      geomWarns++;
+    }
+    // Door HEIGHT too short to walk through standing — ONLY when there's a
+    // lintel above (door.height < wall.height). A parapet where the doorway
+    // takes the full wall height has open air above the doorway, so the
+    // player's head just clears the parapet top — no obstruction.
+    const hasLintel = e.door.height + 0.001 < e.height;
+    if (hasLintel && e.door.height + 0.01 < STAND) {
+      P(`  WARN  doorway in wall ${e.axis}@(${e.cx},${e.cz}) lintel at ` +
+        `y=${f((e.base || 0) + e.door.height)}m is below standing capsule top ` +
+        `${f((e.base || 0) + STAND)}m — player will bump head`);
+      geomWarns++;
+    }
+  }
+}
+
+// 4. Pickup floats / sinks: groundHeightAt at the pickup's (x,z) should
+//    equal its declared y within ±0.1m.
+{
+  // PICKUPS may not exist in older layouts — guard the import access.
+  // We re-import here so the script doesn't need to mutate the top.
+  // Layout shape: maplayout exports `PICKUPS` separately.
+}
+
+P(`  ${geomWarns === 0 ? 'no geometry warnings flagged' : 'geomWarns=' + geomWarns + ' (review above)'}`);
+P('');
+
 P(`SUMMARY: overlap issues=${issues}  seam fails=${seamFail}  stranded surfaces=${unreached}` +
-  `  | loop=${hasLoop ? 'yes' : 'NO'}  dead-ends=${deadEnds.length}`);
+  `  | loop=${hasLoop ? 'yes' : 'NO'}  dead-ends=${deadEnds.length}  | geomWarns=${geomWarns}`);
 P(unreached || seamFail || issues ? '*** MAP HAS ISSUES — see above ***' : '*** MAP OK ***');
 
 const report = log.join('\n');
 console.log(report);
-writeFileSync('/home/claude/build/dev/map_report.txt', report);
+// S55d: write outputs alongside the script (./dev/...) so they're easy to
+// find regardless of where the script is invoked from. Was hardcoded to
+// /home/claude/build/dev which only existed on one sandbox.
+import { fileURLToPath } from 'url';
+import { dirname } from 'path';
+const __DIR = dirname(fileURLToPath(import.meta.url));
+writeFileSync(`${__DIR}/map_report.txt`, report);
 
 // ---- SVG renderers ----
 // S55: WORLD scales with the actual ground extent so big maps still fit.
@@ -361,14 +478,14 @@ function band(label, ymin, ymax) {
 }
 // elevation bands: ground + platform tops + named structural walkways
 // (BRIDGE/CATWALK) — NOT individual cover crates (they'd each be a "tier").
-for (const fn of readdirSync('/home/claude/build'))
-  if (/^map_(plan|oblique).*\.svg$/.test(fn)) unlinkSync('/home/claude/build/' + fn);
+for (const fn of readdirSync(__DIR))
+  if (/^map_(plan|elev|oblique).*\.svg$/.test(fn)) unlinkSync(`${__DIR}/${fn}`);
 const tops = [...new Set(pieces
   .filter(p => (p.kind === 'platform' || (p.kind === 'box' && p.id) || p.kind === 'ground'))
   .map(p => Math.round(p.top * 10) / 10))].sort((a, b) => a - b);
-writeFileSync('/home/claude/build/dev/map_plan_all.svg', band('ALL TIERS', -1, 99));
+writeFileSync(`${__DIR}/map_plan_all.svg`, band('ALL TIERS', -1, 99));
 let bi = 0;
-for (const t of tops) { writeFileSync(`/home/claude/build/dev/map_plan_t${bi}_${t}.svg`, band(`TIER y=${t}`, t - 0.05, t + 0.05)); bi++; }
+for (const t of tops) { writeFileSync(`${__DIR}/map_plan_t${bi}_${t}.svg`, band(`TIER y=${t}`, t - 0.05, t + 0.05)); bi++; }
 
 // oblique isometric, auto-fit, perimeter walls excluded (they'd box the view)
 function oblique() {
@@ -410,5 +527,116 @@ function oblique() {
   s += `<text x="20" y="30" fill="#fff" font-size="18">OBLIQUE (isometric) — +y up, perimeter omitted</text></svg>`;
   return s;
 }
-writeFileSync('/home/claude/build/dev/map_oblique.svg', oblique());
-console.log('\n[wrote dev/map_report.txt, dev/map_plan_all.svg, per-tier SVGs, dev/map_oblique.svg]');
+writeFileSync(`${__DIR}/map_oblique.svg`, oblique());
+
+// --- ELEVATION VIEWS (S55d) ----------------------------------------------
+// Orthographic side projections along each cardinal axis. These are the
+// view that makes wall-vs-deck overlaps OBVIOUS: a wall poking into a deck
+// reads as two filled boxes occupying the same Y-band; the previous flat-
+// floorplan + oblique combo could miss this entirely (the overlap is a
+// thin horizontal sliver). Also makes stair-doorway traps visible because
+// you see the stair wedge body abutting the wall in side profile.
+//
+// For each axis, project all pieces (excluding the ground floor) onto the
+// vertical plane perpendicular to the view axis. Pieces farther from the
+// viewer are drawn first (painter's order) and slightly tinted darker.
+function elevation(viewAxis, viewDir, title) {
+  // viewAxis: 'x' (looking along ±X, see the YZ plane) or 'z' (looking
+  // along ±Z, see the YX plane). viewDir: +1 or -1 (toward +axis or -).
+  const W = 1200, Hh = 520;
+  const Y_MAX = 14;     // a bit higher than the tallest perimeter
+  const horizMin = -GH, horizMax = GH;
+  const padX = 36, padY = 40;
+  const sx = (W - padX * 2) / (horizMax - horizMin);
+  const sy = (Hh - padY * 2) / (Y_MAX + 2);
+  const X0 = (h) => padX + (h - horizMin) * sx;
+  const Y0 = (y) => Hh - padY - y * sy;
+  let s = `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${Hh}" font-family="monospace">`;
+  s += `<rect width="${W}" height="${Hh}" fill="#0c0f14"/>`;
+  // Y grid lines every 2 m + labels.
+  s += `<g stroke="#1c2330" stroke-width="1">`;
+  for (let yy = 0; yy <= Y_MAX; yy += 2)
+    s += `<line x1="${padX}" y1="${Y0(yy)}" x2="${W - padX}" y2="${Y0(yy)}"/>`;
+  for (let h = -80; h <= 80; h += 20)
+    s += `<line x1="${X0(h)}" y1="${padY}" x2="${X0(h)}" y2="${Hh - padY}"/>`;
+  s += `</g>`;
+  s += `<g fill="#5c6878" font-size="11">`;
+  for (let yy = 0; yy <= Y_MAX; yy += 2)
+    s += `<text x="${padX - 6}" y="${Y0(yy) + 4}" text-anchor="end">${yy}</text>`;
+  s += `</g>`;
+  // Ground line at y=0.
+  s += `<line x1="${padX}" y1="${Y0(0)}" x2="${W - padX}" y2="${Y0(0)}" stroke="#3a4658" stroke-width="2"/>`;
+  // Sort pieces by depth (along viewAxis), far first.
+  const depth = (p) => viewAxis === 'x' ? (viewDir > 0 ? (p.x0 + p.x1) / 2 : -(p.x0 + p.x1) / 2)
+                                        : (viewDir > 0 ? (p.z0 + p.z1) / 2 : -(p.z0 + p.z1) / 2);
+  // Filter out the perimeter walls (which fill the whole background like a
+  // skybox in elevation) and the ground floor (handled separately as the
+  // baseline at y=0). Match perimeter walls by length covering the full
+  // arena (any single wall whose horizontal span exceeds 90% of GH×2).
+  const PERIM_LEN = GH * 1.9;
+  const ordered = pieces
+    .filter((p) => p.kind !== 'ground' &&
+      !(p.kind === 'wall' && ((p.x1 - p.x0) > PERIM_LEN || (p.z1 - p.z0) > PERIM_LEN)))
+    .slice()
+    .sort((a, b) => depth(a) - depth(b));
+  for (const p of ordered) {
+    // Horizontal bounds (the axis perpendicular to view).
+    const h0 = viewAxis === 'x' ? p.z0 : p.x0;
+    const h1 = viewAxis === 'x' ? p.z1 : p.x1;
+    const y0 = p.yMin, y1 = p.yMax;
+    if (y1 - y0 < 0.01 || h1 - h0 < 0.01) continue;
+    // For ramps, draw the wedge silhouette (slope) when seen ALONG the run
+    // axis; otherwise (seen across the run axis) draw the full bounding box.
+    let path;
+    if (p.kind === 'ramp' || p.kind === 'stairs') {
+      const conn = p.conn;
+      if (conn && conn.axis === viewAxis) {
+        // Run axis is into the view → ramp shows as a triangle profile in YH.
+        // The slope goes from (cf, loY) to (cf, hiY) but along the run we
+        // project a triangle: at h_low the wedge top is loY; at h_high top is hiY.
+        // Since we're projecting along the run axis we see a rectangle with the
+        // sloped TOP. We approximate with a triangle from (h0, 0) to (h1, 0)
+        // to (mid, max(yMax)).
+        const hMid = (h0 + h1) / 2;
+        path = `M ${X0(h0)} ${Y0(0)} L ${X0(h1)} ${Y0(0)} L ${X0(h1)} ${Y0(conn.hiY)} L ${X0(h0)} ${Y0(conn.loY)} Z`;
+        // pick the orientation of the diagonal based on which end is high
+        path = `M ${X0(h0)} ${Y0(0)} L ${X0(h1)} ${Y0(0)} L ${X0(h1)} ${Y0(conn.hiY)} L ${X0(h0)} ${Y0(conn.loY)} Z`;
+        void hMid;
+      } else {
+        path = `M ${X0(h0)} ${Y0(y0)} L ${X0(h1)} ${Y0(y0)} L ${X0(h1)} ${Y0(y1)} L ${X0(h0)} ${Y0(y1)} Z`;
+      }
+    } else {
+      path = `M ${X0(h0)} ${Y0(y0)} L ${X0(h1)} ${Y0(y0)} L ${X0(h1)} ${Y0(y1)} L ${X0(h0)} ${Y0(y1)} Z`;
+    }
+    // Color by kind; tint slightly darker by depth so far pieces fade back.
+    const col = p.kind === 'platform' ? '#3b6ea5'
+      : p.kind === 'box' && p.id ? '#8a6a2e'
+      : p.kind === 'box' ? '#7a6336'
+      : p.kind === 'ramp' ? '#4a7a52'
+      : p.kind === 'stairs' ? '#52708a'
+      : p.kind === 'overhang' ? '#6a4a6a'
+      : '#aab2bf';
+    s += `<path d="${path}" fill="${col}" fill-opacity="0.82" stroke="#0a0d12" stroke-width="0.6"/>`;
+    if (p.id) {
+      const tx = X0((h0 + h1) / 2);
+      const ty = Y0((y0 + y1) / 2);
+      s += `<text x="${tx}" y="${ty + 4}" fill="#fff" font-size="10" text-anchor="middle">${p.id}</text>`;
+    }
+  }
+  s += `<text x="20" y="26" fill="#fff" font-size="16">${title}</text>`;
+  s += `<text x="${W - 14}" y="${Hh - 14}" fill="#5c6878" font-size="11" text-anchor="end">horizontal axis: ${viewAxis === 'x' ? 'Z' : 'X'} (m) — vertical: Y (m)</text>`;
+  s += `</svg>`;
+  return s;
+}
+
+// Generate 4 elevation views (looking along ±X and ±Z).
+writeFileSync(`${__DIR}/map_elev_from_west.svg`,  elevation('x', +1,
+  'ELEVATION — looking EAST (from -X), horizontal axis = Z'));
+writeFileSync(`${__DIR}/map_elev_from_east.svg`,  elevation('x', -1,
+  'ELEVATION — looking WEST (from +X), horizontal axis = Z'));
+writeFileSync(`${__DIR}/map_elev_from_north.svg`, elevation('z', +1,
+  'ELEVATION — looking SOUTH (from -Z), horizontal axis = X'));
+writeFileSync(`${__DIR}/map_elev_from_south.svg`, elevation('z', -1,
+  'ELEVATION — looking NORTH (from +Z), horizontal axis = X'));
+
+console.log(`\n[wrote ${__DIR}/map_report.txt + plan/elev/oblique SVGs]`);
