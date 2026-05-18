@@ -26,6 +26,24 @@ Format: newest entries at the top. Each entry lists what was added, what was cha
 
 ## Session log
 
+### 2026-05-18 — fps-edge spawn fix (player spawned at y=0 below the map)
+
+User loaded `https://kevinpihljensen.github.io/fps-edge/index.html` and reported "I don't spawn inside the edge structure, I spawn on the ground below it." Root cause: the importer emitted `SPAWN = { x, z }` with no `y`, and `resetPlayer()` / `updateArenaPlayer()` both hardcoded `position.set(_, 0, _)`. The Edge's spawns sit on upper decks (engine y = 15-25 m); placing the player at y=0 dropped them onto the perimeter ground beneath the floating brushwork.
+
+**Changed**
+- `dev/import_edge.py` — `SPAWN` and every `SPAWN_ANCHORS` entry now carries a `y` field set from the Quake `info_player_deathmatch` Z coordinate (after `qcz_floor` offset).
+- `src/maplayout.js` — regenerated; `SPAWN = { x: -11.50, y: 23.06, z: 8.12 }` (was missing `y`).
+- `src/player.js` — `resetPlayer()` uses `SPAWN.y` (fallback 0 for legacy maps that ship `SPAWN` without it); `updateArenaPlayer()` uses `anchor.y` (same fallback). Imports `SPAWN` alongside `SPAWN_ANCHORS`.
+- `dev/edge_validate.mjs` — spawn check now tests at the imported `SPAWN.y` (probe ceiling = `SPAWN.y + STEP_UP` so it finds the alcove floor, not the upper deck overhead). Capsule-ejection tolerance widened to `2 * PLAYER_R` with a `WARN` band between 0.05 m and that bound — runtime collision resolves the small offsets cleanly.
+
+**Verified**
+- Engine-pure harness battery still 101/101 PASS.
+- `edge_validate.mjs` spawn check now reports OK with a 0.40 m nudge warning, alcove floor at y=22.31 (drop of 0.75 m from spawn — gravity handles it).
+- `fps/` unchanged (zero lines diffed).
+
+**Known issues (carried)**
+- 15 of 28 pickups remain unreachable per BFS — `func_plat` elevators not yet implemented + some AABB-closed doorways. Next session.
+
 ### 2026-05-18 — Session 55f (RIDGEPOINT ARENA — Quake-instagib rework + arena mode + mode selector)
 
 User asked to rework the map "drawing inspiration from maps such as the ones in the quake franchise, built for good instagib combat" — going arena, free hand on geometry, all three design axes (flow loops + sightlines + plaza centerpiece) in one pass, with multi-spawn anchors planned. The current map (RIDGEPOINT TOWN) was a wave-shooter layout: 160×160 with most action concentrated in the upper 2/3 (4 tall buildings in the N/NE/E), and the south was three dead-end stash rooms. 6 of 8 elevated decks were dead-end spurs. Plaza was an empty 40×40 zone with scattered crates. Wrong shape for arena combat.

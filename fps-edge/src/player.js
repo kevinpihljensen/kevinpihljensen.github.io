@@ -20,7 +20,7 @@ import { camera } from './scene.js';
 import { player, state, game, damageIndicator } from './state.js';
 import { collideCapsule, groundHeightAt, ceilingHeightAt, headroomClear } from './collision.js';
 import { enemies } from './enemies.js';
-import { SPAWN_ANCHORS } from './maplayout.js';
+import { SPAWN, SPAWN_ANCHORS } from './maplayout.js';
 import {
   GAME_STATE, MOUSE_SENSITIVITY, PITCH_LIMIT, SCOPE_SENS_MULT,
   WALK_SPEED, SPRINT_SPEED, CROUCH_SPEED, SCOPE_SPEED, KNIFE_SPEED_MULT,
@@ -519,7 +519,9 @@ export function updateArenaPlayer(dt) {
   game.arenaRespawnTimer -= dt;
   if (game.arenaRespawnTimer > 0) return;
   const a = pickArenaRespawnAnchor();
-  player.position.set(a.x, 0, a.z);
+  // fps-edge: spawn anchors carry a y component (The Edge's spawns are on
+  // multiple decks 7-25 m up). Fall back to 0 if a legacy anchor lacks y.
+  player.position.set(a.x, a.y == null ? 0 : a.y, a.z);
   player.velocityX = 0;
   player.velocityZ = 0;
   player.velocityY = 0;
@@ -530,7 +532,9 @@ export function updateArenaPlayer(dt) {
 }
 
 export function resetPlayer() {
-  player.position.set(0, 0, 0);
+  // fps-edge: SPAWN carries a y (The Edge's player_start sits on an upper
+  // deck). Fall back to 0 for legacy maps where SPAWN is { x, z } only.
+  player.position.set(SPAWN.x, SPAWN.y == null ? 0 : SPAWN.y, SPAWN.z);
   player.velocityX = 0;
   player.velocityZ = 0;
   player.velocityY = 0;

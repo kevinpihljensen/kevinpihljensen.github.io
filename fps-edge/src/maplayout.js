@@ -10,23 +10,23 @@
 // Teleporter triggers + destinations are emitted as a new LAYOUT entry
 // type ('teleporter') consumed by the runtime.
 
-export const SPAWN = { x: -11.50, z: 8.12 };
+export const SPAWN = { x: -11.50, y: 23.06, z: 8.12 };
 
 // All deathmatch spawn points from the .map. The engine's arena
 // mode picks one at random per respawn.
 export const SPAWN_ANCHORS = [
-  { id: 'C', x: -11.50, z: 8.12 },
-  { id: 's1', x: 20.00, z: 0.38 },
-  { id: 's2', x: 13.00, z: -18.62 },
-  { id: 's3', x: 19.75, z: 17.88 },
-  { id: 's4', x: 18.00, z: 20.62 },
-  { id: 's5', x: 30.50, z: -3.88 },
-  { id: 's6', x: 30.50, z: 4.62 },
-  { id: 's7', x: -31.00, z: -5.88 },
-  { id: 's8', x: -32.00, z: 10.12 },
-  { id: 's9', x: -2.50, z: -35.38 },
-  { id: 's10', x: 4.50, z: -35.62 },
-  { id: 's11', x: 34.50, z: 26.12 },
+  { id: 'C', x: -11.50, y: 23.06, z: 8.12 },
+  { id: 's1', x: 20.00, y: 19.00, z: 0.38 },
+  { id: 's2', x: 13.00, y: 36.75, z: -18.62 },
+  { id: 's3', x: 19.75, y: 24.75, z: 17.88 },
+  { id: 's4', x: 18.00, y: 28.75, z: 20.62 },
+  { id: 's5', x: 30.50, y: 24.75, z: -3.88 },
+  { id: 's6', x: 30.50, y: 36.75, z: 4.62 },
+  { id: 's7', x: -31.00, y: 22.75, z: -5.88 },
+  { id: 's8', x: -32.00, y: 28.88, z: 10.12 },
+  { id: 's9', x: -2.50, y: 32.75, z: -35.38 },
+  { id: 's10', x: 4.50, y: 32.75, z: -35.62 },
+  { id: 's11', x: 34.50, y: 28.75, z: 26.12 },
 ];
 
 // Quake brushes don't have the engine's aperture concept; wallBoxes
