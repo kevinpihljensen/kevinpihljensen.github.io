@@ -49,7 +49,7 @@ import { createImpact, createBloodSplat } from './decals.js';
 // canScope = true ⇒ right-click toggles scope.
 export const WEAPON_DEFS = {
   pistol: {
-    name: 'Pistol', damage: 20, rpm: 300, magSize: 12, reserveStart: 96,
+    name: 'Pistol', damage: 20, rpm: 450, magSize: 12, reserveStart: 96,
     reloadTime: 1.2, spread: 0.005, pellets: 1, recoil: RECOIL_PISTOL,
     headshotMult: 1.25,
     unlocked: true,  autoFire: false, canScope: false, sfxFire: sfxPistol,
