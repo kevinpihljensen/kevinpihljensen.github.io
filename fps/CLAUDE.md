@@ -128,37 +128,67 @@ where it fixes a bug. See `dev/harness_ai.mjs` for the established style.
 ## 6. Verification tooling (`dev/`)
 
 - `./test-all.sh` — one command: syntax check + 10 harnesses + mapviz.
-  Current baseline: **216 assertions, ALL GREEN; MAP OK; geomWarns=0.**
+  Current baseline: **216 assertions, ALL GREEN; MAP OK; geomWarns=0;
+  pickup-reach=0; doorway-drift=0.**
 - Individual harness: `cd dev && node harness_ai.mjs`.
-- `node dev/mapviz.mjs` — writes `dev/map_report.txt` plus SVG
-  floorplans (one per tier), an oblique isometric, and **4 elevation
+- `node dev/mapviz.mjs` — writes `dev/map_report.txt` plus SVG plans
+  (one per elevation tier), an oblique isometric, and **4 elevation
   cross-sections** (looking N / S / E / W) into `dev/`. All generated;
-  `.gitignore` excludes them. Report covers overlap/clearance,
-  connector-seam continuity, reachability, route-graph/loop flow, AND
-  a **geometry warnings** section (`geomWarns` in SUMMARY) that
-  auto-flags suspicious patterns the test suite alone wouldn't notice:
-  wall body intruding into a deck volume (z-fight at deck top),
-  doorways opening into a connector wedge body (the stair-trap bug
-  class), doorway too narrow for a standing capsule, lintel too low.
-- `bash dev/render-map.sh` — runs mapviz then converts every SVG to
-  PNG via `python3 -c "import cairosvg"`. Read the PNGs to **see**
-  the map: the elevation cross-sections are the view that makes
-  wall-pokes-through-deck and stair-wedge-abutting-doorway visually
-  obvious before they hit playtest.
+  `.gitignore` excludes them. Report covers:
+   - footprint overlap + vertical clearance
+   - connector-seam continuity (real `groundHeightAt` continuity)
+   - reachability BFS from spawn
+   - route-graph + loop / dead-end analysis
+   - **geometry warnings** (`geomWarns` in SUMMARY) — auto-flags wall
+     bodies intruding into a deck volume (z-fight at deck top),
+     doorways opening into a connector wedge body (stair-trap bug
+     class), doorway too narrow for a standing capsule, lintel too low
+   - **per-building inventory** — every named structure listed with
+     its footprint, height stack, every wall (with door/window status),
+     every connector landing on it, every pickup on top. One-glance
+     structural readout without grepping LAYOUT
+   - **pickup reachability** — each pickup must be on a surface
+     reached by the BFS; counts unreachable pickups in SUMMARY
+   - **DOORWAYS registry consistency** — verifies the AI router's
+     hand-maintained `DOORWAYS` array matches the actual door-bearing
+     walls at ground level; counts drift in SUMMARY. Catches the
+     "moved a wall but forgot to update DOORWAYS" bug class
+   - **sightline matrix** — pairwise LOS between SPAWN + every weapon
+     pickup at chest height; quick combat-flow reference
+
+- `node dev/fps-render.mjs` — first-person raytraced renders from
+  curated camera poses (spawn cardinals, building approach views, stair
+  landings, rooftop pickups, interior of WAREHOUSE). Pure Node — projects
+  rays against the same solids the runtime uses. Writes binary PPM files
+  in `dev/`. Lets the agent literally see what the player would see at
+  each position; the elevation views show profile geometry, the FP views
+  show approach + interior framing.
+
+- `bash dev/render-map.sh` — runs mapviz, fps-render, then converts
+  every SVG → PNG (cairosvg) and every PPM → PNG (Pillow). Read the
+  resulting `map_*.png` (orthographic) and `fps_*.png` (first-person)
+  files to comprehend the map visually.
 
 **Visibility workflow for map edits.** After any `maplayout.js` change:
 
-1. `cd dev && bash test-all.sh` — confirm ALL GREEN + MAP OK +
-   `geomWarns=0`.
-2. `bash dev/render-map.sh` — refresh the PNGs.
-3. Read at least `map_oblique.png` (overview) plus the elevation view
-   that faces the edited area (e.g. `map_elev_from_south.png` if you
-   touched something north of spawn). Verify walls don't poke through
-   deck tops; stair wedges meet decks cleanly at the top edge; no
-   building has a doorway right next to a stair wedge at ground level.
-4. If the change touched a building's wall heights, also Read the
-   per-tier floorplan at the building's deck height to confirm the
-   deck stack reads cleanly.
+1. `cd dev && bash test-all.sh` — confirm ALL GREEN + MAP OK + every
+   summary counter at zero (`geomWarns=0`, `unreachable pickups=0`,
+   `doorway drift=0`).
+2. `bash dev/render-map.sh` — refresh the renders (~15 s).
+3. Read the elevation cross-section facing the edited area first — it
+   makes wall-vs-deck and stair-wedge issues visually obvious (each
+   solid is a filled rectangle in side profile; overlaps glow).
+4. Read the FP view nearest the edit (`fps_outside_<BUILDING>` or
+   `fps_roof_<BUILDING>_at_<pickup>`) to verify the player's view of
+   the building reads correctly: stair wedges connect cleanly to deck
+   edges, windows are at expected sill heights, no z-fight stripes.
+5. If you added/changed a doorway in a ground-floor wall, you MUST
+   update the `DOORWAYS` export in `maplayout.js` to match. The
+   consistency check will flag drift but the AI router depends on this
+   list to route enemies through interior doors.
+6. If the change touched a deck size or wall thickness, scan the
+   per-building inventory section of the report for the affected
+   structure.
 
 Harnesses cover: AI (LOS/elevation/nav/scatter/cross-floor fire),
 arena seams + clipping + connector-landing pose, weapons (SAW bloom +

@@ -13,7 +13,8 @@
 // otherwise lacks: SEE the multi-level layout and get told what's broken.
 
 import { writeFileSync, readdirSync, unlinkSync } from 'fs';
-import { LAYOUT, SPAWN, wallBoxes } from '../src/maplayout.js';
+import { LAYOUT, SPAWN, PICKUPS, DOORWAYS, wallBoxes } from '../src/maplayout.js';
+import { lineOfSight } from '../src/collision.js';
 import { makeBoxSolid, makeRampSolid, groundHeightAt }
   from '../src/collision.js';
 
@@ -429,9 +430,184 @@ P('--- geometry warnings (auto-flag of suspicious patterns) ---');
 P(`  ${geomWarns === 0 ? 'no geometry warnings flagged' : 'geomWarns=' + geomWarns + ' (review above)'}`);
 P('');
 
+// --- PICKUP REACHABILITY (S55e) ------------------------------------------
+// Each pickup must sit on a surface that is REACHABLE from the spawn via
+// the connector + jump/step graph. harness_pickups already verifies the
+// pickup lands on a real surface; this layer ASLO verifies that surface
+// is reachable. Catches "I placed a pickup on a deck nobody can reach".
+P('--- pickup reachability (each pickup must be on a reachable surface) ---');
+let unreachablePickups = 0;
+if (typeof PICKUPS !== 'undefined' && Array.isArray(PICKUPS)) {
+  for (const p of PICKUPS) {
+    // Find the surface(s) containing (p.x, p.z) at p.y (within tolerance).
+    let bestIdx = -1, bestDy = Infinity;
+    for (let i = 0; i < N; i++) {
+      const s = surfaces[i];
+      if (p.x < s.x0 || p.x > s.x1 || p.z < s.z0 || p.z > s.z1) continue;
+      const dy = Math.abs(s.y - (p.y || 0));
+      if (dy < 0.2 && dy < bestDy) { bestDy = dy; bestIdx = i; }
+    }
+    const label = `${p.kind}${p.what ? ':' + p.what : ''} @(${f(p.x)},${f(p.z)},${f(p.y||0)})`;
+    if (bestIdx < 0) {
+      P(`  ❌ MISS  ${label}: no surface at that (x,z,y) — pickup floats / sinks`);
+      unreachablePickups++;
+    } else if (!vis[bestIdx]) {
+      P(`  ❌ STRAND ${label}: surface ${surfaces[bestIdx].name} is STRANDED (no route from spawn)`);
+      unreachablePickups++;
+    } else {
+      P(`  OK      ${label}: on ${surfaces[bestIdx].name} (reached via ${how[bestIdx]})`);
+    }
+  }
+}
+P('');
+
+// --- PER-BUILDING INVENTORY (S55e) ---------------------------------------
+// Textual summary of each named structure: footprint, height stack, which
+// walls bound it (with door/window status), connectors landing here, and
+// pickups on top. Gives the agent a one-glance structural readout
+// without scanning the LAYOUT array manually.
+P('--- per-building inventory (each named structure with its parts) ---');
+const namedPlats = LAYOUT.filter((e) => e.t === 'platform' && e.id);
+const namedBoxes = LAYOUT.filter((e) => e.t === 'box' && e.id);
+const allWalls = LAYOUT.filter((e) => e.t === 'wall');
+const allConns = LAYOUT.filter((e) => e.t === 'rampTo' || e.t === 'stairsTo');
+function dscWall(w) {
+  const apr = w.door ? `door ${f(w.door.width)}x${f(w.door.height)}`
+              : w.window ? `window w${f(w.window.width)}xh${f(w.window.height)}@sill${f(w.window.sill)}`
+              : 'solid';
+  const y = `y[${f(w.base || 0)},${f((w.base || 0) + w.height)}]`;
+  return `${w.axis}-axis cx=${f(w.cx)} cz=${f(w.cz)} L=${f(w.length)} ${y} ${apr}`;
+}
+for (const b of [...namedPlats, ...namedBoxes]) {
+  const isPlat = b.t === 'platform';
+  const thick = b.thick == null ? 0.6 : (isPlat ? b.thick : null);
+  const top = isPlat ? b.top : (b.base || 0) + b.sy;
+  const bot = isPlat ? b.top - (b.thick == null ? 0.6 : b.thick) : (b.base || 0);
+  const sx = b.sx, sz = b.sz;
+  const x0 = b.cx - sx / 2, x1 = b.cx + sx / 2;
+  const z0 = b.cz - sz / 2, z1 = b.cz + sz / 2;
+  P(`  ${b.id} [${b.t}]  footprint x=[${f(x0)},${f(x1)}] z=[${f(z0)},${f(z1)}]  y=[${f(bot)},${f(top)}]  size ${f(sx)}×${f(sz)} h=${f(top - bot)}`);
+  // Walls touching this building's perimeter (centerline within 1.5m of an edge).
+  for (const w of allWalls) {
+    const wt = w.thick == null ? 0.5 : w.thick;
+    const wHalfL = w.length / 2;
+    let touches = false;
+    if (w.axis === 'x') {
+      // wall spans x along its length; touches if its z-center sits within 1.5m of building's z-edge AND x-extent overlaps
+      const wx0 = w.cx - wHalfL, wx1 = w.cx + wHalfL;
+      if (Math.min(wx1, x1) - Math.max(wx0, x0) > -0.5 &&
+          (Math.abs(w.cz - z0) < 1.5 || Math.abs(w.cz - z1) < 1.5 ||
+           (w.cz > z0 && w.cz < z1)))
+        touches = true;
+    } else {
+      const wz0 = w.cz - wHalfL, wz1 = w.cz + wHalfL;
+      if (Math.min(wz1, z1) - Math.max(wz0, z0) > -0.5 &&
+          (Math.abs(w.cx - x0) < 1.5 || Math.abs(w.cx - x1) < 1.5 ||
+           (w.cx > x0 && w.cx < x1)))
+        touches = true;
+    }
+    if (touches) P(`    wall:  ${dscWall(w)}`);
+  }
+  // Connectors that LAND on this building.
+  for (const c of allConns) {
+    if (c.to === b.id) P(`    conn:  ${c.t} side=${c.side} run=${f(c.run)} width=${f(c.width)} fromY=${f(c.fromY||0)}`);
+  }
+  // Pickups on top.
+  if (typeof PICKUPS !== 'undefined') {
+    for (const p of PICKUPS) {
+      if (p.x >= x0 && p.x <= x1 && p.z >= z0 && p.z <= z1 &&
+          Math.abs((p.y || 0) - top) < 0.2)
+        P(`    pickup: ${p.kind}${p.what ? ':' + p.what : ''} @(${f(p.x)},${f(p.z)})`);
+    }
+  }
+}
+P('');
+
+// --- DOORWAYS REGISTRY CONSISTENCY (S55e) -------------------------------
+// The hand-maintained DOORWAYS export feeds the AI router (see enemies.js
+// updateDoorwayLatch). It's easy for this list to drift when walls are
+// added/moved/changed — a doorway entry then routes the AI through empty
+// air, or a new doorway has no entry and AIs paw at the wall. Check both
+// directions: every door-bearing wall has a nearby DOORWAYS entry, and
+// every DOORWAYS entry corresponds to a real door-bearing wall.
+P('--- DOORWAYS registry consistency (AI router waypoint list) ---');
+let doorwayDrift = 0;
+if (typeof DOORWAYS !== 'undefined' && Array.isArray(DOORWAYS)) {
+  // Collect every wall that has a `door` aperture.
+  const doorWalls = LAYOUT
+    .filter((e) => e.t === 'wall' && e.door)
+    .map((e) => ({ cx: e.cx, cz: e.cz, axis: e.axis, base: e.base || 0 }));
+  // Match within 2 m (DOORWAYS entries are usually wall midpoints).
+  const matched = new Set();
+  for (let i = 0; i < DOORWAYS.length; i++) {
+    const d = DOORWAYS[i];
+    let bestIdx = -1, bestDist = Infinity;
+    for (let j = 0; j < doorWalls.length; j++) {
+      const w = doorWalls[j];
+      // Only consider ground-floor doors (base ~ 0). The AI routes at
+      // ground level — parapet doorways aren't traversable for routing.
+      if (w.base > 0.1) continue;
+      if (w.axis !== d.axis) continue;
+      const dd = Math.hypot(w.cx - d.x, w.cz - d.z);
+      if (dd < bestDist) { bestDist = dd; bestIdx = j; }
+    }
+    if (bestIdx < 0 || bestDist > 2.0) {
+      P(`  ❌ DRIFT  DOORWAYS[${i}] @(${f(d.x)},${f(d.z)}, axis ${d.axis}) — no matching ground-floor door wall (nearest ${f(bestDist)}m)`);
+      doorwayDrift++;
+    } else {
+      matched.add(bestIdx);
+    }
+  }
+  // Any ground-floor door-bearing wall NOT covered by DOORWAYS is a routing gap.
+  for (let j = 0; j < doorWalls.length; j++) {
+    if (matched.has(j)) continue;
+    const w = doorWalls[j];
+    if (w.base > 0.1) continue;                  // parapet doorways are intentionally out of the AI graph
+    P(`  ❌ MISS   ground-floor door at wall ${w.axis}@(${f(w.cx)},${f(w.cz)}) has no DOORWAYS entry — AI won't route through it`);
+    doorwayDrift++;
+  }
+  if (doorwayDrift === 0) {
+    P(`  OK  ${DOORWAYS.length} DOORWAYS entries ↔ ${doorWalls.filter((w) => w.base <= 0.1).length} ground-floor door walls match`);
+  }
+}
+P('');
+
+// --- SIGHTLINE MATRIX (S55e) --------------------------------------------
+// Pairwise LOS check between named landmarks (spawn + each pickup). Gives
+// a quick "from here can I see there" reference for combat-flow reasoning:
+// if a pickup has LOS to spawn from far away, that pickup's defender has
+// an early-spotting advantage; if a pickup has NO LOS to most of the map,
+// it's a safe pickup but a poor sniper perch.
+P('--- sightline matrix (LOS between landmarks at chest height 1.05m) ---');
+const landmarks = [{ name: 'SPAWN', x: SPAWN.x, z: SPAWN.z, y: 0 }];
+if (typeof PICKUPS !== 'undefined') {
+  for (const p of PICKUPS) {
+    if (p.kind !== 'weapon') continue;
+    landmarks.push({ name: p.what, x: p.x, z: p.z, y: p.y || 0 });
+  }
+}
+const CHEST = 1.05;
+// Header row.
+let head = '       ';
+for (const a of landmarks) head += a.name.padEnd(9);
+P('  ' + head);
+for (const a of landmarks) {
+  let row = a.name.padEnd(9);
+  for (const b of landmarks) {
+    if (a === b) { row += '   -    '; continue; }
+    const sees = lineOfSight(a.x, a.y + CHEST, a.z, b.x, b.y + CHEST, b.z);
+    row += sees ? '   ✓    ' : '   ✗    ';
+  }
+  P('  ' + row);
+}
+P('');
+
 P(`SUMMARY: overlap issues=${issues}  seam fails=${seamFail}  stranded surfaces=${unreached}` +
-  `  | loop=${hasLoop ? 'yes' : 'NO'}  dead-ends=${deadEnds.length}  | geomWarns=${geomWarns}`);
-P(unreached || seamFail || issues ? '*** MAP HAS ISSUES — see above ***' : '*** MAP OK ***');
+  `  | loop=${hasLoop ? 'yes' : 'NO'}  dead-ends=${deadEnds.length}  | geomWarns=${geomWarns}` +
+  `  | unreachable pickups=${unreachablePickups}  | doorway drift=${doorwayDrift}`);
+P(unreached || seamFail || issues || unreachablePickups || doorwayDrift
+  ? '*** MAP HAS ISSUES — see above ***'
+  : '*** MAP OK ***');
 
 const report = log.join('\n');
 console.log(report);

@@ -15,28 +15,41 @@
 set -euo pipefail
 cd "$(dirname "$0")"
 
-# 1. Refresh the SVGs (mapviz writes them into ./).
+# 1. Refresh the SVGs (mapviz writes them into ./) and the FPS PPM renders
+# (fps-render.mjs writes first-person raytraced views of curated camera
+# poses — spawn, building entries, stair landings, pickups).
 node mapviz.mjs > /dev/null
+node fps-render.mjs > /dev/null
 
-# 2. Convert every map_*.svg → map_*.png. Use 2× density on cross-sections
-# so the thinner geometry (walls, parapets) stays readable in the PNG.
+# 2. Convert every SVG → PNG (cairosvg) and every PPM → PNG (Pillow).
 have_cairosvg=$(python3 -c "import cairosvg" 2>/dev/null && echo yes || echo no)
-if [ "$have_cairosvg" != "yes" ]; then
-  echo "cairosvg not installed — pip install cairosvg" >&2
+have_pillow=$(python3 -c "from PIL import Image" 2>/dev/null && echo yes || echo no)
+if [ "$have_cairosvg" != "yes" ] || [ "$have_pillow" != "yes" ]; then
+  echo "missing python deps — pip install cairosvg pillow" >&2
   exit 1
 fi
 for svg in map_plan_*.svg map_oblique.svg map_elev_*.svg; do
   [ -e "$svg" ] || continue
   png="${svg%.svg}.png"
-  scale=1.5
-  case "$svg" in map_elev_*.svg) scale=1.5 ;; esac
   python3 -c "
-import cairosvg, sys
-cairosvg.svg2png(url='$svg', write_to='$png', scale=$scale)
+import cairosvg
+cairosvg.svg2png(url='$svg', write_to='$png', scale=1.5)
 " && echo "  wrote $png"
+done
+for ppm in fps_*.ppm; do
+  [ -e "$ppm" ] || continue
+  png="${ppm%.ppm}.png"
+  python3 -c "
+from PIL import Image
+Image.open('$ppm').save('$png')
+" && echo "  wrote $png"
+  rm -f "$ppm"
 done
 
 # 3. Quick summary of what landed.
 echo
 echo "Rendered PNGs (Read these to inspect the map):"
-ls -1 map_*.png 2>/dev/null | sed 's/^/  /'
+echo "  Orthographic views:"
+ls -1 map_*.png 2>/dev/null | sed 's/^/    /'
+echo "  First-person POV views:"
+ls -1 fps_*.png 2>/dev/null | sed 's/^/    /'
