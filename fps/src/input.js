@@ -17,7 +17,7 @@ import {
   tryFire, tryReload, switchWeapon, toggleScope, wState,
 } from './weapons.js';
 import { setGameState, dom, syncTitleToggles } from './hud.js';
-import { resetGame, startWave, startMapTest } from './wave.js';
+import { resetGame, startWave, startMapTest, startArena } from './wave.js';
 
 // --- KEYBOARD ---
 window.addEventListener('keydown', (e) => {
@@ -30,13 +30,17 @@ window.addEventListener('keydown', (e) => {
   }
 
   // Title screen: keyboard accelerators mirroring the selector buttons.
-  // M toggles Map Test, B toggles Bunny Hop. Enter/Space starts the run.
+  // 1/2/3 select Wave/Arena/Map Test mode, B toggles Bunny Hop, Enter/Space
+  // starts the run.
   if (state.gameState === GAME_STATE.TITLE) {
-    if (e.code === 'KeyM') {
-      game.mapTestArmed = !game.mapTestArmed;
-      syncTitleToggles();
-      e.preventDefault();
-      return;
+    if (e.code === 'Digit1') {
+      game.modeArmed = 'wave'; syncTitleToggles(); e.preventDefault(); return;
+    }
+    if (e.code === 'Digit2') {
+      game.modeArmed = 'arena'; syncTitleToggles(); e.preventDefault(); return;
+    }
+    if (e.code === 'Digit3') {
+      game.modeArmed = 'maptest'; syncTitleToggles(); e.preventDefault(); return;
     }
     if (e.code === 'KeyB') {
       game.bhopEnabled = !game.bhopEnabled;
@@ -64,7 +68,7 @@ window.addEventListener('keydown', (e) => {
   if (state.gameState === GAME_STATE.GAMEOVER || state.gameState === GAME_STATE.WON) {
     if (e.code === 'KeyR') {
       resetGame();
-      startWave(1);
+      restartArmedMode();
       requestLock();
       e.preventDefault();
     }
@@ -142,7 +146,7 @@ dom.overlay.addEventListener('click', async () => {
   ensureAudio();
   if (state.gameState === GAME_STATE.GAMEOVER || state.gameState === GAME_STATE.WON) {
     resetGame();
-    startWave(1);
+    restartArmedMode();
     await tryFullscreenWithKeyboardLock();
     requestLock();
     return;
@@ -156,10 +160,17 @@ dom.overlay.addEventListener('click', async () => {
 // Shared "begin a run from the title with the current toggles".
 async function beginRun() {
   ensureAudio();
-  if (game.mapTestArmed) startMapTest();
-  else startWave(1);
+  restartArmedMode();
   await tryFullscreenWithKeyboardLock();
   requestLock();
+}
+
+// Start whichever mode is currently armed. Used by the title PLAY button and
+// by post-death "play again" (R / overlay click).
+function restartArmedMode() {
+  if (game.modeArmed === 'arena')   startArena();
+  else if (game.modeArmed === 'maptest') startMapTest();
+  else startWave(1);
 }
 
 if (dom.btnPlay) {
@@ -175,13 +186,18 @@ if (dom.btnBhop) {
     syncTitleToggles();
   });
 }
-if (dom.btnMaptest) {
-  dom.btnMaptest.addEventListener('click', (e) => {
+// Mode selector — clicking a mode button arms it (exclusive).
+const wireModeBtn = (el, mode) => {
+  if (!el) return;
+  el.addEventListener('click', (e) => {
     e.stopPropagation();
-    game.mapTestArmed = !game.mapTestArmed;
+    game.modeArmed = mode;
     syncTitleToggles();
   });
-}
+};
+wireModeBtn(dom.btnModeWave,    'wave');
+wireModeBtn(dom.btnModeArena,   'arena');
+wireModeBtn(dom.btnModeMaptest, 'maptest');
 
 async function tryFullscreenWithKeyboardLock() {
   // Fullscreen is requested so the Keyboard Lock API works in Chrome (it lets
