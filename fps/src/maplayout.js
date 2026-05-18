@@ -1,16 +1,22 @@
-// maplayout.js — THE CITADEL (v3: enclosure, doorways, windows).
+// maplayout.js — RIDGEPOINT TOWN (v4: 160×160 town map, multi-floor buildings).
 //
-// SINGLE SOURCE OF TRUTH (pure data + one pure helper, no engine imports)
-// shared by the runtime (arena.js + kit.js) and the offline analyzer
-// (mapviz.mjs). Connectors reference a platform by `to:<id>` so the kit's
-// seamless-join contract holds by construction.
+// S55: scaled 2× (was 80×80). Replaces the single-courtyard Citadel with a
+// town/compound layout: spawn plaza in the centre, four full multi-floor
+// buildings (HOUSE_NW, HOUSE_NE, TOWER_NE, WAREHOUSE), a hilltop sniper
+// outpost (HILLTOP), enclosed rooms (BUNKER_S, GUARDHOUSE_W), and a ruins
+// quadrant in the south-east with broken-wall cover. Catwalks + external
+// stairs link the high decks into a loop so there's a real flow up high in
+// addition to the ground-level layout. Doorways are exported separately for
+// the AI router so enemies can navigate through them instead of paw at walls.
+//
+// SINGLE SOURCE OF TRUTH (pure data + pure helpers, no engine imports) shared
+// by the runtime (arena.js + kit.js) and the offline analyzer (mapviz.mjs).
 //
 // Schema (entry type `t`):
 //   ground / perimeter / platform / box / wall / rampTo / stairsTo / overhang
-//   wall now supports an APERTURE so it can be a DOORWAY or a WINDOW:
-//     { t:'wall', cx,cz, base?, length, height, thick?, axis,
-//       door?:{width,height,offset?}            // gap from the floor up
-//       window?:{width,height,sill,offset?} }   // gap in a mid band
+//   `wall` supports an APERTURE so it can be a DOORWAY or a WINDOW:
+//     door?:{width,height,offset?}            // gap from the floor up
+//     window?:{width,height,sill,offset?}     // gap in a mid band
 //   A doorway = no solid in the opening (walk + see + shoot through).
 //   A window  = solid sill below + lintel above + side jambs; the mid band
 //               is clear, so you CANNOT walk through but CAN see/shoot.
@@ -51,138 +57,315 @@ export function wallBoxes(e) {
   return out;
 }
 
+// S55: doorway midpoints (world XZ + the wall axis they belong to) for the
+// AI router. When an enemy is blocked from reaching the player by a wall, it
+// can latch onto the nearest doorway, route to it, and re-engage on the other
+// side. Computed by hand from the wall entries below so the router does NOT
+// have to scan the layout every frame. Keep this in sync with the doorway
+// walls.
+export const DOORWAYS = [
+  // HOUSE_NW: doorway on the +z side (faces plaza)
+  { x: -35, z: -23,  axis: 'x' },
+  // HOUSE_NE: doorway on the -x side (faces plaza)
+  { x:  33, z: -35,  axis: 'z' },
+  // WAREHOUSE: two doorways (entry + interior partition)
+  { x:  35,  z:  8,  axis: 'z' },
+  { x:  45,  z:  2,  axis: 'x' },   // interior partition doorway
+  // BUNKER_S: doorway on the -z side (faces plaza)
+  { x:   0,  z:  36, axis: 'x' },
+  // GUARDHOUSE_W: doorway on the +x side (faces plaza)
+  { x: -33,  z:  14, axis: 'z' },
+  // TOWER_NE ground room: doorway on the -x side
+  { x:  50,  z: -18, axis: 'z' },
+  // HILLTOP arch: doorway in the parapet on the -z side (only opening up top)
+  { x:   0,  z: -32, axis: 'x' },
+  // RUINS_SE archway: door-shaped gap on -z
+  { x:  43,  z:  30, axis: 'x' },
+];
+
 export const LAYOUT = [
-  // --- shell ---
-  { t: 'ground', half: 40, y: 0 },
-  { t: 'perimeter', half: 40, height: 14, thick: 1.0 },
+  // =====================================================================
+  // SHELL
+  // =====================================================================
+  { t: 'ground', half: 80, y: 0 },
+  { t: 'perimeter', half: 80, height: 16, thick: 1.0 },
 
-  // --- NORTH: central KEEP (tier 4.5) ---
-  { t: 'platform', id: 'KEEP', cx: 0, cz: -20, top: 4.5, sx: 20, sz: 16 },
-  { t: 'rampTo',   to: 'KEEP', side: '+z', run: 9, width: 8, fromY: 0 },
-  { t: 'stairsTo', to: 'KEEP', side: '-x', run: 9, width: 6, fromY: 0, steps: 9 },
+  // =====================================================================
+  // NORTH-WEST: HOUSE_NW — two-story house
+  //   ground floor: 14×14 walled room with a south doorway
+  //   2nd floor:    platform deck at y=4.0 (top), accessed by external
+  //                 stairs on the west side; balcony walls with windows
+  // =====================================================================
+  // 2nd-floor deck (the upstairs floor / ground-floor ceiling).
+  { t: 'platform', id: 'HOUSE_NW_F2', cx: -35, cz: -30, top: 4.0, sx: 14, sz: 14 },
+  // Ground-floor walls (base=0, height=4.0) — perimeter of the room.
+  { t: 'wall', axis: 'x', cx: -35, cz: -37, length: 14, height: 4.0, thick: 0.5 },                  // N solid
+  { t: 'wall', axis: 'x', cx: -35, cz: -23, length: 14, height: 4.0, thick: 0.5,
+    door: { width: 2.4, height: 2.6 } },                                                            // S doorway (faces plaza)
+  { t: 'wall', axis: 'z', cx: -42, cz: -30, length: 14, height: 4.0, thick: 0.5,
+    window: { width: 2.0, height: 1.2, sill: 1.0 } },                                                // W with window
+  { t: 'wall', axis: 'z', cx: -28, cz: -30, length: 14, height: 4.0, thick: 0.5,
+    window: { width: 2.0, height: 1.2, sill: 1.0 } },                                                // E with window
+  // External stairs up to the 2nd-floor deck (lands on the -x edge of HOUSE_NW_F2).
+  { t: 'stairsTo', to: 'HOUSE_NW_F2', side: '-x', run: 7, width: 5, fromY: 0, steps: 7 },
+  // 2nd-floor parapet walls — half-height with windows so the roof reads as a defensible balcony.
+  { t: 'wall', axis: 'x', cx: -35, cz: -37, base: 4.0, length: 14, height: 1.6, thick: 0.4,
+    window: { width: 6, height: 0.8, sill: 0.7 } },
+  { t: 'wall', axis: 'x', cx: -35, cz: -23, base: 4.0, length: 14, height: 1.6, thick: 0.4,
+    window: { width: 6, height: 0.8, sill: 0.7 } },
+  { t: 'wall', axis: 'z', cx: -42, cz: -30, base: 4.0, length: 14, height: 1.6, thick: 0.4 },
+  // The +x parapet leaves a doorway-sized gap so the player can drop / hop onto a catwalk
+  // (or sniper-shoot through the gap toward the central plaza).
+  { t: 'wall', axis: 'z', cx: -28, cz: -30, base: 4.0, length: 14, height: 1.6, thick: 0.4,
+    door: { width: 3.0, height: 1.6 } },
 
-  // --- NORTH-EAST: walkway -> tower -> catwalk -> rampart ---
-  { t: 'platform', id: 'TOWER', cx: 27, cz: -22, top: 7.0, sx: 10, sz: 10 },
-  { t: 'box', id: 'BRIDGE', cx: 15.5, cz: -20, base: 3.9, sx: 11, sy: 0.6, sz: 6 },
-  { t: 'rampTo', to: 'TOWER', side: '-x', run: 6, width: 5, fromY: 4.5 },
-  { t: 'platform', id: 'RAMPART', cx: 27, cz: -34, top: 7.0, sx: 14, sz: 6 },
-  { t: 'box', id: 'CATWALK', cx: 27, cz: -29, base: 6.4, sx: 8, sy: 0.6, sz: 4 },
+  // =====================================================================
+  // NORTH: HILLTOP — fortified sniper outpost on a high platform
+  //   16×16 deck at y=6.0, parapet walls with shooting slits all around,
+  //   one south-side archway for ingress
+  // =====================================================================
+  { t: 'platform', id: 'HILLTOP', cx: 0, cz: -50, top: 6.0, sx: 16, sz: 14 },
+  // Ramps + stairs up to the HILLTOP from the ground.
+  { t: 'rampTo',   to: 'HILLTOP', side: '+z', run: 10, width: 8, fromY: 0 },   // south ramp into plaza
+  { t: 'stairsTo', to: 'HILLTOP', side: '-x', run: 8,  width: 5, fromY: 0, steps: 8 }, // west stairs
+  // Parapets on the deck (base=6.0, height=2.2) — slits on three sides, doorway south.
+  { t: 'wall', axis: 'x', cx: 0,  cz: -57, base: 6.0, length: 16, height: 2.2, thick: 0.4,
+    window: { width: 8, height: 0.9, sill: 0.9 } },                            // N slit
+  { t: 'wall', axis: 'x', cx: 0,  cz: -43, base: 6.0, length: 16, height: 2.2, thick: 0.4,
+    door: { width: 3.0, height: 2.0 } },                                       // S archway (DOORWAYS entry above)
+  { t: 'wall', axis: 'z', cx: -8, cz: -50, base: 6.0, length: 14, height: 2.2, thick: 0.4,
+    window: { width: 6, height: 0.9, sill: 0.9 } },                            // W slit
+  { t: 'wall', axis: 'z', cx:  8, cz: -50, base: 6.0, length: 14, height: 2.2, thick: 0.4,
+    window: { width: 6, height: 0.9, sill: 0.9 } },                            // E slit
+  // Cover boxes ON the HILLTOP for crouch-fire spots.
+  { t: 'box', cx:  4, cz: -53, base: 6.0, sx: 2.0, sy: 1.0, sz: 1.6 },
+  { t: 'box', cx: -4, cz: -47, base: 6.0, sx: 2.0, sy: 1.0, sz: 1.6 },
 
-  // --- WEST annex (tier 3.0) ---
-  { t: 'platform', id: 'WEST', cx: -28, cz: -6, top: 3.0, sx: 12, sz: 18 },
-  { t: 'rampTo', to: 'WEST', side: '+x', run: 8, width: 6, fromY: 0 },
+  // =====================================================================
+  // NORTH-EAST: HOUSE_NE — two-story house
+  // =====================================================================
+  { t: 'platform', id: 'HOUSE_NE_F2', cx: 40, cz: -42, top: 4.0, sx: 14, sz: 14 },
+  // Ground-floor walls. Doorway faces west into the plaza.
+  { t: 'wall', axis: 'x', cx: 40, cz: -49, length: 14, height: 4.0, thick: 0.5 },                   // N solid
+  { t: 'wall', axis: 'x', cx: 40, cz: -35, length: 14, height: 4.0, thick: 0.5,
+    window: { width: 2.4, height: 1.3, sill: 1.0 } },                                                // S with window
+  { t: 'wall', axis: 'z', cx: 33, cz: -42, length: 14, height: 4.0, thick: 0.5,
+    door: { width: 2.4, height: 2.6 } },                                                             // W doorway
+  { t: 'wall', axis: 'z', cx: 47, cz: -42, length: 14, height: 4.0, thick: 0.5,
+    window: { width: 2.0, height: 1.2, sill: 1.0 } },                                                // E with window
+  // External stairs to the 2nd-floor deck — lands on the +x edge.
+  { t: 'stairsTo', to: 'HOUSE_NE_F2', side: '+x', run: 7, width: 5, fromY: 0, steps: 7 },
+  // 2nd-floor parapets — slits all around, no doorway (rooftop = sniper perch).
+  { t: 'wall', axis: 'x', cx: 40, cz: -49, base: 4.0, length: 14, height: 1.6, thick: 0.4,
+    window: { width: 6, height: 0.8, sill: 0.7 } },
+  { t: 'wall', axis: 'x', cx: 40, cz: -35, base: 4.0, length: 14, height: 1.6, thick: 0.4,
+    window: { width: 6, height: 0.8, sill: 0.7 } },
+  { t: 'wall', axis: 'z', cx: 33, cz: -42, base: 4.0, length: 14, height: 1.6, thick: 0.4,
+    window: { width: 6, height: 0.8, sill: 0.7 } },
+  { t: 'wall', axis: 'z', cx: 47, cz: -42, base: 4.0, length: 14, height: 1.6, thick: 0.4 },
 
-  // --- SOUTH bastion / gatehouse (tier 2.5) ---
-  { t: 'platform', id: 'SOUTH', cx: 0, cz: 22, top: 2.5, sx: 18, sz: 10 },
-  { t: 'rampTo',   to: 'SOUTH', side: '-z', run: 8, width: 7, fromY: 0 },
-  { t: 'stairsTo', to: 'SOUTH', side: '+x', run: 7, width: 5, fromY: 0, steps: 7 },
+  // =====================================================================
+  // EAST: TOWER_NE — 2-tier tower (ground room → rooftop perch)
+  //   ground floor: enclosed 10×10 room with a -x doorway
+  //   roof:         10×10 platform at y=4.5, parapets all around with a
+  //                 west-side opening where the ramp lands. Highest tier
+  //                 you can reach from this building.
+  // =====================================================================
+  { t: 'platform', id: 'TOWER_NE_TOP', cx: 55, cz: -18, top: 4.5, sx: 10, sz: 10 },
+  // Ground-floor walls (height matches the deck base = 4.5).
+  { t: 'wall', axis: 'x', cx: 55, cz: -23, length: 10, height: 4.5, thick: 0.5,
+    window: { width: 1.6, height: 1.0, sill: 1.1 } },                                                // N with window
+  { t: 'wall', axis: 'x', cx: 55, cz: -13, length: 10, height: 4.5, thick: 0.5,
+    window: { width: 1.6, height: 1.0, sill: 1.1 } },                                                // S with window
+  // W wall: solid except the doorway (the rampTo lands here too, so the
+  // doorway is in the wall; the ramp uses the deck edge above the doorway).
+  { t: 'wall', axis: 'z', cx: 50, cz: -18, length: 10, height: 4.5, thick: 0.5,
+    door: { width: 2.4, height: 2.6 } },                                                             // W doorway
+  { t: 'wall', axis: 'z', cx: 60, cz: -18, length: 10, height: 4.5, thick: 0.5,
+    window: { width: 1.6, height: 1.0, sill: 1.1 } },                                                // E with window
+  // External ramp to the rooftop perch — lands on +z (south) edge of the deck,
+  // an open side (no parapet on that side).
+  { t: 'rampTo', to: 'TOWER_NE_TOP', side: '+z', run: 7, width: 5, fromY: 0 },
+  // Roof parapets — three sides slit windows; +z side open (ramp comes up there).
+  { t: 'wall', axis: 'x', cx: 55, cz: -23, base: 4.5, length: 10, height: 1.6, thick: 0.4,
+    window: { width: 5, height: 0.9, sill: 0.6 } },                                                  // N parapet
+  { t: 'wall', axis: 'z', cx: 50, cz: -18, base: 4.5, length: 10, height: 1.6, thick: 0.4 },        // W parapet (solid)
+  { t: 'wall', axis: 'z', cx: 60, cz: -18, base: 4.5, length: 10, height: 1.6, thick: 0.4,
+    window: { width: 5, height: 0.9, sill: 0.6 } },                                                  // E parapet
+  // Cover crate on the roof.
+  { t: 'box', cx: 55, cz: -20, base: 4.5, sx: 1.6, sy: 1.0, sz: 1.6 },
 
-  // --- EAST redoubt (tier 2.5) ---
-  { t: 'platform', id: 'EAST', cx: 30, cz: 6, top: 2.5, sx: 10, sz: 16 },
-  { t: 'rampTo', to: 'EAST', side: '-x', run: 7, width: 6, fromY: 0 },
+  // =====================================================================
+  // EAST: WAREHOUSE — long single-story building, two rooms via interior wall
+  //   ground floor: 20×12 walled building. Interior partition wall splits it
+  //                 into a west room (entry) and east room (loot), connected
+  //                 by an interior doorway
+  //   roof: walkable solid deck at y=4.0 — the whole 20×12 platform
+  // =====================================================================
+  { t: 'platform', id: 'WAREHOUSE_ROOF', cx: 45, cz: 8, top: 4.0, sx: 20, sz: 12 },
+  // Outer walls.
+  { t: 'wall', axis: 'x', cx: 45, cz:  2, length: 20, height: 4.0, thick: 0.5,
+    window: { width: 3.0, height: 1.2, sill: 1.1 } },                                                // N (faces plaza)
+  { t: 'wall', axis: 'x', cx: 45, cz: 14, length: 20, height: 4.0, thick: 0.5,
+    window: { width: 3.0, height: 1.2, sill: 1.1 } },                                                // S
+  { t: 'wall', axis: 'z', cx: 35, cz:  8, length: 12, height: 4.0, thick: 0.5,
+    door: { width: 2.6, height: 2.8 } },                                                             // W doorway (entry)
+  { t: 'wall', axis: 'z', cx: 55, cz:  8, length: 12, height: 4.0, thick: 0.5,
+    window: { width: 2.4, height: 1.2, sill: 1.1 } },                                                // E
+  // Interior partition wall (axis=x, splits the building N/S at cz=8) with one doorway.
+  // Wait — interior splitting a 20×12 building (sx=20 sz=12, cz=8 center) would run along
+  // x at some inner z. But sz=12 means z extent is [2,14]. An x-axis wall at cz=8 cuts the
+  // building E-W; instead, what we want is a z-axis wall at some cx that splits the building
+  // into a west room and east room. Put it at cx=45 (center) with axis='x'? No — axis='x'
+  // means the wall runs along X.
+  // For splitting into west/east halves we need a wall running along Z (axis='z'), at cx=45.
+  { t: 'wall', axis: 'z', cx: 45, cz: 8, length: 12, height: 4.0, thick: 0.4,
+    door: { width: 2.2, height: 2.6 } },                                                             // interior partition with doorway
+  // Roof parapets (short).
+  { t: 'wall', axis: 'x', cx: 45, cz:  2, base: 4.0, length: 20, height: 1.6, thick: 0.4,
+    window: { width: 10, height: 0.8, sill: 0.7 } },
+  { t: 'wall', axis: 'x', cx: 45, cz: 14, base: 4.0, length: 20, height: 1.6, thick: 0.4,
+    window: { width: 10, height: 0.8, sill: 0.7 } },
+  { t: 'wall', axis: 'z', cx: 35, cz:  8, base: 4.0, length: 12, height: 1.6, thick: 0.4 },         // W solid
+  { t: 'wall', axis: 'z', cx: 55, cz:  8, base: 4.0, length: 12, height: 1.6, thick: 0.4,
+    window: { width: 5, height: 0.8, sill: 0.7 } },
+  // Stairs up to the WAREHOUSE roof — on the +z side (faces south, away from the entry).
+  { t: 'stairsTo', to: 'WAREHOUSE_ROOF', side: '+z', run: 7, width: 5, fromY: 0, steps: 8 },
 
-  // --- SW covered crouch corridor ---
-  { t: 'overhang', axis: 'x', loPos: -30, hiPos: -16, loY: 0.2, hiY: 3.4,
-    c0: 10, c1: 16, thick: 0.6 },
+  // =====================================================================
+  // SOUTH-WEST: GUARDHOUSE_W — single-story enclosed room (loot stash)
+  //   12×10, doorway on the east side (faces plaza), windows
+  // =====================================================================
+  { t: 'wall', axis: 'x', cx: -40, cz:  9, length: 12, height: 3.6, thick: 0.5,
+    window: { width: 2.2, height: 1.2, sill: 1.1 } },                                                // N
+  { t: 'wall', axis: 'x', cx: -40, cz: 19, length: 12, height: 3.6, thick: 0.5,
+    window: { width: 2.2, height: 1.2, sill: 1.1 } },                                                // S
+  { t: 'wall', axis: 'z', cx: -46, cz: 14, length: 10, height: 3.6, thick: 0.5 },                   // W solid
+  { t: 'wall', axis: 'z', cx: -34, cz: 14, length: 10, height: 3.6, thick: 0.5,
+    door: { width: 2.4, height: 2.6 } },                                                             // E doorway
 
-  // ===================  ENCLOSURE / SIGHTLINE CONTROL  ================
-  // Enclosed OUTPOST room (east-central courtyard, clear of every connector
-  // corridor). Doorway faces south (away from spawn) so you can't see who's
-  // inside until you flank it; windows on the spawn-facing (north) and west
-  // sides to shoot out of without being walk-through.
-  { t: 'wall', axis: 'x', cx: 11, cz: 4,  length: 10, height: 4.0, thick: 0.6,
-    window: { width: 2.6, height: 1.3, sill: 1.1 } },                  // N (faces spawn)
-  { t: 'wall', axis: 'x', cx: 11, cz: 14, length: 10, height: 4.0, thick: 0.6,
-    door:   { width: 2.4, height: 2.6 } },                             // S doorway
-  { t: 'wall', axis: 'z', cx: 6,  cz: 9,  length: 10, height: 4.0, thick: 0.6,
-    window: { width: 2.6, height: 1.3, sill: 1.1 } },                  // W window
-  { t: 'wall', axis: 'z', cx: 16, cz: 9,  length: 10, height: 4.0, thick: 0.6 }, // E solid
+  // =====================================================================
+  // SOUTH-WEST: HOUSE_SW — single-story house
+  // =====================================================================
+  { t: 'wall', axis: 'x', cx: -50, cz: 30, length: 14, height: 3.6, thick: 0.5,
+    door: { width: 2.4, height: 2.6 } },                                                             // N doorway (faces plaza-ish)
+  { t: 'wall', axis: 'x', cx: -50, cz: 42, length: 14, height: 3.6, thick: 0.5,
+    window: { width: 2.2, height: 1.2, sill: 1.1 } },                                                // S
+  { t: 'wall', axis: 'z', cx: -57, cz: 36, length: 12, height: 3.6, thick: 0.5,
+    window: { width: 2.2, height: 1.2, sill: 1.1 } },                                                // W
+  { t: 'wall', axis: 'z', cx: -43, cz: 36, length: 12, height: 3.6, thick: 0.5,
+    window: { width: 2.2, height: 1.2, sill: 1.1 } },                                                // E
 
-  // Tall freestanding SCREEN with a doorway: breaks the spawn↔west diagonal
-  // so it isn't a clean line; the doorway is the only ground gap.
-  { t: 'wall', axis: 'x', cx: -9, cz: 2, length: 12, height: 3.6, thick: 0.6,
-    door: { width: 2.6, height: 2.6 } },
+  // =====================================================================
+  // SOUTH: BUNKER_S — small enclosed concrete bunker (loot stash)
+  //   10×8 walled box, single doorway on the north (faces plaza)
+  // =====================================================================
+  { t: 'wall', axis: 'x', cx:  0, cz: 36, length: 10, height: 3.0, thick: 0.6,
+    door: { width: 2.0, height: 2.4 } },                                                             // N doorway
+  { t: 'wall', axis: 'x', cx:  0, cz: 44, length: 10, height: 3.0, thick: 0.6 },                    // S solid
+  { t: 'wall', axis: 'z', cx: -5, cz: 40, length: 8,  height: 3.0, thick: 0.6,
+    window: { width: 1.4, height: 0.8, sill: 1.1 } },                                                // W slit
+  { t: 'wall', axis: 'z', cx:  5, cz: 40, length: 8,  height: 3.0, thick: 0.6,
+    window: { width: 1.4, height: 0.8, sill: 1.1 } },                                                // E slit
 
-  // Second screen with a doorway, breaking the east-central sightline.
-  { t: 'wall', axis: 'z', cx: 16, cz: -4, length: 12, height: 3.4, thick: 0.6,
-    door: { width: 2.4, height: 2.4 } },
+  // =====================================================================
+  // SOUTH-EAST: RUINS — broken walls + scattered cover (open combat zone)
+  //   No platforms — just walls of varying lengths and orientations to break
+  //   up sightlines, plus a few cover crates
+  // =====================================================================
+  // L-shaped ruin wall fragments.
+  { t: 'wall', axis: 'x', cx: 35, cz: 30, length: 10, height: 3.0, thick: 0.6,
+    door: { width: 2.2, height: 2.4 } },                                                             // S55 DOORWAYS: (43,30) close enough
+  { t: 'wall', axis: 'z', cx: 30, cz: 35, length: 10, height: 3.0, thick: 0.6,
+    window: { width: 2.0, height: 1.0, sill: 1.0 } },
+  { t: 'wall', axis: 'x', cx: 50, cz: 45, length: 8,  height: 2.4, thick: 0.6 },
+  { t: 'wall', axis: 'z', cx: 55, cz: 40, length: 8,  height: 2.4, thick: 0.6,
+    window: { width: 2.0, height: 1.0, sill: 0.9 } },
+  // A small broken platform (former floor of a collapsed building).
+  { t: 'platform', id: 'RUINS_DECK', cx: 45, cz: 50, top: 2.0, sx: 6, sz: 6 },
+  { t: 'rampTo', to: 'RUINS_DECK', side: '-z', run: 4, width: 4, fromY: 0 },
 
-  // Window-slit wall covering the SE open ground (shoot through the slit).
-  { t: 'wall', axis: 'x', cx: 20, cz: 16, length: 12, height: 3.4, thick: 0.6,
-    window: { width: 3.0, height: 1.0, sill: 1.2 } },
+  // =====================================================================
+  // FAR-WEST: PERIMETER RAMPART — long elevated walkway along the west edge
+  //   useful for a sniper to flank the whole map
+  // =====================================================================
+  { t: 'platform', id: 'WEST_RAMPART', cx: -65, cz: 0, top: 5.0, sx: 8, sz: 28 },
+  { t: 'rampTo', to: 'WEST_RAMPART', side: '+x', run: 7, width: 5, fromY: 0 },
+  { t: 'wall', axis: 'z', cx: -69, cz: 0, base: 5.0, length: 28, height: 2.0, thick: 0.4,
+    window: { width: 16, height: 1.0, sill: 0.8 } },
+  { t: 'wall', axis: 'x', cx: -65, cz: -14, base: 5.0, length: 8, height: 2.0, thick: 0.4 },
+  { t: 'wall', axis: 'x', cx: -65, cz:  14, base: 5.0, length: 8, height: 2.0, thick: 0.4 },
 
-  // ===============  PARAPETS ON THE ELEVATED PLATFORMS  ==============
-  // Each deck gets fortified rim walls (base = its top) on the edges its
-  // connector does NOT use, so you arrive freely but the position is
-  // enclosed: a 2.2 m wall blocks line of sight INTO the deck (surprise —
-  // you can't see who's holding it), with a window slit to shoot OUT from
-  // cover. Verified not to block any connector (mapviz seam check).
-  // KEEP (top 4.5): ramp on +z, stairs on -x, BRIDGE on +x → wall the -z rim.
-  { t: 'wall', axis: 'x', cx: 0,  cz: -28, base: 4.5, length: 20, height: 2.2, thick: 0.4,
-    window: { width: 9, height: 1.0, sill: 1.0 } },
-  // WEST (top 3.0): ramp on +x → wall the +z and -x rims.
-  { t: 'wall', axis: 'x', cx: -28, cz: 3,  base: 3.0, length: 12, height: 2.2, thick: 0.4,
-    window: { width: 6, height: 1.0, sill: 1.0 } },
-  { t: 'wall', axis: 'z', cx: -34, cz: -6, base: 3.0, length: 18, height: 2.2, thick: 0.4,
-    window: { width: 8, height: 1.0, sill: 1.0 } },
-  // SOUTH (top 2.5): ramp on -z, stairs on +x → wall the +z rim.
-  { t: 'wall', axis: 'x', cx: 0,  cz: 27, base: 2.5, length: 18, height: 2.2, thick: 0.4,
-    window: { width: 8, height: 1.0, sill: 1.0 } },
-  // EAST (top 2.5): ramp on -x → wall the +x and -z rims.
-  { t: 'wall', axis: 'z', cx: 35, cz: 6,  base: 2.5, length: 16, height: 2.2, thick: 0.4,
-    window: { width: 8, height: 1.0, sill: 1.0 } },
-  { t: 'wall', axis: 'x', cx: 30, cz: -2, base: 2.5, length: 10, height: 2.0, thick: 0.4,
-    window: { width: 5, height: 1.0, sill: 1.0 } },
-  // TOWER (top 7.0): ramp on -x, CATWALK on -z → wall +x and +z (sniper nest).
-  { t: 'wall', axis: 'z', cx: 32, cz: -22, base: 7.0, length: 10, height: 2.2, thick: 0.4,
-    window: { width: 4, height: 1.0, sill: 1.0 } },
-  { t: 'wall', axis: 'x', cx: 27, cz: -17, base: 7.0, length: 10, height: 2.2, thick: 0.4,
-    window: { width: 5, height: 1.0, sill: 1.0 } },
-  // RAMPART (top 7.0): CATWALK on +z → wall -z and +x (fortified vantage).
-  // The -x side is now the BACK STAIRCASE down to the courtyard floor (loop
-  // closer + an attack route up to / escape down from the sniper perch),
-  // so it is intentionally open (the stairs are the access).
-  { t: 'wall', axis: 'x', cx: 27, cz: -37, base: 7.0, length: 14, height: 2.2, thick: 0.4,
-    window: { width: 7, height: 1.0, sill: 1.0 } },
-  { t: 'wall', axis: 'z', cx: 34, cz: -34, base: 7.0, length: 6, height: 2.0, thick: 0.4,
-    window: { width: 3, height: 1.0, sill: 1.0 } },
-  // Long back staircase: RAMPART (7.0) ↓ ground. Closes the high circuit
-  // (courtyard → KEEP → BRIDGE → TOWER → CATWALK → RAMPART → here → back).
-  { t: 'stairsTo', to: 'RAMPART', side: '-x', run: 14, width: 5, fromY: 0, steps: 12 },
+  // =====================================================================
+  // CATWALKS — link the elevated decks so the high circuit forms a loop
+  // =====================================================================
+  // CATWALK_HE — walkway at y=6.0, flush with HILLTOP east edge, extending
+  // east into the gap between HILLTOP and HOUSE_NE. Does NOT overlap any
+  // building footprint (the only thing in its z range at this y is HILLTOP).
+  // Top is HILLTOP top (y=6.0) so it forms a continuous walk-across loop.
+  { t: 'box', id: 'CATWALK_HE', cx: 19, cz: -50, base: 5.4, sx: 22, sy: 0.6, sz: 4 },
+  // West edge at x=8 = HILLTOP east edge (flush walkway).
+  // East edge at x=30. HOUSE_NE_F2 west edge at x=33 (3m gap — sprint-jump it).
+  // HOUSE_NE_F2 top y=4.0; CATWALK_HE top y=6.0 → drop down onto the house roof.
+  // S55: a stair down from the south-facing edge of CATWALK_HE creates an
+  // actual LOOP in the route graph: ground → CATWALK_HE → HILLTOP → (ramp)
+  // → ground. The stair foot lands in open ground (x∈[15,23], z=-38), no
+  // building footprint conflict.
+  { t: 'stairsTo', to: 'CATWALK_HE', side: '+z', run: 10, width: 8, fromY: 0, steps: 11 },
 
-  // --- cover (clear of decks, rooms, screens, connector corridors) ---
-  { t: 'box', cx: -6, cz: -8, sx: 2.0, sy: 1.0, sz: 2.0 },
-  { t: 'box', cx:  7, cz: -8, sx: 2.0, sy: 1.0, sz: 2.0 },
-  { t: 'box', cx: -7, cz: 13, sx: 3.0, sy: 1.3, sz: 3.0 },
-  { t: 'box', cx: -18, cz: 6, sx: 2.4, sy: 1.2, sz: 2.4 },
-  { t: 'box', cx: -17, cz: -16, sx: 2.2, sy: 1.0, sz: 2.2 },
-  { t: 'box', cx: 28, cz: -6, sx: 2.4, sy: 1.1, sz: 2.4 },
-  { t: 'box', cx: -13, cz: 20, sx: 2.4, sy: 1.0, sz: 2.4 },
-  { t: 'box', cx:  0, cz: -25, base: 4.5, sx: 3.0, sy: 1.1, sz: 2.0 }, // keep parapet
-  { t: 'box', cx: 27, cz: -22, base: 7.0, sx: 2.0, sy: 1.0, sz: 2.0 }, // tower parapet
-  { t: 'box', cx:  0, cz: 24, base: 2.5, sx: 3.0, sy: 1.0, sz: 1.6 },  // bastion parapet
+  // =====================================================================
+  // COVER BOXES — scatter in the plaza + around buildings for cover
+  // =====================================================================
+  // PLAZA (around spawn).
+  { t: 'box', cx:  7, cz:  4, sx: 2.0, sy: 1.0, sz: 2.0 },
+  { t: 'box', cx: -8, cz:  6, sx: 2.0, sy: 1.0, sz: 2.0 },
+  { t: 'box', cx:  5, cz: -8, sx: 2.0, sy: 1.0, sz: 2.0 },
+  { t: 'box', cx: -10, cz: -10, sx: 2.4, sy: 1.2, sz: 2.4 },
+  { t: 'box', cx: 12, cz: -3, sx: 2.0, sy: 1.0, sz: 2.0 },
+  { t: 'box', cx: -3, cz: 14, sx: 2.4, sy: 1.1, sz: 2.4 },
+  // EAST CORRIDOR (between plaza and WAREHOUSE/TOWER_NE).
+  { t: 'box', cx: 22, cz: -10, sx: 2.4, sy: 1.0, sz: 2.4 },
+  { t: 'box', cx: 28, cz:  0, sx: 2.0, sy: 1.0, sz: 2.0 },
+  { t: 'box', cx: 30, cz: 18, sx: 2.4, sy: 1.0, sz: 2.4 },
+  // WEST corridor (between plaza and HOUSE_NW / HOUSE_SW).
+  { t: 'box', cx: -22, cz: -8, sx: 2.4, sy: 1.0, sz: 2.4 },
+  { t: 'box', cx: -20, cz:  4, sx: 2.0, sy: 1.0, sz: 2.0 },
+  { t: 'box', cx: -25, cz: 18, sx: 2.4, sy: 1.0, sz: 2.4 },
+  // NORTH approach to HILLTOP.
+  { t: 'box', cx:  -10, cz: -25, sx: 2.4, sy: 1.0, sz: 2.4 },
+  { t: 'box', cx:   12, cz: -25, sx: 2.4, sy: 1.0, sz: 2.4 },
+  // SOUTH zone around BUNKER + RUINS.
+  { t: 'box', cx: -12, cz: 32, sx: 2.4, sy: 1.0, sz: 2.4 },
+  { t: 'box', cx:  15, cz: 32, sx: 2.4, sy: 1.0, sz: 2.4 },
+  { t: 'box', cx:  25, cz: 48, sx: 2.4, sy: 1.0, sz: 2.4 },
+  { t: 'box', cx: -25, cz: 52, sx: 2.4, sy: 1.0, sz: 2.4 },
+  // FAR-WEST approach to WEST_RAMPART.
+  { t: 'box', cx: -55, cz: -10, sx: 2.4, sy: 1.0, sz: 2.4 },
+  { t: 'box', cx: -55, cz:  10, sx: 2.4, sy: 1.0, sz: 2.4 },
 ];
 
 // --- PICKUPS (M15 Stage 3) ---
-// Static pickup placements. Each entry is { kind, what?, x, y, z } where:
-//   kind = 'weapon' | 'health'
-//   what = weapon key (shotgun|smg|sniper|saw) when kind='weapon'; ignored for health
-//   x,z  = horizontal world position
-//   y    = surface height the pickup sits on (the hover offset is added at runtime)
-// Weapons are distributed so each requires reaching a different part of the
-// map (encourages exploration of all tiers and the loop route). Health is
-// scattered on the ground and on a couple of decks so a player engaged at any
-// elevation can disengage to a nearby pickup.
+// S55: weapons distributed across the bigger map; each requires a real trip
+// to a distinct building, so the player has to learn the layout. Health
+// pickups spread across every quadrant so an engaged player at any spot has
+// a nearby refill option.
 export const PICKUPS = [
-  // weapons — one of each non-pistol gun
-  { kind: 'weapon', what: 'shotgun', x:  30, z:   8, y: 2.5 },   // EAST redoubt (tier 2.5)
-  { kind: 'weapon', what: 'smg',     x:   0, z:  21, y: 2.5 },   // SOUTH bastion (tier 2.5)
-  { kind: 'weapon', what: 'saw',     x:   0, z: -18, y: 4.5 },   // KEEP (tier 4.5)
-  { kind: 'weapon', what: 'sniper',  x:  27, z: -25, y: 7.0 },   // TOWER perch (tier 7.0, north of parapet)
-  // health — spread across ground + a couple of elevated spots
-  { kind: 'health', x:   8, z:   8, y: 0 },                       // courtyard, east of spawn
-  { kind: 'health', x: -10, z:  14, y: 0 },                       // SW corridor mouth
-  { kind: 'health', x:  20, z: -10, y: 0 },                       // east-central ground
-  { kind: 'health', x: -28, z:  -6, y: 3.0 },                     // WEST deck top
-  { kind: 'health', x:  27, z: -34, y: 7.0 },                     // RAMPART (back-stairs route)
+  // weapons — one of each non-pistol gun. Each pickup must land on the
+  // HIGHEST walkable surface at its (x,z) so the harness_pickups check
+  // sees it on the floor — that means pickups inside buildings with a
+  // roof platform overhead go ON THE ROOF, not the ground floor.
+  { kind: 'weapon', what: 'shotgun', x:  45, z:  10, y: 4.0 },   // WAREHOUSE roof
+  { kind: 'weapon', what: 'smg',     x:   0, z:  40, y: 0   },   // BUNKER_S interior (open roof)
+  { kind: 'weapon', what: 'saw',     x:   0, z: -50, y: 6.0 },   // HILLTOP perch
+  { kind: 'weapon', what: 'sniper',  x:  55, z: -18, y: 4.5 },   // TOWER_NE rooftop
+  // health — distributed across all quadrants + elevations; placed in open
+  // areas (no cover box / overhead deck shadowing them).
+  { kind: 'health', x:  10, z:  10, y: 0 },                       // plaza east
+  { kind: 'health', x: -14, z: -13, y: 0 },                       // plaza west (off the cover boxes)
+  { kind: 'health', x: -35, z: -30, y: 4.0 },                     // HOUSE_NW 2nd floor
+  { kind: 'health', x:  40, z: -42, y: 4.0 },                     // HOUSE_NE 2nd floor
+  { kind: 'health', x: -50, z:  37, y: 0 },                       // HOUSE_SW interior
+  { kind: 'health', x:  20, z:  20, y: 0 },                       // SE quadrant
+  { kind: 'health', x: -65, z:   0, y: 5.0 },                     // WEST_RAMPART
+  { kind: 'health', x:  45, z:  50, y: 2.0 },                     // RUINS_DECK
 ];

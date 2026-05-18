@@ -146,6 +146,100 @@ function playSample(slot, detuneCents) {
   } catch (_) { return false; }
 }
 
+// S55: positional sample playback. Same as playSample but routes through a
+// WebAudio PannerNode so the listener (updated each frame from the camera
+// via updateAudioListener) hears stereo positioning + distance falloff.
+// Returns true on success.
+function playSamplePositional(slot, x, y, z, detuneCents) {
+  const buf = samples[slot];
+  if (!audioCtx || !masterGain || !buf) return false;
+  try {
+    const src = audioCtx.createBufferSource();
+    src.buffer = buf;
+    if (detuneCents) src.detune.value = (Math.random() * 2 - 1) * detuneCents;
+    const g = audioCtx.createGain();
+    g.gain.value = SAMPLE_GAIN[slot] !== undefined ? SAMPLE_GAIN[slot] : 1.0;
+    const panner = audioCtx.createPanner();
+    panner.panningModel = 'HRTF';
+    panner.distanceModel = 'inverse';
+    // refDistance: gain = 1.0 within this radius; rolloff kicks in past it.
+    // maxDistance caps the attenuation so distant sources don't drop to 0.
+    panner.refDistance = 6;
+    panner.maxDistance = 140;
+    panner.rolloffFactor = 1.4;
+    // Modern AudioParam API + setPosition fallback for older browsers.
+    if (panner.positionX) {
+      panner.positionX.value = x;
+      panner.positionY.value = y;
+      panner.positionZ.value = z;
+    } else if (panner.setPosition) {
+      panner.setPosition(x, y, z);
+    }
+    src.connect(g);
+    g.connect(panner);
+    panner.connect(masterGain);
+    src.start();
+    return true;
+  } catch (_) { return false; }
+}
+
+// S55: positional one-shot synth fallback. A short band-limited noise burst
+// at (x,y,z) routed through a panner — used when the sample variant fails
+// (e.g. asset 404 in dev). Keeps the spatial cue alive even without samples.
+function playNoisePositional(opts, x, y, z) {
+  if (!audioCtx || !masterGain) return;
+  const t0 = audioCtx.currentTime;
+  const dur     = opts.duration || 0.1;
+  const gain    = opts.gain !== undefined ? opts.gain : 0.2;
+  const lowpass = opts.lowpass || 2000;
+  const bufLen = Math.max(1, Math.floor(audioCtx.sampleRate * dur));
+  const buf = audioCtx.createBuffer(1, bufLen, audioCtx.sampleRate);
+  const data = buf.getChannelData(0);
+  for (let i = 0; i < bufLen; i++) data[i] = Math.random() * 2 - 1;
+  const src = audioCtx.createBufferSource();
+  src.buffer = buf;
+  const lp = audioCtx.createBiquadFilter();
+  lp.type = 'lowpass'; lp.frequency.value = lowpass;
+  const env = audioCtx.createGain();
+  env.gain.setValueAtTime(gain, t0);
+  env.gain.exponentialRampToValueAtTime(0.0001, t0 + dur);
+  const panner = audioCtx.createPanner();
+  panner.panningModel = 'HRTF';
+  panner.distanceModel = 'inverse';
+  panner.refDistance = 6;
+  panner.maxDistance = 140;
+  panner.rolloffFactor = 1.4;
+  if (panner.positionX) {
+    panner.positionX.value = x; panner.positionY.value = y; panner.positionZ.value = z;
+  } else if (panner.setPosition) {
+    panner.setPosition(x, y, z);
+  }
+  src.connect(lp); lp.connect(env); env.connect(panner); panner.connect(masterGain);
+  src.start(t0); src.stop(t0 + dur + 0.02);
+}
+
+// S55: called once per active frame from main.js with the camera's world
+// position + forward unit vector. Updates the global WebAudio listener so
+// every PannerNode created via playSamplePositional pans correctly.
+export function updateAudioListener(px, py, pz, fx, fy, fz) {
+  if (!audioCtx || !audioCtx.listener) return;
+  const L = audioCtx.listener;
+  if (L.positionX) {
+    L.positionX.value = px;
+    L.positionY.value = py;
+    L.positionZ.value = pz;
+    L.forwardX.value = fx;
+    L.forwardY.value = fy;
+    L.forwardZ.value = fz;
+    L.upX.value = 0;
+    L.upY.value = 1;
+    L.upZ.value = 0;
+  } else if (L.setPosition) {
+    L.setPosition(px, py, pz);
+    L.setOrientation(fx, fy, fz, 0, 1, 0);
+  }
+}
+
 // --- SYNTH PRIMITIVES (fallback only) ---
 function playTone(opts) {
   if (!audioCtx || !masterGain) return;
@@ -258,7 +352,16 @@ export function sfxKnife() {
   if (playSample('knife', 8)) return;
   playNoise({ duration: 0.13, gain: 0.16, lowpass: 6000, highpass: 1400 });
 }
-export function sfxShooterFire() {
+// S55: positional when (x,y,z) is supplied (enemy fire), full-volume non-
+// positional when not (e.g. UI cue / fallback). Tries the sample first; if
+// the asset failed to load, falls back to a positional synth so the spatial
+// cue survives the asset miss.
+export function sfxShooterFire(x, y, z) {
+  if (x !== undefined) {
+    if (playSamplePositional('shooter_fire', x, y, z, 14)) return;
+    playNoisePositional({ duration: 0.10, gain: 0.20, lowpass: 4000 }, x, y, z);
+    return;
+  }
   if (playSample('shooter_fire', 14)) return;
   playTone({ freq: 380, type: 'sawtooth', duration: 0.12, gain: 0.14, freqEnd: 880 });
 }

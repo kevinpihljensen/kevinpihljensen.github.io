@@ -12,11 +12,10 @@ export const LAYER_WORLD = 0;
 export const LAYER_VIEWMODEL = 1;
 
 // --- ARENA ---
-// M15: multi-floor. Ground = y0, Floor 1 deck = FLOOR1_Y, Floor 2 = FLOOR2_Y.
-// Perimeter walls now enclose all three floors (tall). Decks are SOLID (they
-// occlude what's beneath them) and offset per floor so no single vantage
-// sees everything — not a pyramid.
-export const ARENA_SIZE = 80;
+// S55: doubled to 160×160 (was 80×80). The map now hosts a city-block
+// layout with multiple full buildings + multi-floor structures instead of
+// the single Citadel courtyard.
+export const ARENA_SIZE = 160;
 export const WALL_THICKNESS = 0.5;
 export const FLOOR1_Y = 4.5;          // mid mezzanine deck height
 export const FLOOR2_Y = 9.0;          // upper catwalk/perch height
@@ -192,6 +191,34 @@ export const AI_PEEK_OUT_TIME = 1.4;        // ranged enemy stays exposed this l
 export const AI_PEEK_HIDE_TIME = 1.1;       // then hides behind cover this long
 export const AI_GRUNT_STRAFE_CHANCE = 0.55; // fraction of grunts that juke vs beeline
 
+// --- JETPACK (S55) ---
+// New flying enemy. Hovers above the player, fires a 3-round burst from a
+// carbine, then reloads. Worse aim than the ground shooter (weaker lead +
+// per-shot wobble); HP is low (it's exposed up there).
+export const JETPACK_HOVER_HEIGHT_MIN = 5.5;   // metres above the player's floor
+export const JETPACK_HOVER_HEIGHT_MAX = 11.0;  // upper hover bound
+export const JETPACK_HORIZ_SPEED = 4.2;        // horizontal m/s
+export const JETPACK_VERT_SPEED = 4.0;         // vertical m/s
+export const JETPACK_ORBIT_DIST = 14.0;        // tries to keep this radius around the player
+export const JETPACK_BURST_COUNT = 3;          // rounds per burst
+export const JETPACK_BURST_INTERVAL = 0.10;    // seconds between rounds in a burst
+export const JETPACK_BURST_COOLDOWN = 1.4;     // rest between bursts
+export const JETPACK_AIM_WOBBLE = 0.025;       // radians of per-shot aim error
+export const JETPACK_LEAD_STRENGTH = 0.55;     // worse prediction than the shooter (0.92)
+export const JETPACK_FIRE_RANGE = 60.0;        // won't open up beyond this range
+// Bob/sway so the jetpack isn't a static turret in the air.
+export const JETPACK_BOB_AMP = 0.55;
+export const JETPACK_BOB_FREQ = 1.6;
+
+// --- AI ROUTING (S55) ---
+// Doorway waypoints + stuck-escalation tunables. The new pathfinder lets AIs
+// route through registered doorway midpoints instead of pawing at walls.
+export const AI_DOORWAY_LATCH_DIST = 9.0;   // recruit a doorway waypoint within this radius if blocked
+export const AI_DOORWAY_CLEAR_DIST = 1.6;   // drop a doorway waypoint when this close to it
+export const AI_STUCK_ESCALATE = 2;         // after N back-to-back unsticks, run a deeper "back off + arc" maneuver
+export const AI_BACKOFF_TIME = 0.55;        // duration of the deep-stuck backoff
+export const AI_LAST_SEEN_TIME = 3.5;       // seconds AI keeps heading to last known player pos after LOS loss
+
 // --- HEAVY MINIGUN (M12) ---
 // The heavy now carries a barrel-spinning minigun. It must spin up before
 // firing (telegraph), then hoses a fast stream of projectiles, then spins
@@ -246,18 +273,24 @@ export const HEALTH_COLOR_LOW  = '#ef4444';
 
 // --- WAVE SYSTEM ---
 // Per design.md. Index 0 is unused so wave numbers are 1-indexed.
+// S55: jetpacks introduced in wave 3 and +1 every second round.
+//   waves 1–2: 0 jetpacks
+//   waves 3–4: 1 jetpack
+//   waves 5–6: 2 jetpacks
+//   waves 7–8: 3 jetpacks
+//   waves 9–10: 4 jetpacks
 export const WAVE_TABLE = [
   null,
-  { grunts:  3, shooters: 0, heavies: 0 }, // 1
-  { grunts:  5, shooters: 0, heavies: 0 }, // 2
-  { grunts:  4, shooters: 2, heavies: 0 }, // 3
-  { grunts:  6, shooters: 2, heavies: 0 }, // 4
-  { grunts:  5, shooters: 3, heavies: 1 }, // 5
-  { grunts:  7, shooters: 3, heavies: 1 }, // 6
-  { grunts:  6, shooters: 4, heavies: 2 }, // 7
-  { grunts:  8, shooters: 4, heavies: 2 }, // 8
-  { grunts:  7, shooters: 5, heavies: 3 }, // 9
-  { grunts: 10, shooters: 5, heavies: 4 }, // 10
+  { grunts:  3, shooters: 0, heavies: 0, jetpacks: 0 }, // 1
+  { grunts:  5, shooters: 0, heavies: 0, jetpacks: 0 }, // 2
+  { grunts:  4, shooters: 2, heavies: 0, jetpacks: 1 }, // 3
+  { grunts:  6, shooters: 2, heavies: 0, jetpacks: 1 }, // 4
+  { grunts:  5, shooters: 3, heavies: 1, jetpacks: 2 }, // 5
+  { grunts:  7, shooters: 3, heavies: 1, jetpacks: 2 }, // 6
+  { grunts:  6, shooters: 4, heavies: 2, jetpacks: 3 }, // 7
+  { grunts:  8, shooters: 4, heavies: 2, jetpacks: 3 }, // 8
+  { grunts:  7, shooters: 5, heavies: 3, jetpacks: 4 }, // 9
+  { grunts: 10, shooters: 5, heavies: 4, jetpacks: 4 }, // 10
 ];
 export const MAX_WAVE = 10;
 export const BREAK_DURATION = 5.0;
@@ -301,17 +334,19 @@ export const KNIFE_SWIPE_DURATION = 0.36;
 // stay inside the play area, and a hard MIN_DIST gate rejects anything too
 // close. SPAWN_SPREAD_TRIES picks the farthest-from-other-fresh-spawns
 // candidate so a wave fans out instead of clustering on one arc.
-export const ARENA_PLAYABLE_HALF = 38;   // keep spawns inside walls (arena 80 → ±40 walls)
-export const SPAWN_MIN_DIST = 22;        // hard minimum distance from player
-export const SPAWN_MAX_DIST = 34;        // outer ring distance from player
-export const SPAWN_MAX_ATTEMPTS = 18;
+// S55: scaled to the 160×160 arena (was ±38). Spawn ring widened so enemies
+// don't all appear right on top of the player on the bigger map.
+export const ARENA_PLAYABLE_HALF = 76;   // keep spawns inside walls (arena 160 → ±80 walls)
+export const SPAWN_MIN_DIST = 28;        // hard minimum distance from player
+export const SPAWN_MAX_DIST = 50;        // outer ring distance from player
+export const SPAWN_MAX_ATTEMPTS = 22;
 export const SPAWN_VIEW_CONE_DOT = 0.3;
 export const SPAWN_COVER_MARGIN = 1.0;
 export const SPAWN_SPREAD_TRIES = 6;     // candidates evaluated for fan-out
 export const SPAWN_SPREAD_MEMORY = 8;    // recent spawns remembered for spacing
 
 // Legacy alias — some older call sites referenced SPAWN_RADIUS directly.
-export const SPAWN_RADIUS = 32;
+export const SPAWN_RADIUS = 36;
 
 // --- HUD POLISH ---
 export const HIT_MARKER_TIME = 0.18;

@@ -15,11 +15,14 @@ import * as THREE from 'three';
 import { scene } from './scene.js';
 import { shootables, staticAABBs, collideCapsule, groundHeightAt, lineOfSight, rampLinks } from './collision.js';
 import { player } from './state.js';
+import { DOORWAYS } from './maplayout.js';
 import {
   HIT_FLASH_TIME, DEATH_ANIM_TIME,
   MELEE_ATTACK_COOLDOWN, SHOOTER_ATTACK_COOLDOWN,
   SHOOTER_DIST_MIN, SHOOTER_DIST_MAX,
   AI_UNSTICK_CHECK, AI_UNSTICK_MIN_MOVE, AI_UNSTICK_TIME, AI_VANTAGE_LOS_TIME,
+  AI_DOORWAY_LATCH_DIST, AI_DOORWAY_CLEAR_DIST, AI_STUCK_ESCALATE,
+  AI_BACKOFF_TIME, AI_LAST_SEEN_TIME,
   ENEMY_CONTACT_RANGE_EXTRA, PLAYER_RADIUS, HEAVY_KNOCKBACK,
   SPAWN_MIN_DIST, SPAWN_MAX_DIST, SPAWN_MAX_ATTEMPTS,
   SPAWN_VIEW_CONE_DOT, SPAWN_COVER_MARGIN, SPAWN_SPREAD_MEMORY,
@@ -30,6 +33,11 @@ import {
   HEAVY_FIRE_RANGE, HEAVY_WINDUP_TIME, HEAVY_FIRE_DURATION,
   HEAVY_FIRE_INTERVAL, HEAVY_BURST_COOLDOWN,
   HEAVY_MINIGUN_SPREAD, HEAVY_PREFERRED_DIST, HEAVY_BARREL_MAX_RPM,
+  JETPACK_HOVER_HEIGHT_MIN, JETPACK_HOVER_HEIGHT_MAX,
+  JETPACK_HORIZ_SPEED, JETPACK_VERT_SPEED, JETPACK_ORBIT_DIST,
+  JETPACK_BURST_COUNT, JETPACK_BURST_INTERVAL, JETPACK_BURST_COOLDOWN,
+  JETPACK_AIM_WOBBLE, JETPACK_LEAD_STRENGTH, JETPACK_FIRE_RANGE,
+  JETPACK_BOB_AMP, JETPACK_BOB_FREQ,
   PROJECTILE_SPEED, AI_LEAD_ITERATIONS,
   AI_LEAD_STRENGTH_SHOOTER, AI_LEAD_STRENGTH_HEAVY,
   AI_SCATTER_RADIUS, AI_SCATTER_STRENGTH,
@@ -54,18 +62,25 @@ const ENEMY_BODY_H = 1.7;
 //   * `gear`    — tactical vest / pauldron / helmet color
 //   * `accent`  — secondary fabric (lower legs, sleeves)
 //   * `skin`    — exposed face/hands tone
+// S55: speeds bumped across the board (grunt 4.0→4.7, shooter 2.5→3.1,
+// heavy 1.5→1.9) so the bigger map doesn't make enemies feel sluggish.
+// New jetpack type added — flies, burst-fires a 3-round carbine, worse aim.
 export const ENEMY_DEFS = {
   grunt: {
-    hp: 30, speed: 4.0, radius: 0.35, score: 100, contactDmg: 10,
+    hp: 30, speed: 4.7, radius: 0.35, score: 100, contactDmg: 10,
     fatigue: 0x6b1212, gear: 0x1a0a0a, accent: 0x3a1212, skin: 0xc99a73,
   },
   shooter: {
-    hp: 20, speed: 2.5, radius: 0.35, score: 150, contactDmg: 0,
+    hp: 20, speed: 3.1, radius: 0.35, score: 150, contactDmg: 0,
     fatigue: 0x8a6a32, gear: 0x2a2218, accent: 0x554021, skin: 0xc99a73,
   },
   heavy: {
-    hp: 150, speed: 1.5, radius: 0.50, score: 400, contactDmg: 25,
+    hp: 150, speed: 1.9, radius: 0.50, score: 400, contactDmg: 25,
     fatigue: 0x4a1212, gear: 0x141414, accent: 0x2a0e0e, skin: 0xc99a73,
+  },
+  jetpack: {
+    hp: 35, speed: 4.2, radius: 0.42, score: 220, contactDmg: 0,
+    fatigue: 0x2c4a6b, gear: 0x14181f, accent: 0x3a5a82, skin: 0xc99a73,
   },
 };
 
@@ -500,10 +515,129 @@ function buildHeavyModel(def) {
   };
 }
 
+function buildJetpackModel(def) {
+  // S55: flying enemy. Humanoid in a flight suit with a jetpack pack on the
+  // back + two thruster cones below it. The thrusters glow when flying (set
+  // by jetpackAI). Carbine in both hands (similar to the shooter's posture).
+  const fatigue  = new THREE.MeshStandardMaterial({ color: def.fatigue, roughness: 0.75, metalness: 0.10 });
+  const gear     = new THREE.MeshStandardMaterial({ color: def.gear,    roughness: 0.55, metalness: 0.25 });
+  const accent   = new THREE.MeshStandardMaterial({ color: def.accent,  roughness: 0.70, metalness: 0.15 });
+  const skin     = new THREE.MeshStandardMaterial({ color: def.skin,    roughness: 0.75, metalness: 0.02 });
+  const boot     = new THREE.MeshStandardMaterial({ color: 0x14181f,    roughness: 0.55, metalness: 0.20 });
+  const helmet   = new THREE.MeshStandardMaterial({ color: 0x141618,    roughness: 0.55, metalness: 0.30 });
+  const gunMetal = new THREE.MeshStandardMaterial({ color: 0x1a1a1e, roughness: 0.40, metalness: 0.70 });
+  const gunPoly  = new THREE.MeshStandardMaterial({ color: 0x0d0d10, roughness: 0.85, metalness: 0.05 });
+  // Emissive thruster glow — bright blue/white core that's brightened while
+  // the jetpack is engaged. toneMapped: false so it pops through ACES.
+  const thrustMat = new THREE.MeshStandardMaterial({
+    color: 0x6cc6ff, emissive: 0x6cc6ff, emissiveIntensity: 0.8,
+    roughness: 0.4, metalness: 0.2, toneMapped: false,
+  });
+
+  const group = new THREE.Group();
+  const meshes = [];
+  const headMeshes = [];
+
+  // --- TORSO ---
+  const torso = new THREE.Mesh(new THREE.CapsuleGeometry(0.22, 0.42, 4, 10), fatigue);
+  torso.position.y = 1.05;
+  group.add(torso); meshes.push(torso);
+  // Flight harness — chest straps as a thin vest plate.
+  const vest = new THREE.Mesh(new THREE.BoxGeometry(0.42, 0.42, 0.10), gear);
+  vest.position.set(0, 1.05, -0.18);
+  group.add(vest); meshes.push(vest);
+  const hips = new THREE.Mesh(new THREE.BoxGeometry(0.46, 0.18, 0.30), fatigue);
+  hips.position.y = 0.66;
+  group.add(hips); meshes.push(hips);
+
+  // --- LEGS (tucked; no boots planted on the ground — they dangle) ---
+  _buildLeg({ side: 'left',  hipY: 0.58, length: 0.50, radius: 0.10, trouserMat: fatigue, bootMat: boot, group, meshes });
+  _buildLeg({ side: 'right', hipY: 0.58, length: 0.50, radius: 0.10, trouserMat: fatigue, bootMat: boot, group, meshes });
+
+  // --- HEAD (full flight helmet — dome + dark visor) ---
+  const bodyMats = [fatigue, gear, accent, skin, boot, helmet, gunMetal, gunPoly];
+  const { headGroup } = _buildHead({
+    restY: 1.50, skinMat: skin, meshes, headMeshes, bodyMats,
+    headgearFn: (hg, ms, hms) => {
+      const dome = new THREE.Mesh(
+        new THREE.SphereGeometry(0.16, 14, 10, 0, Math.PI * 2, 0, Math.PI * 0.6), helmet);
+      dome.position.y = 0.02;
+      hg.add(dome); ms.push(dome); hms.push(dome);
+      // Dark wraparound visor covering the whole face.
+      const visor = new THREE.Mesh(new THREE.BoxGeometry(0.26, 0.08, 0.020), gunMetal);
+      visor.position.set(0, 0.000, -0.14);
+      hg.add(visor); ms.push(visor); hms.push(visor);
+    },
+  });
+  group.add(headGroup);
+  const neck = new THREE.Mesh(new THREE.CylinderGeometry(0.07, 0.075, 0.08, 8), skin);
+  neck.position.y = 1.36;
+  group.add(neck); meshes.push(neck);
+
+  // --- ARMS (forward; both hands at the carbine grips) ---
+  const armL = _buildArm({ side: 'left',  shoulderY: 1.30, length: 0.46, radius: 0.075, restRotX: -0.95, sleeveMat: fatigue, skinMat: skin, meshes });
+  const armR = _buildArm({ side: 'right', shoulderY: 1.30, length: 0.46, radius: 0.075, restRotX: -0.95, sleeveMat: fatigue, skinMat: skin, meshes });
+  armL.g.position.x = +0.22;
+  armR.g.position.x = -0.22;
+  group.add(armL.g, armR.g);
+
+  // --- CARBINE (short rifle — burst-fire weapon) ---
+  const cbStock = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.10, 0.14), gunPoly);
+  cbStock.position.set(0, 1.05, -0.16);
+  group.add(cbStock); meshes.push(cbStock);
+  const cbBody = new THREE.Mesh(new THREE.BoxGeometry(0.07, 0.08, 0.25), gunMetal);
+  cbBody.position.set(0, 1.05, -0.36);
+  group.add(cbBody); meshes.push(cbBody);
+  const cbMag = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.10, 0.05), gunPoly);
+  cbMag.position.set(0, 0.99, -0.34);
+  group.add(cbMag); meshes.push(cbMag);
+  const cbBarrel = new THREE.Mesh(new THREE.CylinderGeometry(0.018, 0.018, 0.22, 8), gunMetal);
+  cbBarrel.rotation.x = Math.PI / 2;
+  cbBarrel.position.set(0, 1.05, -0.58);
+  group.add(cbBarrel); meshes.push(cbBarrel);
+
+  // --- JETPACK (back-mounted) ---
+  // Main pack block on the back.
+  const packMain = new THREE.Mesh(new THREE.BoxGeometry(0.42, 0.50, 0.18), gear);
+  packMain.position.set(0, 1.05, 0.20);
+  group.add(packMain); meshes.push(packMain);
+  // Side fuel cylinders.
+  for (const sx of [+1, -1]) {
+    const tank = new THREE.Mesh(new THREE.CylinderGeometry(0.07, 0.07, 0.46, 12), accent);
+    tank.position.set(0.18 * sx, 1.05, 0.20);
+    group.add(tank); meshes.push(tank);
+  }
+  // Two thruster cones below the pack — apex pointing DOWN, emissive flame.
+  const thrustGroup = new THREE.Group();
+  for (const sx of [+1, -1]) {
+    const thrustCone = new THREE.Mesh(new THREE.ConeGeometry(0.07, 0.16, 12), thrustMat);
+    thrustCone.rotation.x = Math.PI;            // apex points -Y (downward)
+    thrustCone.position.set(0.12 * sx, 0.72, 0.20);
+    thrustGroup.add(thrustCone);
+    meshes.push(thrustCone);
+  }
+  group.add(thrustGroup);
+
+  return {
+    group,
+    meshes,
+    headMeshes,
+    head: headGroup,
+    armL: armL.g,
+    armR: armR.g,
+    bodyMats,
+    emissiveMats: [thrustMat],
+    // S55: jetpack-specific refs — thrustMat lets the AI brighten the flame
+    // glow while actively flying / firing.
+    thrustMat,
+  };
+}
+
 const MODEL_BUILDERS = {
   grunt: buildGruntModel,
   shooter: buildShooterModel,
   heavy: buildHeavyModel,
+  jetpack: buildJetpackModel,
 };
 
 export function makeEnemy(type, x, z) {
@@ -560,6 +694,8 @@ export function makeEnemy(type, x, z) {
     // M12: minigun refs (heavy only; undefined for others — guarded at use)
     barrelGrp: built.barrelGrp || null,
     muzzleMat: built.muzzleMat || null,
+    // S55: jetpack thrust glow ref (jetpack type only; null otherwise)
+    thrustMat: built.thrustMat || null,
     aabb,
     hp: def.hp,
     maxHp: def.hp,
@@ -609,6 +745,27 @@ export function makeEnemy(type, x, z) {
     swipeTimer: 0,
     swipeDuration: 0.42,       // total swing length (s)
     swipeHitDone: false,
+
+    // --- S55 SMARTER MOVEMENT ---
+    // Last position we had LOS to the player at; the AI heads here after the
+    // sightline drops instead of immediately giving up. Cleared by aging out.
+    lastSeenX: x, lastSeenY: 0, lastSeenZ: z, lastSeenTimer: 0,
+    // Doorway latch — index into DOORWAYS or -1. Set when blocked from the
+    // player by a wall and a doorway lies between us and them; cleared once
+    // we get close to the doorway midpoint.
+    doorwayIdx: -1,
+    // Consecutive unstick count; resets when the enemy starts moving freely
+    // again. Used to escalate to a deeper backoff after AI_STUCK_ESCALATE
+    // back-to-back unsticks.
+    stuckCount: 0,
+    backoffTimer: 0,           // deep-stuck reverse-and-arc countdown
+    // --- S55 JETPACK STATE (jetpack type only) ---
+    // burst sub-state: 'idle' | 'firing'
+    flyState: 'idle',
+    burstLeft: 0,              // rounds still to fire in the current burst
+    burstTickTimer: 0,         // seconds until the next round of the burst
+    burstCooldown: 0,          // seconds until the next burst can start
+    hoverTargetY: 0,           // current chosen hover altitude (relative to player floor)
   };
 
   // M13: register the grunt's knife meshes as shootable + enemy-tagged, just
@@ -632,6 +789,15 @@ export function makeEnemy(type, x, z) {
   }
   for (let i = 0; i < built.headMeshes.length; i++) {
     built.headMeshes[i].userData.isHead = true;
+  }
+
+  // S55: jetpacks spawn IN THE AIR with a random hover altitude. Pick from
+  // the configured band so the squadron isn't all at the exact same height.
+  if (type === 'jetpack') {
+    const hY = JETPACK_HOVER_HEIGHT_MIN +
+               Math.random() * (JETPACK_HOVER_HEIGHT_MAX - JETPACK_HOVER_HEIGHT_MIN);
+    enemy.hoverTargetY = hY;
+    enemy.position.y = hY;
   }
 
   enemies.push(enemy);
@@ -874,9 +1040,75 @@ function navGoal(enemy) {
   return exit;
 }
 
+// --- S55 SMART ROUTING ---
+// Doorway waypoint pathing: when a wall is between us and the player, route
+// to the nearest DOORWAY midpoint that lies in the direction of the player,
+// then re-engage. This is the major fix for "AI paws at walls forever".
+//
+// findRoutingDoorway picks the doorway with the best (dist-to-doorway +
+// dist-from-doorway-to-target) score, gated by a max distance and by the
+// requirement that the doorway is in front of us (dot > 0.3).
+function findRoutingDoorway(enemy, tx, tz) {
+  const ex = enemy.position.x, ez = enemy.position.z;
+  const dx = tx - ex, dz = tz - ez;
+  const totalDist = Math.hypot(dx, dz);
+  if (totalDist < 1.0) return -1;
+  const ux = dx / totalDist, uz = dz / totalDist;
+  let bestIdx = -1, bestScore = Infinity;
+  for (let i = 0; i < DOORWAYS.length; i++) {
+    const d = DOORWAYS[i];
+    const ddx = d.x - ex, ddz = d.z - ez;
+    const dToDoor = Math.hypot(ddx, ddz);
+    if (dToDoor > AI_DOORWAY_LATCH_DIST) continue;
+    if (dToDoor < 0.001) continue;
+    const dot = (ddx * ux + ddz * uz) / dToDoor;
+    if (dot < 0.3) continue;                  // doorway must be roughly toward the target
+    const remaining = Math.hypot(d.x - tx, d.z - tz);
+    const score = dToDoor + remaining;
+    if (score < bestScore) { bestScore = score; bestIdx = i; }
+  }
+  return bestIdx;
+}
+
+// Maintain the doorway latch — drop it on arrival, acquire one when blocked.
+function updateDoorwayLatch(enemy, sees, distToPlayer) {
+  if (sees) {
+    enemy.doorwayIdx = -1;
+    return;
+  }
+  if (enemy.doorwayIdx >= 0) {
+    const d = DOORWAYS[enemy.doorwayIdx];
+    const dd = Math.hypot(d.x - enemy.position.x, d.z - enemy.position.z);
+    if (dd < AI_DOORWAY_CLEAR_DIST) enemy.doorwayIdx = -1;
+    return;
+  }
+  if (distToPlayer < 6.0) return;             // too close for waypoint routing
+  enemy.doorwayIdx = findRoutingDoorway(enemy, player.position.x, player.position.z);
+}
+
+// Maintain the last-seen-player tracker; ages out after AI_LAST_SEEN_TIME.
+function updateLastSeen(enemy, sees, dt) {
+  if (sees) {
+    enemy.lastSeenX = player.position.x;
+    enemy.lastSeenY = player.position.y;
+    enemy.lastSeenZ = player.position.z;
+    enemy.lastSeenTimer = AI_LAST_SEEN_TIME;
+  } else if (enemy.lastSeenTimer > 0) {
+    enemy.lastSeenTimer -= dt;
+    if (enemy.lastSeenTimer < 0) enemy.lastSeenTimer = 0;
+  }
+}
+
 // Unit vector from enemy toward its current goal (player, or a ramp entry if
-// cross-floor). Writes into _vec, returns horizontal distance to the PLAYER
-// (AI range checks still use true player distance, not goal distance).
+// cross-floor, or a doorway waypoint, or the last-seen position). Writes
+// into _vec, returns horizontal distance to the PLAYER (AI range checks
+// still use true player distance, not goal distance).
+//
+// Priority (highest first):
+//   1. ramp navGoal (cross-floor chase or vantage seek)
+//   2. doorway latch (blocked-by-wall → route through the doorway)
+//   3. last-seen position (LOS lost recently → push to where they were)
+//   4. player.position
 function toPlayer(enemy) {
   const pdx = player.position.x - enemy.position.x;
   const pdz = player.position.z - enemy.position.z;
@@ -888,6 +1120,14 @@ function toPlayer(enemy) {
   if (goal) {
     tx = goal.x - enemy.position.x;
     tz = goal.z - enemy.position.z;
+  } else if (enemy.doorwayIdx >= 0) {
+    const d = DOORWAYS[enemy.doorwayIdx];
+    tx = d.x - enemy.position.x;
+    tz = d.z - enemy.position.z;
+  } else if (enemy.lastSeenTimer > 0 && !enemy._saw) {
+    // LOS recently lost: head to where the player was last seen.
+    tx = enemy.lastSeenX - enemy.position.x;
+    tz = enemy.lastSeenZ - enemy.position.z;
   } else {
     tx = pdx; tz = pdz;
   }
@@ -1072,7 +1312,20 @@ function gruntAI(enemy, dt) {
   const dist = toPlayer(enemy);
   faceAndCool(enemy, dt);
   const sees = canSeePlayer(enemy);
+  updateLastSeen(enemy, sees, dt);
+  updateDoorwayLatch(enemy, sees, dist);
   const spd = enemy.def.speed;
+
+  // S55: deep backoff. After several back-to-back unsticks, reverse course
+  // for AI_BACKOFF_TIME and arc wide before re-engaging — gets unjammed from
+  // corners/doorways/cover-knots that the short unstick can't escape.
+  if (enemy.backoffTimer > 0) {
+    enemy.backoffTimer -= dt;
+    const s = enemy.unstickSign;
+    stepMove(enemy, (-_vec.x * 0.7 + (-_vec.z) * s * 0.6) * spd,
+                     (-_vec.z * 0.7 + ( _vec.x) * s * 0.6) * spd, dt);
+    return;
+  }
 
   if (enemy.unstickTimer > 0) {
     // Wedged on geometry (window sill, ramp side, cover corner): slide
@@ -1124,10 +1377,21 @@ function shooterAI(enemy, dt) {
   const dist = toPlayer(enemy);
   faceAndCool(enemy, dt);
   const sees = canSeePlayer(enemy);
+  updateLastSeen(enemy, sees, dt);
+  updateDoorwayLatch(enemy, sees, dist);
   const spd = enemy.def.speed;
 
   tick(enemy, 'aiTimer', dt);
   maybeFlipStrafe(enemy, dt);
+
+  if (enemy.backoffTimer > 0) {
+    enemy.backoffTimer -= dt;
+    const s = enemy.unstickSign;
+    stepMove(enemy, (-_vec.x * 0.7 + (-_vec.z) * s * 0.6) * spd,
+                     (-_vec.z * 0.7 + ( _vec.x) * s * 0.6) * spd, dt);
+    enemy.hadLOS = false;
+    return;
+  }
 
   if (enemy.unstickTimer > 0) {
     enemy.unstickTimer -= dt;
@@ -1261,7 +1525,7 @@ function shooterFire(enemy) {
   const aimY = enemy._losAimY != null ? enemy._losAimY : (player.isCrouching ? 0.8 : 1.0);
   const dir = leadAim(ox, oy, oz, aimY, AI_LEAD_STRENGTH_SHOOTER);
   spawnProjectile(ox, oy, oz, dir.x, dir.y, dir.z);
-  sfxShooterFire();
+  sfxShooterFire(ox, oy, oz);   // S55: positional fire at the muzzle
 }
 
 // --- HEAVY --------------------------------------------------------------
@@ -1278,10 +1542,21 @@ function heavyAI(enemy, dt) {
   const dist = toPlayer(enemy);
   faceAndCool(enemy, dt);
   const sees = canSeePlayer(enemy);
+  updateLastSeen(enemy, sees, dt);
+  updateDoorwayLatch(enemy, sees, dist);
   const spd = enemy.def.speed;
 
   const inRange = dist <= HEAVY_FIRE_RANGE;
   const engaging = sees && inRange;
+
+  if (enemy.backoffTimer > 0) {
+    enemy.backoffTimer -= dt;
+    const s = enemy.unstickSign;
+    stepMove(enemy, (-_vec.x * 0.7 + (-_vec.z) * s * 0.6) * spd,
+                     (-_vec.z * 0.7 + ( _vec.x) * s * 0.6) * spd, dt);
+    updateHeavyGun(enemy, dt, false);
+    return;
+  }
 
   if (enemy.unstickTimer > 0) {
     enemy.unstickTimer -= dt;
@@ -1433,7 +1708,124 @@ function heavyFire(enemy) {
   const l2 = Math.sqrt(ddx * ddx + ddy * ddy + ddz * ddz);
 
   spawnProjectile(ox, oy, oz, ddx / l2, ddy / l2, ddz / l2);
-  sfxShooterFire();
+  sfxShooterFire(ox, oy, oz);   // S55: positional fire at the heavy muzzle
+}
+
+// --- JETPACK ------------------------------------------------------------
+// S55: flying enemy. Hovers above the player's floor at a random altitude
+// in [JETPACK_HOVER_HEIGHT_MIN, MAX], orbits at JETPACK_ORBIT_DIST, and
+// fires 3-round bursts with worse aim than the ground shooter. Has its OWN
+// vertical movement (no ground snap) and collides with walls horizontally.
+//
+// Flight state machine for the burst:
+//   idle    → cooldown ticking, eyeing the player; transitions to 'firing'
+//             once burstCooldown ≤ 0 and we have LOS + in range
+//   firing  → fires one round per BURST_INTERVAL; after BURST_COUNT rounds
+//             returns to idle with burstCooldown = BURST_COOLDOWN
+function jetpackAI(enemy, dt) {
+  const dist = toPlayer(enemy);
+  faceAndCool(enemy, dt);
+  const sees = canSeePlayer(enemy);
+  updateLastSeen(enemy, sees, dt);
+  // No doorway routing for jetpacks — they fly OVER walls.
+  enemy.doorwayIdx = -1;
+  // No cross-floor ramp pathing either — clear it so toPlayer goes straight
+  // to player.position (the navGoal in toPlayer already returned null for
+  // same-floor — jetpacks effectively never engage navGoal because they fly
+  // to whatever altitude they want).
+  enemy.navActive = false;
+  maybeFlipStrafe(enemy, dt);
+
+  // --- HORIZONTAL MOVEMENT (orbit + strafe) ---
+  // approach: -1 = back away (we're too close), +1 = close in (too far), 0 = hold range.
+  const orbitErr = dist - JETPACK_ORBIT_DIST;
+  let approach = 0;
+  if (orbitErr > 3) approach = 1;
+  else if (orbitErr < -3) approach = -1;
+  else approach = orbitErr / 3.0;
+  const sv = strafeVelocity(enemy, JETPACK_HORIZ_SPEED * 0.7);
+  const vx = sv.x + _vec.x * JETPACK_HORIZ_SPEED * 0.6 * approach;
+  const vz = sv.z + _vec.z * JETPACK_HORIZ_SPEED * 0.6 * approach;
+
+  // --- VERTICAL MOVEMENT (track hover Y above the player's floor) ---
+  const bob = Math.sin(game.elapsed * JETPACK_BOB_FREQ + enemy.animPhase) * JETPACK_BOB_AMP;
+  const targetY = player.position.y + enemy.hoverTargetY + bob;
+  let dy = targetY - enemy.position.y;
+  const maxDy = JETPACK_VERT_SPEED * dt;
+  if (dy > maxDy) dy = maxDy;
+  else if (dy < -maxDy) dy = -maxDy;
+
+  // Apply horizontal then vertical with collision against walls.
+  enemy.position.x += vx * dt;
+  enemy.position.z += vz * dt;
+  const res = collideCapsule(
+    enemy.position.x, enemy.position.y, enemy.position.z,
+    enemy.def.radius, ENEMY_BODY_H
+  );
+  enemy.position.x = res.x;
+  enemy.position.z = res.z;
+  enemy.position.y += dy;
+  // Clamp to a sensible flight envelope (above ground, below perimeter top).
+  if (enemy.position.y < 1.0)  enemy.position.y = 1.0;
+  if (enemy.position.y > 13.5) enemy.position.y = 13.5;
+
+  // Thruster glow brightens while in flight (always, while alive).
+  if (enemy.thrustMat) enemy.thrustMat.emissiveIntensity = 1.8;
+
+  // --- BURST-FIRE STATE MACHINE ---
+  const engaging = sees && dist <= JETPACK_FIRE_RANGE;
+  if (enemy.flyState === 'firing') {
+    enemy.burstTickTimer -= dt;
+    // Abort the burst if LOS drops mid-burst — keeps bullets from sailing
+    // into walls when the player ducks behind cover.
+    if (!sees) {
+      enemy.flyState = 'idle';
+      enemy.burstCooldown = JETPACK_BURST_COOLDOWN * 0.6;
+    } else if (enemy.burstTickTimer <= 0 && enemy.burstLeft > 0 && player.alive) {
+      jetpackFire(enemy);
+      enemy.burstLeft -= 1;
+      enemy.burstTickTimer = JETPACK_BURST_INTERVAL;
+      if (enemy.burstLeft <= 0) {
+        enemy.flyState = 'idle';
+        enemy.burstCooldown = JETPACK_BURST_COOLDOWN;
+      }
+    }
+  } else {
+    if (enemy.burstCooldown > 0) {
+      enemy.burstCooldown -= dt;
+      if (enemy.burstCooldown < 0) enemy.burstCooldown = 0;
+    }
+    if (engaging && enemy.burstCooldown <= 0) {
+      enemy.flyState = 'firing';
+      enemy.burstLeft = JETPACK_BURST_COUNT;
+      enemy.burstTickTimer = 0;     // fire the first round immediately
+    }
+  }
+}
+
+function jetpackFire(enemy) {
+  // Carbine muzzle ≈ 0.58 m forward of the enemy origin at ~1.05 m up.
+  // Transform local → world via the enemy facing yaw.
+  const yaw = enemy.group.rotation.y;
+  const sinY = Math.sin(yaw), cosY = Math.cos(yaw);
+  const lx = 0, lz = -0.58;
+  const ox = enemy.position.x + (lx * cosY + lz * sinY);
+  const oy = enemy.position.y + 1.05;
+  const oz = enemy.position.z + (-lx * sinY + lz * cosY);
+
+  const eyeH = player.isCrouching ? 1.2 : 1.6;
+  const aimY = enemy._losAimY != null ? enemy._losAimY : eyeH * 0.5;
+  // Weak lead + per-shot wobble: deliberately worse than the ground shooter.
+  const dir = leadAim(ox, oy, oz, aimY, JETPACK_LEAD_STRENGTH);
+  let ddx = dir.x, ddy = dir.y, ddz = dir.z;
+  const w = JETPACK_AIM_WOBBLE;
+  ddx += (Math.random() * 2 - 1) * w;
+  ddy += (Math.random() * 2 - 1) * w * 0.6;
+  ddz += (Math.random() * 2 - 1) * w;
+  const l = Math.sqrt(ddx * ddx + ddy * ddy + ddz * ddz);
+
+  spawnProjectile(ox, oy, oz, ddx / l, ddy / l, ddz / l);
+  sfxShooterFire(ox, oy, oz);   // S55: positional fire at the jetpack muzzle
 }
 
 export function updateEnemies(dt) {
@@ -1475,6 +1867,7 @@ export function updateEnemies(dt) {
       if      (e.type === 'grunt')   gruntAI(e, dt);
       else if (e.type === 'shooter') shooterAI(e, dt);
       else if (e.type === 'heavy')   heavyAI(e, dt);
+      else if (e.type === 'jetpack') jetpackAI(e, dt);
       syncEnemy(e);
 
       // Track no-LOS duration (drives the vantage-seek in navGoal) and
@@ -1486,11 +1879,28 @@ export function updateEnemies(dt) {
         const pdx = player.position.x - e.position.x;
         const pdz = player.position.z - e.position.z;
         const farFromPlayer = (pdx * pdx + pdz * pdz) > 3.0 * 3.0;
-        // Barely moved over the window while it should have been travelling
-        // (not legitimately stopped at melee range) → kick an unstick slide.
-        if (moved < AI_UNSTICK_MIN_MOVE && farFromPlayer && e.unstickTimer <= 0) {
-          e.unstickTimer = AI_UNSTICK_TIME;
-          e.unstickSign = -e.unstickSign;   // alternate so we don't re-jam the same way
+        // S55: barely moved while we should have been travelling. Escalate
+        // after AI_STUCK_ESCALATE consecutive unsticks: instead of another
+        // perpendicular slide (which can re-jam at the same spot), trigger
+        // a deep BACKOFF (reverse + arc) and drop any doorway latch so we
+        // re-evaluate routing. A successful move bigger than MIN_MOVE
+        // resets the count.
+        if (moved < AI_UNSTICK_MIN_MOVE && farFromPlayer) {
+          e.stuckCount += 1;
+          if (e.unstickTimer <= 0 && e.backoffTimer <= 0) {
+            if (e.stuckCount >= AI_STUCK_ESCALATE) {
+              e.backoffTimer = AI_BACKOFF_TIME;
+              e.unstickSign = -e.unstickSign;
+              e.flankSign = -e.flankSign;
+              e.doorwayIdx = -1;     // give up the current waypoint; route fresh
+              e.stuckCount = 0;
+            } else {
+              e.unstickTimer = AI_UNSTICK_TIME;
+              e.unstickSign = -e.unstickSign;
+            }
+          }
+        } else if (moved > AI_UNSTICK_MIN_MOVE * 2.0) {
+          e.stuckCount = 0;          // moved freely → forget recent jams
         }
         e.stuckX = e.position.x;
         e.stuckZ = e.position.z;

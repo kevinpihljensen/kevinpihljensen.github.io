@@ -49,7 +49,7 @@ for (const e of LAYOUT) {
       [-h - t,  h + t, -h - t, -h],
       [ h,      h + t, -h - t,  h + t],
       [-h - t, -h,     -h - t,  h + t],
-    ]) makeBoxSolid(x0, x1, 0, H2, z0, z1);
+    ]) makeBoxSolid(x0, x1, 0, H2, z0, z1, { noWalk: true });
   } else if (e.t === 'platform') {
     const th = e.thick == null ? 0.6 : e.thick;
     const x0 = e.cx - e.sx / 2, x1 = e.cx + e.sx / 2;
@@ -63,7 +63,7 @@ for (const e of LAYOUT) {
     makeBoxSolid(x0, x1, base, base + e.sy, z0, z1);
     if (e.id) H[e.id] = { top: base + e.sy, x0, x1, z0, z1, cx: e.cx, cz: e.cz };
   } else if (e.t === 'wall') {
-    for (const r of wallBoxes(e)) makeBoxSolid(r.x0, r.x1, r.y0, r.y1, r.z0, r.z1);
+    for (const r of wallBoxes(e)) makeBoxSolid(r.x0, r.x1, r.y0, r.y1, r.z0, r.z1, { noWalk: true });
   } else if (e.t === 'rampTo' || e.t === 'stairsTo') {
     const P = H[e.to];
     const c = solve(P, e.side, e.run, e.width, e.fromY || 0);
