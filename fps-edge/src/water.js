@@ -41,14 +41,10 @@ export function clearWaters() {
 // Both can be true simultaneously (deep water with feet on bottom).
 const TORSO_OFFSET = 0.9;
 const CAPSULE_HEIGHT = 1.7;
-const XZ_BUFFER = 1.5;       // surface-flag radius in XZ (m). Generous so
-                              // bhop is killed anywhere visibly "on the
-                              // water surface" — including standing on the
-                              // bank lip right next to the water (where
-                              // the Jesus-walking visual was happening).
-const Y_BUFFER  = 1.0;       // also flag when feet are up to a metre above
-                              // the water surface, so jumping off a brush
-                              // a foot above water doesn't restart bhop.
+const XZ_BUFFER = 0.3;       // surface-flag radius in XZ (m) — catches the
+                              // "stepped onto the bank right next to the
+                              // water" case that should still be wading
+                              // for bhop purposes.
 export function updateWaterState(_dt) {
   const px = player.position.x;
   const pz = player.position.z;
@@ -65,10 +61,9 @@ export function updateWaterState(_dt) {
                      pz + r + XZ_BUFFER < w.z0 || pz - r - XZ_BUFFER > w.z1);
     const xzIn   = !(px + r < w.x0 || px - r > w.x1 ||
                      pz + r < w.z0 || pz - r > w.z1);
-    // Wading: capsule intersects water Y range (incl. Y_BUFFER above the
-    // surface so a brush sitting ~1 m above water still flags) AND XZ is
-    // within XZ_BUFFER (1.5 m) of the water footprint.
-    if (xzNear && feetY <= w.y1 + Y_BUFFER && headY >= w.y0 - 0.01) {
+    // Wading: any part of the capsule intersects the water Y range AND
+    // XZ is near. Includes feet AT water surface (boundary).
+    if (xzNear && feetY <= w.y1 + 0.01 && headY >= w.y0 - 0.01) {
       feetIn = true; if (w.top > bestTop) bestTop = w.top;
     }
     // Swim: torso strictly inside the water (the existing TORSO test, but
