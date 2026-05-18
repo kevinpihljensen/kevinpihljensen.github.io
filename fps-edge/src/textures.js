@@ -610,9 +610,10 @@ export function makeQuakeStoneTexture() {
   return finalize(c);
 }
 
-// PORTAL — purple shimmer for teleporter trigger volumes. fbm-based swirl
-// + brighter "stars" peppered on top. Designed to TILE seamlessly via the
-// repeat wrap so a per-frame texture.offset scroll reads as fluid drift.
+// PORTAL — deep purple shimmer for teleporter trigger volumes. fbm-based
+// swirl in a dark violet palette + subtle starfield highlights. Designed
+// to TILE seamlessly via RepeatWrapping so per-frame texture.offset
+// scrolls read as fluid drift.
 export function makePortalTexture() {
   const N = 256;
   const c = makeCanvas(N);
@@ -625,24 +626,26 @@ export function makePortalTexture() {
       const a = fbm(x / 40, y / 40, 5, 13);
       const b = fbm(x / 18 + 5, y / 18 + 7, 4, 91);
       const n = (a * 0.65 + b * 0.35);
-      // Map noise → magenta/violet ramp with bright core.
-      const lift = Math.pow(n, 1.6);
-      const r = Math.min(255, 80 + lift * 220);
-      const g = Math.min(255,  20 + lift *  80);
-      const bl = Math.min(255, 160 + lift * 95);
+      // Map noise → DEEP violet ramp. Base nearly black, swirl rises to
+      // saturated dark purple (~ #4a1a8a) at noise peaks. Avoids the
+      // pink/magenta that the previous palette pushed.
+      const lift = Math.pow(n, 1.4);
+      const r = Math.min(255, 18 + lift * 96);     // 18..114  (was 80..300)
+      const g = Math.min(255,  6 + lift * 26);     // 6..32    (was 20..100)
+      const bl = Math.min(255, 36 + lift * 124);   // 36..160  (was 160..255)
       const i = (y * N + x) * 4;
       d[i] = r; d[i + 1] = g; d[i + 2] = bl; d[i + 3] = 255;
     }
   }
   ctx.putImageData(id, 0, 0);
-  // Hot bright "spark" points sprinkled on top.
-  for (let k = 0; k < 60; k++) {
+  // Dim violet "spark" points — fewer + dimmer so the portal stays moody.
+  for (let k = 0; k < 30; k++) {
     const sx = Math.random() * N, sy = Math.random() * N;
-    const sr = 1 + Math.random() * 2.5;
+    const sr = 1 + Math.random() * 2;
     const grad = ctx.createRadialGradient(sx, sy, 0, sx, sy, sr * 3);
-    grad.addColorStop(0, 'rgba(255,220,255,0.95)');
-    grad.addColorStop(0.4, 'rgba(220,160,255,0.4)');
-    grad.addColorStop(1, 'rgba(140,40,180,0)');
+    grad.addColorStop(0, 'rgba(180,120,220,0.6)');
+    grad.addColorStop(0.5, 'rgba(120,60,180,0.25)');
+    grad.addColorStop(1, 'rgba(60,20,100,0)');
     ctx.fillStyle = grad;
     ctx.fillRect(sx - sr * 3, sy - sr * 3, sr * 6, sr * 6);
   }

@@ -26,6 +26,46 @@ Format: newest entries at the top. Each entry lists what was added, what was cha
 
 ## Session log
 
+### 2026-05-18 — fps-edge: kill Jesus-bhop properly, darker portals, anti-z-fight visual inset
+
+Three follow-ups from the polish round:
+
+**Jesus-bhop kill** (`src/water.js`)
+- Last round added `player.feetInWater` but the test (`feetY` strictly
+  inside the water Y range AND XZ exactly in the water footprint)
+  missed the case where the player is standing on a brush whose top
+  is right at the water surface — feet exactly at `waterTop`, XZ near
+  but not strictly inside the water box.
+- New test uses CAPSULE overlap with the water Y range
+  (`feetY ≤ w.y1 + 0.01 ∧ headY ≥ w.y0 − 0.01`) AND a 0.3 m XZ buffer
+  on the water footprint. Catches "feet at waterTop", "stepped just
+  onto the bank", and ankle-deep wading. `inWater` (torso → full swim
+  physics) still uses the tight strictly-inside test so bobbing at the
+  surface doesn't kick the player into swim mode.
+
+**Portals darker purple** (`src/textures.js`, `src/teleporters.js`)
+- Repainted the swirl: noise ramp now maps to deep violet (R 18–114, G
+  6–32, B 36–160) instead of pink-magenta (R 80–300, G 20–100, B
+  160–255). Spark sprinkles also dimmed to muted violet.
+- Material switched from `AdditiveBlending` to default alpha blending so
+  the dark texture reads dark on light walls instead of bloom-adding.
+- Opacity pulse band tightened to 0.65–0.85 (was 0.55–0.85) so the
+  portal never thins out to ghost.
+
+**Anti-z-fight visual inset** (`src/kit.js`)
+- The clipping detector reports ~981 AABB-overlap pairs, but most of
+  the *visible* flicker is from adjacent Quake brushes sharing
+  coplanar faces (walls built from butted brushes). When mesh ==
+  collision AABB, those coincident faces compete for the depth test
+  and flicker.
+- `box({})` now creates the visible mesh `VISUAL_INSET = 5 mm` smaller
+  in each axis (1 cm gap between adjacent brushes). Collision uses the
+  full AABB, so player physics is unchanged. Min mesh size clamped at
+  5 cm so very thin trim brushes don't disappear.
+
+**Verified**: 101/101 engine-pure harnesses pass; EDGE MAP OK (1116
+solids, 0 unreachable, 0 floating). fps/ unchanged.
+
 ### 2026-05-18 — fps-edge: water polish (exit-pop, bottom-stuck, no Jesus-bhop) + purple shimmer portals
 
 User playtest reports four issues from the swim build: exit-pop too weak

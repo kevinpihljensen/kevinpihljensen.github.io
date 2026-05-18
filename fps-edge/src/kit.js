@@ -144,6 +144,15 @@ export function platform({ cx, cz, top, sx, sz, thick = 0.6 }) {
 // Solid cuboid you can stand on / hide behind. Walkable top = base + sy.
 // (You cannot walk UP onto it — a box riser body-blocks like a wall. Jump
 // onto it, or go around. Use stairs/ramp for no-jump ascent.)
+// fps-edge: visible meshes are SLIGHTLY SMALLER than their collision AABB
+// (by VISUAL_INSET in each axis). Quake brushwork frequently has adjacent
+// brushes share coplanar faces; if the meshes are the same exact size as
+// the collision boxes, those coincident faces z-fight and create visible
+// flicker on the imported map (~981 pairs reported by edge_validate's
+// clipping check). Insetting the mesh by 5 mm per side opens a 1 cm seam
+// at every junction so the depth test resolves cleanly. Collision stays
+// at the full AABB so player movement / hitboxes are unaffected.
+const VISUAL_INSET = 0.005;
 export function box({ cx, cz, base = 0, sx, sy, sz, kind }) {
   const x0 = cx - sx / 2, x1 = cx + sx / 2;
   const z0 = cz - sz / 2, z1 = cz + sz / 2;
@@ -151,7 +160,10 @@ export function box({ cx, cz, base = 0, sx, sy, sz, kind }) {
   // fps-edge: `kind` selects a Quake-flavoured material — 'qmetal' / 'qstone'
   // / 'qfloor'. Default falls back to MAT.box (the engine-wide default).
   const mat = (kind && MAT[kind]) || MAT.box;
-  const m = new THREE.Mesh(new THREE.BoxGeometry(sx, sy, sz), mat);
+  const vx = Math.max(0.05, sx - VISUAL_INSET * 2);
+  const vy = Math.max(0.05, sy - VISUAL_INSET * 2);
+  const vz = Math.max(0.05, sz - VISUAL_INSET * 2);
+  const m = new THREE.Mesh(new THREE.BoxGeometry(vx, vy, vz), mat);
   m.position.set(cx, base + sy / 2, cz);
   m.castShadow = true; m.receiveShadow = true;
   scene.add(m); shootables.push(m);

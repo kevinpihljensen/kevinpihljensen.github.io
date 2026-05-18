@@ -41,14 +41,15 @@ function makePortalMesh(x0, y0, z0, x1, y1, z1) {
   tex.wrapT = THREE.RepeatWrapping;
   // Repeat tuned so the swirl reads at human scale on a ~2 m trigger.
   tex.repeat.set(1.0, 1.0);
+  // Normal alpha blending (default) so the dark purple texture reads as
+  // dark — additive blending was washing it bright pink over light walls.
   const mat = new THREE.MeshBasicMaterial({
     map: tex,
     transparent: true,
-    opacity: 0.85,
+    opacity: 0.80,
     depthWrite: false,
     color: 0xffffff,
     side: THREE.DoubleSide,
-    blending: THREE.AdditiveBlending,   // brighter where layers stack
   });
   const sx = x1 - x0, sy = y1 - y0, sz = z1 - z0;
   const m = new THREE.Mesh(new THREE.BoxGeometry(sx, sy, sz), mat);
@@ -82,7 +83,9 @@ export function updateTeleporters(dt) {
     const phase = i * 0.37;
     t.tex.offset.x = ((_animT + phase) * 0.18) % 1;
     t.tex.offset.y = ((_animT + phase) * 0.09) % 1;
-    t.mesh.material.opacity = 0.55 + 0.30 * pulse;
+    // Subtle pulse — stays in the 0.65–0.85 band so the portal always
+    // reads as substantial dark-purple, not transparent ghost.
+    t.mesh.material.opacity = 0.65 + 0.20 * pulse;
   }
 }
 

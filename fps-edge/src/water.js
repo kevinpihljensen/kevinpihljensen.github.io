@@ -30,27 +30,47 @@ export function clearWaters() {
 }
 
 // Two overlap tests per frame:
-//   feetInWater = player FEET (capsule bottom = position.y) overlap a water
-//                 volume → "wading" state. Disables bhop, keeps player
-//                 standing on ground beneath, no swim physics yet.
-//   inWater     = player TORSO (feet + ~0.9 m) overlap a water volume →
-//                 full swim physics: reduced gravity, buoyancy, no jump.
-// Both flags can be true simultaneously (deep water with feet on bottom).
+//   feetInWater = player CAPSULE (feet → feet + 1.7 m) AABB-overlaps a
+//                 water volume, with a small XZ buffer. "Anywhere in or
+//                 right at the surface" → disables bhop. Catches the
+//                 standing-at-the-water-surface case where feet are
+//                 exactly at waterTop (boundary) and Jesus-walking is
+//                 the visual mistake.
+//   inWater     = player TORSO (feet + ~0.9 m) is strictly inside a
+//                 water volume → full swim physics.
+// Both can be true simultaneously (deep water with feet on bottom).
 const TORSO_OFFSET = 0.9;
+const CAPSULE_HEIGHT = 1.7;
+const XZ_BUFFER = 0.3;       // surface-flag radius in XZ (m) — catches the
+                              // "stepped onto the bank right next to the
+                              // water" case that should still be wading
+                              // for bhop purposes.
 export function updateWaterState(_dt) {
   const px = player.position.x;
   const pz = player.position.z;
   const feetY  = player.position.y;
+  const headY  = feetY + CAPSULE_HEIGHT;
   const torsoY = feetY + TORSO_OFFSET;
   const r = PLAYER_RADIUS;
   let feetIn = false, torsoIn = false;
   let bestTop = 0;
   for (let i = 0; i < waters.length; i++) {
     const w = waters[i];
-    if (px + r < w.x0 || px - r > w.x1) continue;
-    if (pz + r < w.z0 || pz - r > w.z1) continue;
-    if (feetY  >= w.y0 && feetY  <= w.y1) { feetIn  = true; if (w.top > bestTop) bestTop = w.top; }
-    if (torsoY >= w.y0 && torsoY <= w.y1) { torsoIn = true; if (w.top > bestTop) bestTop = w.top; }
+    // XZ overlap with a small buffer for the wading flag; tight for swim.
+    const xzNear = !(px + r + XZ_BUFFER < w.x0 || px - r - XZ_BUFFER > w.x1 ||
+                     pz + r + XZ_BUFFER < w.z0 || pz - r - XZ_BUFFER > w.z1);
+    const xzIn   = !(px + r < w.x0 || px - r > w.x1 ||
+                     pz + r < w.z0 || pz - r > w.z1);
+    // Wading: any part of the capsule intersects the water Y range AND
+    // XZ is near. Includes feet AT water surface (boundary).
+    if (xzNear && feetY <= w.y1 + 0.01 && headY >= w.y0 - 0.01) {
+      feetIn = true; if (w.top > bestTop) bestTop = w.top;
+    }
+    // Swim: torso strictly inside the water (the existing TORSO test, but
+    // also require XZ tightly inside, no buffer).
+    if (xzIn && torsoY >= w.y0 && torsoY <= w.y1) {
+      torsoIn = true; if (w.top > bestTop) bestTop = w.top;
+    }
   }
   player.feetInWater = feetIn;
   player.inWater     = torsoIn;
