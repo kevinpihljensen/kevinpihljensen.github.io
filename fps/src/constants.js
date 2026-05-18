@@ -334,11 +334,12 @@ export const KNIFE_SWIPE_DURATION = 0.36;
 // stay inside the play area, and a hard MIN_DIST gate rejects anything too
 // close. SPAWN_SPREAD_TRIES picks the farthest-from-other-fresh-spawns
 // candidate so a wave fans out instead of clustering on one arc.
-// S55: scaled to the 160×160 arena (was ±38). Spawn ring widened so enemies
-// don't all appear right on top of the player on the bigger map.
-export const ARENA_PLAYABLE_HALF = 76;   // keep spawns inside walls (arena 160 → ±80 walls)
-export const SPAWN_MIN_DIST = 28;        // hard minimum distance from player
-export const SPAWN_MAX_DIST = 50;        // outer ring distance from player
+// S55f: arena shrunk 160×160 → 130×130 (perimeter half=65) for instagib
+// compactness. Spawn ring tightened so enemies stay inside the playable
+// region and engage faster.
+export const ARENA_PLAYABLE_HALF = 60;   // keep spawns inside walls (arena 130 → ±65 walls)
+export const SPAWN_MIN_DIST = 22;        // hard minimum distance from player
+export const SPAWN_MAX_DIST = 40;        // outer ring distance from player
 export const SPAWN_MAX_ATTEMPTS = 22;
 export const SPAWN_VIEW_CONE_DOT = 0.3;
 export const SPAWN_COVER_MARGIN = 1.0;
@@ -347,6 +348,17 @@ export const SPAWN_SPREAD_MEMORY = 8;    // recent spawns remembered for spacing
 
 // Legacy alias — some older call sites referenced SPAWN_RADIUS directly.
 export const SPAWN_RADIUS = 36;
+
+// --- ARENA MODE (S55f) ---
+// Continuous-combat alternative to the wave shooter. Maintains a target
+// population of live enemies; when one dies, a replacement spawns after a
+// short delay at a SPAWN_ANCHORS point far from the player. Player respawns
+// on death at the farthest-from-enemies anchor instead of GAMEOVER. Score
+// counts kills, not waves.
+export const ARENA_ENEMY_POPULATION = 5;
+export const ARENA_ENEMY_RESPAWN_DELAY = 1.8;   // seconds from kill to replacement
+export const ARENA_PLAYER_RESPAWN_DELAY = 1.0;  // seconds player stays dead before respawn
+export const ARENA_ENEMY_MIX = { grunt: 2, shooter: 2, heavy: 1, jetpack: 0 };
 
 // --- HUD POLISH ---
 export const HIT_MARKER_TIME = 0.18;

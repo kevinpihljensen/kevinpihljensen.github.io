@@ -8,13 +8,13 @@ import { GAME_STATE, MAX_DT, LAYER_WORLD, LAYER_VIEWMODEL } from './constants.js
 import './arena.js';     // builds floor / walls / cover at import time
 import './input.js';     // attaches keyboard / mouse listeners at import time
 import './pickups.js';   // spawns weapon/health pickups at import time
-import { updatePlayer } from './player.js';
+import { updatePlayer, updateArenaPlayer } from './player.js';
 import { updateEnemies } from './enemies.js';
 import { updateProjectiles } from './projectiles.js';
 import { updateWeaponTimers, processAutoFire } from './weapons.js';
 import { updateDecals, updateBlood } from './decals.js';
 import { updatePickups } from './pickups.js';
-import { updateWave } from './wave.js';
+import { updateWave, updateArena } from './wave.js';
 import { setGameState, updateHUD, updateToast } from './hud.js';
 import { updateAudioListener } from './audio.js';
 
@@ -44,6 +44,8 @@ function loop() {
     updateWeaponTimers(dt);
     updatePickups(dt);
     updateWave(dt);
+    updateArena(dt);          // S55f: arena enemy-respawn queue (no-op in other modes)
+    updateArenaPlayer(dt);    // S55f: arena player respawn timer (no-op in other modes)
     updateDecals(dt);
     updateBlood(dt);
     updateHUD(dt);

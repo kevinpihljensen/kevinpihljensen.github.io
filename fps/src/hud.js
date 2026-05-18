@@ -27,7 +27,9 @@ export const dom = {
   titlePanel:        $('title-panel'),
   btnPlay:           $('btn-play'),
   btnBhop:           $('btn-bhop'),
-  btnMaptest:        $('btn-maptest'),
+  btnModeWave:       $('btn-mode-wave'),
+  btnModeArena:      $('btn-mode-arena'),
+  btnModeMaptest:    $('btn-mode-maptest'),
   hud:               $('hud'),
   hudAmmo:           $('hud-ammo'),
   hudWeapon:         $('hud-weapon'),
@@ -85,7 +87,11 @@ export function syncTitleToggles() {
     if (s) s.textContent = on ? 'ON' : 'OFF';
   };
   setT(dom.btnBhop, game.bhopEnabled);
-  setT(dom.btnMaptest, game.mapTestArmed);
+  // Mode selector — exactly one button is amber-highlighted.
+  const setMode = (el, on) => { if (el) el.classList.toggle('is-selected', on); };
+  setMode(dom.btnModeWave,    game.modeArmed === 'wave');
+  setMode(dom.btnModeArena,   game.modeArmed === 'arena');
+  setMode(dom.btnModeMaptest, game.modeArmed === 'maptest');
 }
 
 // --- OVERLAY / GAME STATE ROUTING ---
@@ -103,7 +109,10 @@ export function setGameState(next) {
     showOverlay('Paused', 'Click to resume', 'Esc to pause again');
   } else if (next === GAME_STATE.GAMEOVER) {
     dom.overlay.classList.remove('is-title');
-    showOverlay('Game Over', `Wave ${game.wave} • Score ${game.score}`, 'Press R or click to play again');
+    const subtitle = game.gameMode === 'arena'
+      ? `Arena • Kills ${game.arenaKills}`
+      : `Wave ${game.wave} • Score ${game.score}`;
+    showOverlay('Game Over', subtitle, 'Press R or click to play again');
   } else if (next === GAME_STATE.WON) {
     dom.overlay.classList.remove('is-title');
     showOverlay('Victory', `Score ${game.score}`, 'Press R or click to play again');
@@ -215,11 +224,20 @@ export function updateHUD(dt) {
   dom.hudHealthFill.style.boxShadow = healthGlow(frac);
   dom.hudHealthText.textContent = `${Math.ceil(hp)} / ${player.maxHealth}`;
 
-  // Wave / score / enemies-left / between-waves countdown.
-  dom.hudWave.innerHTML =
-    `Wave <span class="current">${game.wave}</span><span class="sep">/</span><span class="total">${MAX_WAVE}</span>`;
-  dom.hudScore.innerHTML = `<span class="label">SCORE</span><span class="value">${game.score}</span>`;
-  if (state.gameState === GAME_STATE.PLAYING && game.enemiesAlive > 0) {
+  // Wave / score / enemies-left / between-waves countdown. In arena mode the
+  // wave display shows ARENA + kill count (game.arenaKills) instead.
+  if (game.gameMode === 'arena') {
+    dom.hudWave.innerHTML = `<span class="current">ARENA</span>`;
+    dom.hudScore.innerHTML = `<span class="label">KILLS</span><span class="value">${game.arenaKills}</span>`;
+  } else if (game.gameMode === 'maptest') {
+    dom.hudWave.innerHTML = `<span class="current">MAP TEST</span>`;
+    dom.hudScore.innerHTML = `<span class="label">SCORE</span><span class="value">${game.score}</span>`;
+  } else {
+    dom.hudWave.innerHTML =
+      `Wave <span class="current">${game.wave}</span><span class="sep">/</span><span class="total">${MAX_WAVE}</span>`;
+    dom.hudScore.innerHTML = `<span class="label">SCORE</span><span class="value">${game.score}</span>`;
+  }
+  if (state.gameState === GAME_STATE.PLAYING && game.enemiesAlive > 0 && game.gameMode !== 'arena') {
     dom.hudEnemiesLeft.textContent = `${game.enemiesAlive} left`;
   } else {
     dom.hudEnemiesLeft.textContent = '';

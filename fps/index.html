@@ -49,6 +49,35 @@
     #title-panel { display: none; flex-direction: column; align-items: center;
       gap: 22px; margin: 6px 0 30px; }
     #overlay.is-title #title-panel { display: flex; }
+    /* Game mode selector — 3-way radio-like row. */
+    .tp-modes { display: flex; gap: 14px; flex-wrap: wrap; justify-content: center; }
+    .tp-mode {
+      display: flex; flex-direction: column; align-items: center; gap: 6px;
+      min-width: 200px; padding: 18px 26px;
+      background: rgba(18, 20, 27, 0.92);
+      border: 1px solid rgba(255, 255, 255, 0.14);
+      border-radius: 12px; cursor: pointer;
+      font: inherit; color: #e4e4e7;
+      transition: border-color .15s, background .15s, box-shadow .15s, transform .08s;
+    }
+    .tp-mode:hover { border-color: rgba(255,255,255,0.32);
+      background: rgba(28, 31, 40, 0.95); }
+    .tp-mode:active { transform: translateY(1px); }
+    .tp-mode-name {
+      font-size: 22px; font-weight: 800; letter-spacing: 2px;
+      text-transform: uppercase; line-height: 1;
+    }
+    .tp-mode-desc {
+      font-size: 11px; color: #a1a1aa; letter-spacing: 1px;
+      text-transform: uppercase; font-weight: 600;
+    }
+    /* The currently-selected mode glows amber. */
+    .tp-mode.is-selected {
+      border-color: rgba(251, 191, 36, 0.65);
+      box-shadow: 0 0 18px rgba(251, 191, 36, 0.22) inset;
+      background: rgba(38, 30, 12, 0.95);
+    }
+    .tp-mode.is-selected .tp-mode-name { color: #fbbf24; }
     .tp-options { display: flex; gap: 16px; flex-wrap: wrap; justify-content: center; }
     .tp-toggle {
       display: flex; flex-direction: column; align-items: center; gap: 8px;
@@ -425,18 +454,28 @@
     <div id="overlay-subtitle">Click to play</div>
 
     <div id="title-panel">
+      <div class="tp-modes">
+        <button class="tp-mode is-selected" id="btn-mode-wave" type="button" data-mode="wave">
+          <span class="tp-mode-name">Wave</span>
+          <span class="tp-mode-desc">10 waves, enemies escalate</span>
+        </button>
+        <button class="tp-mode" id="btn-mode-arena" type="button" data-mode="arena">
+          <span class="tp-mode-name">Arena</span>
+          <span class="tp-mode-desc">Instagib-style continuous deathmatch</span>
+        </button>
+        <button class="tp-mode" id="btn-mode-maptest" type="button" data-mode="maptest">
+          <span class="tp-mode-name">Map&nbsp;Test</span>
+          <span class="tp-mode-desc">Free roam, no enemies</span>
+        </button>
+      </div>
       <div class="tp-options">
         <button class="tp-toggle" id="btn-bhop" type="button">
           <span class="tp-name">Bunny&nbsp;Hop</span>
           <span class="tp-state">ON</span>
         </button>
-        <button class="tp-toggle" id="btn-maptest" type="button">
-          <span class="tp-name">Map&nbsp;Test</span>
-          <span class="tp-state">OFF</span>
-        </button>
       </div>
       <button id="btn-play" type="button">▶&nbsp;&nbsp;PLAY</button>
-      <div class="tp-hint">Bunny Hop: build speed by chaining jumps &nbsp;•&nbsp; Map Test: free roam, no enemies</div>
+      <div class="tp-hint">Bunny Hop stacks with any mode. Keys: 1/2/3 mode, B bhop, Enter play.</div>
     </div>
 
     <div id="overlay-instructions"></div>

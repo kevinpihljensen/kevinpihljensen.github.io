@@ -48,7 +48,7 @@ import { spawnProjectile } from './projectiles.js';
 import { damagePlayer } from './player.js';
 import { state, game } from './state.js';
 import { GAME_STATE } from './constants.js';
-import { onWaveCleared } from './wave.js';
+import { onWaveCleared, queueArenaRespawn } from './wave.js';
 
 export const enemies = [];
 
@@ -858,7 +858,11 @@ export function killEnemy(enemy) {
   if (state.gameState === GAME_STATE.PLAYING || state.gameState === GAME_STATE.BETWEEN_WAVES) {
     game.score += enemy.def.score;
     game.enemiesAlive -= 1;
-    if (state.gameState === GAME_STATE.PLAYING && game.enemiesAlive <= 0 && !game.mapTest) {
+    if (game.gameMode === 'arena') {
+      // Arena: count kill, queue a replacement to maintain population.
+      game.arenaKills += 1;
+      queueArenaRespawn(enemy.type || 'grunt');
+    } else if (state.gameState === GAME_STATE.PLAYING && game.enemiesAlive <= 0 && game.gameMode !== 'maptest') {
       onWaveCleared();
     }
   }

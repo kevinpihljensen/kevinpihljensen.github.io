@@ -294,6 +294,9 @@ render(-35, EYE, -19, -35, EYE, -23, 'fps_outside_HOUSE_NW');           // facin
 render( 33 - 4, EYE, -42, 33, EYE, -42, 'fps_outside_HOUSE_NE');         // facing E at W entry
 render( 50 - 4, EYE, -18, 50, EYE, -18, 'fps_outside_TOWER_NE');         // facing E at W entry
 render( 35 - 4, EYE,  8,  35, EYE,  8,  'fps_outside_WAREHOUSE');        // facing E at W entry
+// S55f arena additions.
+render(-35, EYE,  19, -35, EYE,  23, 'fps_outside_HOUSE_SW');           // facing S at N entry
+render( 29 - 4, EYE,  30, 29, EYE,  30, 'fps_outside_HOUSE_SE');         // facing E at W entry
 
 // Stair landing views: from the stair foot looking up at the deck edge.
 render( 45, EYE,  21, 45, EYE + 4,  14, 'fps_stair_up_WAREHOUSE');       // looking N + up
@@ -304,6 +307,10 @@ render( 54, EYE, -42, 47, EYE + 4, -42, 'fps_stair_up_HOUSE_NE');        // look
 render( 45, 4 + EYE,  6,  45, 4 + EYE - 0.2, 14, 'fps_roof_WAREHOUSE_at_shotgun');
 render(  0, 6 + EYE, -48,  0, 6 + EYE - 0.2, -57, 'fps_roof_HILLTOP_at_saw');
 render( 55, 4.5 + EYE, -14, 55, 4.5 + EYE - 0.2, -23, 'fps_roof_TOWER_NE_at_sniper');
+// S55f arena additions: SOUTH_BASTION perch + CENTRAL_ALTAR (sniper).
+render(  0, 5 + EYE,  47,   0, 5 + EYE - 0.2,  37, 'fps_roof_SOUTH_BASTION');
+render(  0, 2.5 + EYE, -12, 0, 2.5 + EYE - 0.2, -50, 'fps_altar_looking_HILLTOP'); // exposed shot at HILLTOP
+render(  0, EYE,  0,   0, EYE - 0.1, -12, 'fps_spawn_at_altar');         // spawn looking at altar (north)
 
 // Interior view: inside the WAREHOUSE west room, looking east at the partition.
 render( 38, EYE, 8, 55, EYE, 8, 'fps_inside_WAREHOUSE_W_room');

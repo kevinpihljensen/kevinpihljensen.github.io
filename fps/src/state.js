@@ -21,15 +21,24 @@ export const state = {
 };
 
 // Per-run game data. Reset via wave.js's resetGame().
+// S55f: `gameMode` replaces the old `mapTest` boolean — three values cover
+// every play mode: 'wave' (the original wave shooter), 'arena' (continuous
+// combat with player + enemy respawn), 'maptest' (no enemies, free roam).
+// `modeArmed` is the title-screen selection; `gameMode` is the active mode
+// once a run has started.
 export const game = {
   wave: 0,
   score: 0,
   enemiesAlive: 0,
   breakTimer: 0,
-  elapsed: 0,         // accumulated dt while active — frozen during pause
-  mapTest: false,     // map-test run: no enemies spawn (pistol still given)
-  mapTestArmed: false,// title-screen toggle (press M) → next run is map-test
-  bhopEnabled: true,  // title-screen toggle → bunny-hop speed building on/off
+  elapsed: 0,           // accumulated dt while active — frozen during pause
+  gameMode: 'wave',     // 'wave' | 'arena' | 'maptest'
+  modeArmed: 'wave',    // title-screen selection (cycled via UI / keys)
+  bhopEnabled: true,    // title-screen toggle → bunny-hop speed building on/off
+  // Arena-only state:
+  arenaKills: 0,
+  arenaRespawnTimer: 0, // player respawn delay countdown
+  arenaEnemyRespawnTimers: [],  // pending enemy respawns: [{type, t}, ...]
 };
 
 // --- PLAYER ---

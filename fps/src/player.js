@@ -20,6 +20,7 @@ import { camera } from './scene.js';
 import { player, state, game, damageIndicator } from './state.js';
 import { collideCapsule, groundHeightAt, ceilingHeightAt, headroomClear } from './collision.js';
 import { enemies } from './enemies.js';
+import { SPAWN_ANCHORS } from './maplayout.js';
 import {
   GAME_STATE, MOUSE_SENSITIVITY, PITCH_LIMIT, SCOPE_SENS_MULT,
   WALK_SPEED, SPRINT_SPEED, CROUCH_SPEED, SCOPE_SPEED, KNIFE_SPEED_MULT,
@@ -28,7 +29,7 @@ import {
   GROUND_FRICTION, GROUND_STOP_SPEED, GROUND_ACCEL, AIR_ACCEL,
   AIR_WISH_SPEED_CAP, MAX_HORIZONTAL_SPEED,
   PLAYER_MAX_HEALTH, DAMAGE_FLASH_TIME, DAMAGE_INDICATOR_TIME,
-  DEFAULT_FOV, SCOPE_FOV,
+  DEFAULT_FOV, SCOPE_FOV, ARENA_PLAYER_RESPAWN_DELAY,
 } from './constants.js';
 import { sfxPlayerHurt, sfxGameOver } from './audio.js';
 import { setGameState } from './hud.js';
@@ -81,6 +82,9 @@ const _tmpRight = new THREE.Vector3();
 
 // --- MOVEMENT ---
 export function updatePlayer(dt) {
+  // Arena mode: while dead and waiting to respawn, freeze movement entirely.
+  // updateArenaPlayer ticks the respawn timer and restores `alive`.
+  if (!player.alive && game.gameMode === 'arena') return;
   // Look. Mouse deltas accumulate in mouseDelta; apply and zero them each frame.
   player.yaw -= mouseDelta.x * MOUSE_SENSITIVITY;
   player.pitch -= mouseDelta.y * MOUSE_SENSITIVITY;
@@ -476,8 +480,53 @@ function killPlayer() {
   player.alive = false;
   player.velocityX = 0;
   player.velocityZ = 0;
-  setGameState(GAME_STATE.GAMEOVER);
-  sfxGameOver();
+  if (game.gameMode === 'arena') {
+    // Arena: don't end the run — start the respawn timer. updateArenaPlayer
+    // (called from main.js) ticks it and respawns at a safe anchor.
+    game.arenaRespawnTimer = ARENA_PLAYER_RESPAWN_DELAY;
+    sfxPlayerHurt();   // distinct from gameover; uses the existing hurt cue
+  } else {
+    setGameState(GAME_STATE.GAMEOVER);
+    sfxGameOver();
+  }
+}
+
+// Pick the SPAWN_ANCHORS point with the maximum minimum-distance to any live
+// enemy. That spawn is the "safest" — used for arena respawn.
+function pickArenaRespawnAnchor() {
+  let best = SPAWN_ANCHORS[0];
+  let bestDist = -Infinity;
+  for (let i = 0; i < SPAWN_ANCHORS.length; i++) {
+    const a = SPAWN_ANCHORS[i];
+    let minD = Infinity;
+    for (let j = 0; j < enemies.length; j++) {
+      const e = enemies[j];
+      const dx = e.position.x - a.x;
+      const dz = e.position.z - a.z;
+      const d = dx * dx + dz * dz;
+      if (d < minD) minD = d;
+    }
+    if (minD > bestDist) { bestDist = minD; best = a; }
+  }
+  return best;
+}
+
+// Arena-only tick: counts down the respawn timer and respawns the player at
+// the safest anchor when it hits zero. Called from main.js while gameState
+// is PLAYING. No-op in wave / maptest modes.
+export function updateArenaPlayer(dt) {
+  if (game.gameMode !== 'arena' || player.alive) return;
+  game.arenaRespawnTimer -= dt;
+  if (game.arenaRespawnTimer > 0) return;
+  const a = pickArenaRespawnAnchor();
+  player.position.set(a.x, 0, a.z);
+  player.velocityX = 0;
+  player.velocityZ = 0;
+  player.velocityY = 0;
+  player.health = PLAYER_MAX_HEALTH;
+  player.damageFlashTimer = 0;
+  player.alive = true;
+  damageIndicator.timer = 0;
 }
 
 export function resetPlayer() {
