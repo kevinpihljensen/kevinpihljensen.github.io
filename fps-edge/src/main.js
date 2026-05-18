@@ -18,6 +18,7 @@ import { updateWave, updateArena } from './wave.js';
 import { setGameState, updateHUD, updateToast } from './hud.js';
 import { updateAudioListener } from './audio.js';
 import { applyTeleport } from './teleporters.js';
+import { updateElevators } from './elevators.js';
 
 // Initial UI state: title overlay shown, no HUD, no canvas focus.
 setGameState(GAME_STATE.TITLE);
@@ -41,6 +42,9 @@ function loop() {
     processAutoFire();
     updateEnemies(dt);
     updateProjectiles(dt);
+    updateElevators(dt);  // Edge: animate func_plat lifts BEFORE the player
+                          // step so updated plate y is in the collision when
+                          // gravity carries the player up/down.
     updatePlayer(dt);
     applyTeleport(dt);    // Edge: warp player if they entered a slipgate
     updateWeaponTimers(dt);

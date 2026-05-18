@@ -8,6 +8,7 @@ import {
 } from './kit.js';
 import { LAYOUT, wallBoxes } from './maplayout.js';
 import { registerTeleporter } from './teleporters.js';
+import { registerElevator } from './elevators.js';
 
 const H = {};   // id -> kit handle (platform/box/connector foot)
 
@@ -49,6 +50,9 @@ for (const e of LAYOUT) {
       break;
     case 'teleporter':
       registerTeleporter(e);
+      break;
+    case 'elevator':
+      registerElevator(e);
       break;
     default:
       console.warn('arena: unknown layout entry', e.t);

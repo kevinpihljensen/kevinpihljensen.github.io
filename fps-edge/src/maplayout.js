@@ -1182,6 +1182,8 @@ export const LAYOUT = [
   { t: 'teleporter', name: 't1', x0: -21.75, y0: 22.12, z0: 35.25, x1: -19.75, y1: 25.62, z1: 36.00, dx: -2.62, dy: 32.75, dz: -34.88 },
   { t: 'teleporter', name: 't2', x0: -3.62, y0: 32.50, z0: -36.25, x1: -1.62, y1: 36.00, z1: -35.50, dx: 28.25, dy: 37.00, dz: 24.62 },
   { t: 'teleporter', name: 't3', x0: 27.25, y0: 36.25, z0: 25.88, x1: 29.25, y1: 39.75, z1: 26.62, dx: -20.75, dy: 22.56, dz: 34.62 },
+  { t: 'elevator', cx: 25.50, cz: -12.88, sx: 4.00, sy: 0.50, sz: 4.00, bottomY: 21.75, topY: 40.00, speed: 7.81, wait: 3.00, startsAtTop: false },
+  { t: 'elevator', cx: 14.50, cz: -15.38, sx: 2.00, sy: 0.38, sz: 3.00, bottomY: 28.38, topY: 36.00, speed: 7.81, wait: 3.00, startsAtTop: true },
 ];
 
 export const PICKUPS = [

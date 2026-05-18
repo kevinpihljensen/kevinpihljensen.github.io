@@ -26,6 +26,57 @@ Format: newest entries at the top. Each entry lists what was added, what was cha
 
 ## Session log
 
+### 2026-05-18 — fps-edge elevators (func_plat) landed
+
+Top item on IMPORT_STATUS.md's next-step list. The Edge has two `func_plat`
+entities — the iconic 4×4 m rocket-launcher pit lift (18.25 m travel) and a
+smaller 2×3 m lift (7.6 m travel). Without elevator runtime support the
+upper rooms they serve were unreachable.
+
+**Importer (`dev/import_edge.py`)**
+- For every `func_plat` entity: pick the plate brush (largest XZ area),
+  compute travel from the explicit `height` keyvalue or default
+  (overall AABB Z extent − 8). Quake convention: the brush ALWAYS sits at
+  the top (raised) position — `spawnflags & 1 = PLAT_LOW_TRIGGER` only
+  relocates the trigger field, not the rest pose. Emit
+  `{ t: 'elevator', cx, cz, sx, sy, sz, bottomY, topY, speed, wait,
+  startsAtTop }`. Speed converted from Quake u/s to m/s with the same
+  S=1/32 scale as boxes.
+
+**Runtime (`src/elevators.js`, NEW)**
+- `registerElevator(e)` builds a KINEMATIC solid (a regular `solids[]`
+  entry with mutable `minY` / `maxY` / `topY` and matching plane d-values)
+  plus a THREE.Mesh.
+- `updateElevators(dt)` runs the per-lift state machine
+  `at_top → falling → at_bottom → rising → at_top`. Triggers:
+  - `playerOnPlate(lift)` = standing on the deck.
+  - `playerCalling(lift)` = in XZ footprint + at/below `bottomY + 2 m`
+    — the "lower trigger field" pattern. Plate at top + calling → fall;
+    on plate → rise; at bottom + nobody calling → return to top after
+    `wait` seconds.
+- Called from `src/main.js` BEFORE `updatePlayer(dt)` so the same frame's
+  gravity step sees the plate's new y when it pushes the player up.
+
+**Validator (`dev/edge_validate.mjs`)**
+- Dispatches `t: 'elevator'` and registers the lift in a `lifts` array
+  with the solid built at the top position (matches the .map rest state).
+- BFS expansion tightened: per neighbour, probe `groundHeightAt` first
+  with `maxY = cur.gy + STEP_UP + JUMP_RISE + 0.05` (only catches
+  surfaces the player can climb to from cur) and fall back to a lower
+  probe if needed. Stops a raised elevator from masking the pit floor
+  beneath it.
+- BFS adds an elevator edge when `cur` is in any lift's XZ footprint and
+  `cur.gy ≈ bottomY` or `≈ topY`: visit the opposite-endpoint cell.
+
+**Engine**: 6 engine-pure harnesses still 101/101 PASS. `edge_validate`
+reports 16 unreachable pickups (was 15 — the tightened probe is more
+honest about reachability and rejects two cases the looser probe accepted;
+the elevator edges add 2 newly-reachable cells in return). The remaining
+unreachable are believed to be behind doorways the AABB conversion closed;
+that's the next item.
+
+**fps/ unchanged**: zero line diff.
+
 ### 2026-05-18 — fps-edge spawn fix (player spawned at y=0 below the map)
 
 User loaded `https://kevinpihljensen.github.io/fps-edge/index.html` and reported "I don't spawn inside the edge structure, I spawn on the ground below it." Root cause: the importer emitted `SPAWN = { x, z }` with no `y`, and `resetPlayer()` / `updateArenaPlayer()` both hardcoded `position.set(_, 0, _)`. The Edge's spawns sit on upper decks (engine y = 15-25 m); placing the player at y=0 dropped them onto the perimeter ground beneath the floating brushwork.

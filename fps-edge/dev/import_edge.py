@@ -288,6 +288,61 @@ def main():
             'kind': 'box',
         })
 
+    # ── func_plat (elevator) extraction ──
+    # Each func_plat has 1+ brushes; the PLATE is the largest-XZ-area brush
+    # (typically thin in Y). 'height' keyvalue is the travel distance in
+    # Quake units (default = overall brush AABB Z extent − 8). spawnflags
+    # bit 1 = PLAT_LOW_TRIGGER: starts at bottom (brush represents bottom);
+    # otherwise starts at top (brush represents top).
+    elevators = []
+    for e in ents:
+        if e['kv'].get('classname') != 'func_plat':
+            continue
+        plate_bb = None
+        plate_area = 0
+        overall = None
+        for brush in e['brushes']:
+            planes, _texs = parse_brush(brush)
+            if planes is None: continue
+            _V, bb = brush_aabb(planes)
+            if bb is None: continue
+            qmn, qmx = bb
+            area = (qmx[0] - qmn[0]) * (qmx[1] - qmn[1])  # XY in Quake = XZ in engine
+            if area > plate_area:
+                plate_area = area; plate_bb = (qmn.copy(), qmx.copy())
+            if overall is None:
+                overall = [qmn.copy(), qmx.copy()]
+            else:
+                for k in range(3):
+                    overall[0][k] = min(overall[0][k], qmn[k])
+                    overall[1][k] = max(overall[1][k], qmx[k])
+        if plate_bb is None: continue
+        pmn, pmx = plate_bb
+        # Travel = explicit 'height' or overall Z extent − 8 (Quake default).
+        height_kv = e['kv'].get('height')
+        if height_kv is not None:
+            travel = float(height_kv)
+        else:
+            travel = (overall[1][2] - overall[0][2]) - 8
+        # Quake .map convention: the brush ALWAYS represents the top (raised)
+        # position regardless of spawnflags. spawnflags bit 1 = PLAT_LOW_TRIGGER
+        # only changes WHERE the trigger field sits (low vs the area below the
+        # plate); the plat itself rests at top and lowers when un-triggered.
+        speed = float(e['kv'].get('speed', '150'))
+        wait_t = float(e['kv'].get('wait', '3'))
+        plate_top_z = pmx[2]
+        top_z = plate_top_z
+        bottom_z = plate_top_z - travel
+        spawnflags = int(e['kv'].get('spawnflags', '0') or '0')
+        starts_at_top = (spawnflags & 1) == 0   # informational only
+        elevators.append({
+            'pmn': pmn, 'pmx': pmx,
+            'bottom_z': bottom_z, 'top_z': top_z,
+            'thickness': pmx[2] - pmn[2],
+            'speed': speed * S, 'wait': wait_t,
+            'starts_at_top': starts_at_top,
+        })
+
     # Second pass: parse teleporter triggers + their destinations.
     tp_dests = {}
     for e in ents:
@@ -397,6 +452,33 @@ def main():
     all_spawns.sort(key=lambda s: s['x']**2 + s['z']**2)
     spawn0 = all_spawns[0] if all_spawns else {'x': 0, 'y': 0, 'z': 0}
 
+    # Transform elevators.
+    el_engine = []
+    for lift in elevators:
+        # Convert plate XZ + thickness to engine. The plate footprint maps via
+        # the same q2engine_box transform; bottom_z / top_z are Quake Z values
+        # → engine Y. Y mirroring (Quake Y → engine -Z) applies to plate XZ
+        # bounds: build a dummy box at bottom Z to get the engine X/Z extents.
+        qb_lo = (lift['pmn'][0], lift['pmn'][1], lift['bottom_z'])
+        qb_hi = (lift['pmx'][0], lift['pmx'][1], lift['bottom_z'] + lift['thickness'])
+        ex0, ey_bot_lo, ez0, ex1, ey_bot_hi, ez1 = transform_box((*qb_lo, *qb_hi))
+        # Top position (just the y range; XZ is identical).
+        qb_lo2 = (lift['pmn'][0], lift['pmn'][1], lift['top_z'])
+        qb_hi2 = (lift['pmx'][0], lift['pmx'][1], lift['top_z'] + lift['thickness'])
+        _, ey_top_lo, _, _, ey_top_hi, _ = transform_box((*qb_lo2, *qb_hi2))
+        el_engine.append({
+            'cx': (ex0 + ex1) / 2,
+            'cz': (ez0 + ez1) / 2,
+            'sx': ex1 - ex0,
+            'sz': ez1 - ez0,
+            'sy': ey_bot_hi - ey_bot_lo,
+            'bottom_y': ey_bot_lo,
+            'top_y':    ey_top_lo,
+            'speed':    lift['speed'],
+            'wait':     lift['wait'],
+            'starts_at_top': lift['starts_at_top'],
+        })
+
     # Transform teleporters.
     tp_engine = []
     for tp in teleporters:
@@ -469,6 +551,15 @@ def main():
             f"x1: {tp['x1']:.2f}, y1: {tp['y1']:.2f}, z1: {tp['z1']:.2f}, "
             f"dx: {tp['dx']:.2f}, dy: {tp['dy']:.2f}, dz: {tp['dz']:.2f} }},"
         )
+    for lift in el_engine:
+        out.append(
+            f"  {{ t: 'elevator', "
+            f"cx: {lift['cx']:.2f}, cz: {lift['cz']:.2f}, "
+            f"sx: {lift['sx']:.2f}, sy: {lift['sy']:.2f}, sz: {lift['sz']:.2f}, "
+            f"bottomY: {lift['bottom_y']:.2f}, topY: {lift['top_y']:.2f}, "
+            f"speed: {lift['speed']:.2f}, wait: {lift['wait']:.2f}, "
+            f"startsAtTop: {str(lift['starts_at_top']).lower()} }},"
+        )
     out.append('];')
     out.append('')
     out.append('export const PICKUPS = [')
@@ -485,7 +576,7 @@ def main():
     print(f"parsed {len(ents)} entities", file=sys.stderr)
     print(f"static brushes processed: {len(static_brushes)}", file=sys.stderr)
     print(f"skipped: {dict(skipped)}", file=sys.stderr)
-    print(f"emitted: {n_emitted} boxes + {len(tp_engine)} teleporters", file=sys.stderr)
+    print(f"emitted: {n_emitted} boxes + {len(tp_engine)} teleporters + {len(el_engine)} elevators", file=sys.stderr)
     print(f"  {len(all_spawns)} spawns, {len(pickups)} pickups", file=sys.stderr)
     print(f"engine extents: x=[{minX:.1f},{maxX:.1f}] y=[{minY:.1f},{maxY:.1f}] z=[{minZ:.1f},{maxZ:.1f}]", file=sys.stderr)
     print(f"perimeter half={half}, height={perim_h}", file=sys.stderr)

@@ -48,6 +48,7 @@ const BFS_GRID = 0.5;  // metres per BFS cell (tighter than 1m to find narrow le
 // types that produce solids are wired.
 
 const teleporters = [];
+const lifts = [];
 let groundHalf = 50;
 
 for (const e of LAYOUT) {
@@ -89,6 +90,18 @@ for (const e of LAYOUT) {
     }
     case 'teleporter': {
       teleporters.push(e);
+      break;
+    }
+    case 'elevator': {
+      lifts.push(e);
+      // Build the solid box at the TOP position (rest state) so groundHeightAt
+      // sees it where the static .map expects. The runtime animates it; for
+      // BFS we just need the top + bottom Y values + footprint.
+      makeBoxSolid(
+        e.cx - e.sx / 2, e.cx + e.sx / 2,
+        e.topY, e.topY + e.sy,
+        e.cz - e.sz / 2, e.cz + e.sz / 2,
+      );
       break;
     }
     case 'rampTo':
@@ -215,13 +228,14 @@ function unkey(k) {
 }
 
 const visited = new Map();   // key → ground y at that cell
-function walkable(x, z) {
+function walkable(x, z, maxY = 60) {
   // groundHeightAt returns the highest walkable surface at (x,z) within the
-  // probe ceiling. For BFS we just need "is there ground here?" — the
-  // collideCapsule fit-check was too strict (sliver walls between adjacent
-  // brushes routinely eject the centred capsule and a brush-imported map
-  // has those slivers everywhere).
-  return groundHeightAt(x, z, 60, PLAYER_R);
+  // probe ceiling. The BFS uses a TIGHTENED maxY (cur.gy + step + jump) so a
+  // tall obstacle above the current cell — e.g. an elevator at its top
+  // position — doesn't mask the floor below it; the player at the bottom
+  // can't climb 18 m to the lift's top in one move and shouldn't see that
+  // surface from this cell at all.
+  return groundHeightAt(x, z, maxY, PLAYER_R);
 }
 
 // Snap a world point to its BFS cell.
@@ -271,11 +285,18 @@ while (queue.length && bfsSteps < MAX_BFS) {
       const k = cellKey(nx, nz);
       if (visited.has(k)) continue;
       const p = cellPos(nx, nz);
-      const gy = walkable(p.x, p.z);
-      if (gy === null) continue;
-      // Step gate: walk = step-up only (≤ STEP_UP), or jump (≤ STEP_UP +
-      // JUMP_RISE). Drops always allowed (gy − cur.gy can be arbitrarily
-      // negative — gravity handles it).
+      // Two probes per neighbour: a high-clip probe (only catches surfaces
+      // the player can climb to from cur) gives the "step-up / jump-up" path,
+      // and a low probe catches drops onto whatever ground is at this XZ
+      // below the current level. The lower of the two wins as long as it
+      // exists; otherwise the higher.
+      const climbCeil = cur.gy + STEP_UP + JUMP_RISE + 0.05;
+      let gy = walkable(p.x, p.z, climbCeil);
+      if (gy === null) {
+        // No surface within climb reach — try a far-below probe for drops.
+        gy = walkable(p.x, p.z, cur.gy + STEP_UP + 0.05);
+        if (gy === null) continue;
+      }
       if (gy - cur.gy > STEP_UP + JUMP_RISE) continue;
       visited.set(k, gy);
       queue.push({ ix: nx, iz: nz, gy });
@@ -294,6 +315,48 @@ while (queue.length && bfsSteps < MAX_BFS) {
         if (dgy !== null) {
           visited.set(dk, dgy);
           queue.push({ ix: dc.ix, iz: dc.iz, gy: dgy });
+        }
+      }
+    }
+  }
+  // Elevator edges: a player standing on the plate XZ at either endpoint
+  // can ride to the other. Add both directions. Generous footprint margin
+  // (PLAYER_RADIUS) so adjacent cells trigger too — players approach the
+  // plate from beside it, not always landing perfectly on its centre.
+  for (const lift of lifts) {
+    const onPlate = wx >= lift.cx - lift.sx / 2 - PLAYER_R &&
+                    wx <= lift.cx + lift.sx / 2 + PLAYER_R &&
+                    wz >= lift.cz - lift.sz / 2 - PLAYER_R &&
+                    wz <= lift.cz + lift.sz / 2 + PLAYER_R;
+    if (!onPlate) continue;
+    // From any cell whose ground y is roughly the bottom or the top,
+    // expose the other endpoint as reachable at this XZ.
+    const atBottom = Math.abs(cur.gy - lift.bottomY) < 1.5;
+    const atTop    = Math.abs(cur.gy - lift.topY)    < 1.5;
+    if (atBottom) {
+      const k = cellKey(cur.ix, cur.iz);
+      // Add a synthetic visit at top with the elevator's top y if a top
+      // cell sample doesn't already exist.
+      const topSampleX = lift.cx, topSampleZ = lift.cz;
+      const dc = snapCell(topSampleX, topSampleZ);
+      const dk = cellKey(dc.ix, dc.iz);
+      if (!visited.has(dk) || visited.get(dk) < lift.topY - 0.5) {
+        visited.set(dk, lift.topY);
+        queue.push({ ix: dc.ix, iz: dc.iz, gy: lift.topY });
+      }
+    }
+    if (atTop) {
+      const dc = snapCell(lift.cx, lift.cz);
+      const dk = cellKey(dc.ix, dc.iz);
+      if (!visited.has(dk) || Math.abs(visited.get(dk) - lift.bottomY) > 0.5) {
+        // Already at this XZ via the top solid; just inject a low-y twin
+        // so neighbours of this twin pick up the bottom level.
+        // (Use a distinct key by offsetting the iz by 100000 to avoid
+        // overwriting the top-cell entry — separate "level" in the graph.)
+        const twinKey = `${dc.ix},${dc.iz}@b`;
+        if (!visited.has(twinKey)) {
+          visited.set(twinKey, lift.bottomY);
+          queue.push({ ix: dc.ix, iz: dc.iz, gy: lift.bottomY });
         }
       }
     }

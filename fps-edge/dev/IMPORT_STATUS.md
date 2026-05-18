@@ -44,7 +44,7 @@ python3 -m http.server 8000   # from fps-edge/
 Current output: **1132 boxes + 3 teleporters + 12 spawn anchors + 28
 pickups**, map extents 73 × 76 m horizontal × 46 m tall.
 
-### Runtime: teleporter primitive (NEW)
+### Runtime: teleporter primitive
 - `src/teleporters.js` — registers trigger volumes from LAYOUT
   (`{ t: 'teleporter', x0..z1, dx,dy,dz, name }`) at arena-build time;
   `applyTeleport(dt)` runs in the main loop after `updatePlayer(dt)` and
@@ -52,6 +52,29 @@ pickups**, map extents 73 × 76 m horizontal × 46 m tall.
   trigger AABB. 350 ms hysteresis prevents instant re-trigger.
 - Hooked into `src/arena.js` (`case 'teleporter': registerTeleporter(e)`)
   and `src/main.js` (`applyTeleport(dt)`).
+
+### Runtime: elevator primitive (NEW)
+- `src/elevators.js` — registers `func_plat` brushes from LAYOUT
+  (`{ t: 'elevator', cx,cz,sx,sy,sz, bottomY, topY, speed, wait, startsAtTop }`)
+  with a KINEMATIC solid (`solids[].kind = 'box'` whose `minY` / `maxY` /
+  `topY` / plane d-values are mutated each frame) plus a matching THREE.Mesh
+  that follows. State machine: `at_top → falling → at_bottom → rising →
+  at_top`. Triggers:
+  - `playerOnPlate(lift)` — player capsule standing on the moving deck.
+  - `playerCalling(lift)` — player in the plate's XZ but at/below `bottomY`
+    (the Quake "lower trigger field" pattern). When plate is `at_top` and
+    a player is calling, it drops to pick them up.
+- Hooked into `src/arena.js` (`case 'elevator': registerElevator(e)`) and
+  `src/main.js` (`updateElevators(dt)` called BEFORE `updatePlayer` so the
+  player's gravity step sees the moved plate y in the same frame).
+- Importer reads Quake `func_plat` conventions: the brush ALWAYS represents
+  the top (raised) position; `height` keyvalue gives travel distance
+  (default = overall brush AABB height − 8). spawnflags bit 1 only relocates
+  the trigger field, not the rest position. Two lifts extracted:
+  - **RL pit lift** (cx=25.5, cz=-12.9): 4×4 m plate, y=21.75 → y=40.0
+    (18.25 m travel).
+  - Smaller lift (cx=14.5, cz=-15.4): 2×3 m plate, y=28.4 → y=36.0
+    (7.6 m travel).
 
 ### Visualization
 - `dev/mapviz.mjs` still produces useful plan + oblique + elevation SVGs
@@ -108,9 +131,7 @@ SUMMARY: solids=1136  teleporters=3  pickups=28  floating=0  unreachable=15
 
 ## Known gaps (priority order)
 
-1. **Elevators (`func_plat`)** — The Edge has 2 of them; one in the
-   rocket-launcher pit is iconic. Adding an elevator primitive would close
-   most of the remaining reachability gap.
+1. ~~**Elevators (`func_plat`)**~~ — done (see Runtime section above).
 2. **Doorway preservation** — detect Quake wall brushes with carved
    apertures in adjacent brush stacks; ensure the resulting AABB cluster
    leaves a passable gap. Heuristic post-pass on the imported LAYOUT.
