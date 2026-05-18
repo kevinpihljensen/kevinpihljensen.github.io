@@ -26,6 +26,33 @@ Format: newest entries at the top. Each entry lists what was added, what was cha
 
 ## Session log
 
+### 2026-05-18 — fps-edge: stairs walkable, no crouch in water, Jesus-bhop r3 (no prune)
+
+After 1fdfc04 shipped, user reported the clipping prune in that commit
+had removed visible stair / structural brushes. Reverted 1fdfc04
+(commit ee8e874) and re-applied only the three runtime fixes here —
+importer stays at 1116 brushes, no map geometry pruned.
+
+**Stairs walkable** (`src/player.js`) — `STEP_UP` 0.55 → 0.75 m. Walks
+every Edge stairwell without jumps; 1 m+ cover still needs a jump.
+
+**No crouch in water** (`src/player.js`) — `crouchKey` gated by
+`!player.inWater`. Ctrl in water = swim down only; the crouch / airLift
+/ duck-jump path is skipped (kills the hop-on-crouch glitch at the
+water bottom).
+
+**Jesus-bhop r3** (`src/water.js`) — `XZ_BUFFER` 0.3 → 1.5 m, plus
+`Y_BUFFER = 1.0 m` above water top. `feetInWater` now flags anywhere
+within a 1.5 m horizontal shell and up to 1 m above any water volume.
+
+**NOT re-applied**: the redundant-overlap importer prune from 1fdfc04
+that was eating stairs. The 5 mm visual inset (which only affects
+rendered meshes, not collision) stays in place. Clipping count is back
+to ~981 pairs but no visible structural geometry is missing.
+
+Battery: 101/101 engine-pure + EDGE MAP OK; 1116 solids, 0 unreachable,
+0 floating. fps/ unchanged.
+
 ### 2026-05-18 — fps-edge: kill Jesus-bhop properly, darker portals, anti-z-fight visual inset
 
 Three follow-ups from the polish round:
