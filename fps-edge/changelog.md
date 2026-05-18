@@ -26,6 +26,49 @@ Format: newest entries at the top. Each entry lists what was added, what was cha
 
 ## Session log
 
+### 2026-05-18 — fps-edge: stairs walkable, no crouch in water, Jesus-bhop dead, more aggressive clipping prune
+
+Playtest report: Jesus-bhop persisted, crouch at water bottom produced a
+weird hop, stairs needed jumping, clipping still visible.
+
+**Stairs walkable** (`src/player.js`)
+- `STEP_UP` bumped 0.55 → 0.75 m. The importer's slope→stairs produces
+  0.35 m risers and some stair-landing junctions had ~0.6 m discrete
+  steps the player had to jump. 0.75 m clears every Edge stairwell
+  without auto-climbing 1.0 m+ cover crates.
+
+**No crouch in water** (`src/player.js`)
+- `crouchKey` now gated by `!player.inWater`. Ctrl in water means "swim
+  down" only; the crouch / airLift / duck-jump path no longer fires,
+  which was producing a hop-on-crouch glitch at the water bottom (the
+  compressed capsule briefly cleared the floor and the swim branch
+  treated the gap as buoyancy room).
+
+**Jesus-bhop kill (round 3)** (`src/water.js`)
+- Previous round's capsule-overlap test still missed the user's scenario.
+  Widened both buffers:
+  - `XZ_BUFFER` 0.3 → 1.5 m (catches the bank-lip standing case).
+  - `Y_BUFFER` 1.0 m above water top (catches feet just above water
+    surface where capsule still visually overlaps the water mesh).
+- Result: bhop's friction-skip is now denied within a 1.5 m horizontal
+  shell of any water volume, up to 1 m above its surface.
+
+**Clipping: stricter redundant-overlap prune** (`dev/import_edge.py`)
+- Re-added the pickup-protected `supports_pickup()` helper (lost in the
+  03bbedc revert).
+- Old prune dropped only fully-contained same-material brushes (17
+  brushes). New rule: drop the smaller brush when its overlap with a
+  larger same-material brush covers ≥ 55 % of its volume. Pickup-bearing
+  brushes still protected.
+- 65 brushes pruned this run (was 17). Clipping pairs 981 → 853 (-13 %),
+  total interpenetration volume 10,050 → 8,408 m³ (-16 %).
+- Combined with the 5 mm visual inset from the previous round, the
+  remaining clipping is mostly inside-brush interior surface overlap
+  the player never actually faces.
+
+**Battery**: 101/101 engine-pure + EDGE MAP OK; 1073 solids, 0 unreachable,
+0 floating. fps/ unchanged.
+
 ### 2026-05-18 — fps-edge: kill Jesus-bhop properly, darker portals, anti-z-fight visual inset
 
 Three follow-ups from the polish round:

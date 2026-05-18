@@ -268,6 +268,32 @@ def main():
         if e['kv'].get('classname') == 'func_wall':
             static_brushes.extend(e['brushes'])
 
+    # Pre-extract pickup Quake positions — used by the redundant-overlap
+    # prune to keep any brush whose top serves as a pickup landing surface.
+    pickup_q_pts = []
+    for e in ents:
+        cn = e['kv'].get('classname', '')
+        if cn in ('info_player_deathmatch', 'info_player_start',
+                  'item_health', 'weapon_supershotgun', 'weapon_nailgun',
+                  'weapon_supernailgun', 'weapon_lightning'):
+            o = e['kv'].get('origin')
+            if not o: continue
+            try:
+                qx, qy, qz = [float(v) for v in o.split()]
+            except ValueError: continue
+            pickup_q_pts.append((qx, qy, qz))
+
+    def supports_pickup(qmin, qmax):
+        """True if any pickup XZ falls inside this brush's footprint AND
+        the pickup's Quake Z is within ~1 m of the brush's top — i.e. the
+        brush is serving as a pickup landing surface."""
+        for (qx, qy, qz) in pickup_q_pts:
+            if (qmin[0] - 2 <= qx <= qmax[0] + 2 and
+                qmin[1] - 2 <= qy <= qmax[1] + 2 and
+                abs(qz - qmax[2]) <= 32):
+                return True
+        return False
+
     # First pass: parse + categorise all static brushes.
     boxes = []
     water_brushes = []   # NEW: water surfaces (rendered as translucent volumes)
@@ -327,18 +353,19 @@ def main():
             'mat': mat,
         })
 
-    # ── prune fully-contained AABBs of the same material ──
-    # The AABB-from-Quake-brush conversion inflates diagonal brushes; when
-    # several diagonal brushes pile up in the same region, smaller brushes
-    # end up entirely inside a larger one's AABB. Those interior brushes
-    # add nothing visually (the outer brush already covers them) and
-    # contribute to clipping/z-fighting. Drop them.
-    # O(n²) in Python but fast enough for ~1100 boxes.
+    # ── prune redundant overlapping AABBs of the same material ──
+    # AABB-from-Quake conversion inflates diagonal brushes; piles of these
+    # in one region end up mutually overlapping. Same-material overlaps
+    # produce visible z-fight at the interior surfaces (the user-reported
+    # "clipping"). For each pair (larger, smaller) of the same material
+    # where ≥70 % of the smaller brush's volume sits inside the larger,
+    # the smaller adds nothing visible (its surface is mostly behind the
+    # larger's faces) → drop it. Pickup-bearing brushes are still
+    # protected via supports_pickup.
     n_before = len(boxes)
-    sorted_idx = sorted(range(len(boxes)),
-                        key=lambda k: -((boxes[k]['q'][3] - boxes[k]['q'][0]) *
-                                        (boxes[k]['q'][4] - boxes[k]['q'][1]) *
-                                        (boxes[k]['q'][5] - boxes[k]['q'][2])))
+    def box_vol(q):
+        return (q[3] - q[0]) * (q[4] - q[1]) * (q[5] - q[2])
+    sorted_idx = sorted(range(len(boxes)), key=lambda k: -box_vol(boxes[k]['q']))
     keep_mask = [True] * len(boxes)
     for ki in range(len(sorted_idx)):
         i = sorted_idx[ki]
@@ -346,20 +373,27 @@ def main():
         ai = boxes[i]
         amat = ai.get('mat')
         ax0, ay0, az0, ax1, ay1, az1 = ai['q']
-        # Only consider smaller boxes (later in size-sorted order).
         for kj in range(ki + 1, len(sorted_idx)):
             j = sorted_idx[kj]
             if not keep_mask[j]: continue
             bj = boxes[j]
             if bj.get('mat') != amat: continue
             bx0, by0, bz0, bx1, by1, bz1 = bj['q']
-            # B fully inside A?
-            if (bx0 >= ax0 - 1e-3 and bx1 <= ax1 + 1e-3 and
-                by0 >= ay0 - 1e-3 and by1 <= ay1 + 1e-3 and
-                bz0 >= az0 - 1e-3 and bz1 <= az1 + 1e-3):
+            # Pickup protection — keep brushes serving as pickup floors
+            # regardless of overlap.
+            if supports_pickup((bx0, by0, bz0), (bx1, by1, bz1)):
+                continue
+            # Compute overlap volume between A (larger) and B (smaller).
+            ox = min(ax1, bx1) - max(ax0, bx0)
+            oy = min(ay1, by1) - max(ay0, by0)
+            oz = min(az1, bz1) - max(az0, bz0)
+            if ox <= 0 or oy <= 0 or oz <= 0: continue
+            ov = ox * oy * oz
+            bv = box_vol(bj['q'])
+            if bv > 0 and ov / bv >= 0.55:
                 keep_mask[j] = False
     boxes = [boxes[k] for k in range(len(boxes)) if keep_mask[k]]
-    skipped['contained_in_larger'] = n_before - len(boxes)
+    skipped['redundant_overlap'] = n_before - len(boxes)
 
     # ── func_plat (elevator) extraction ──
     # Each func_plat has 1+ brushes; the PLATE is the largest-XZ-area brush

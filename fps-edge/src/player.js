@@ -104,7 +104,11 @@ export function updatePlayer(dt) {
   // the camera eye height and the collision capsule height interpolate with
   // it. While there's no headroom and Ctrl is released the player simply
   // stays crouched (forced, but not latched — it stands the moment it can).
-  const crouchKey = !!keys['ControlLeft'] || !!keys['ControlRight'];
+  // fps-edge: in water, Ctrl means "swim down", NOT crouch. Suppress the
+  // crouch input entirely so the airLift / duck-jump logic doesn't fire
+  // mid-swim — that was producing a hop-on-crouch glitch at the water
+  // bottom where the compressed capsule briefly cleared the floor.
+  const crouchKey = (!!keys['ControlLeft'] || !!keys['ControlRight']) && !player.inWater;
   const standCapsuleH  = EYE_HEIGHT_STAND  + 0.1;   // full standing capsule
   const crouchCapsuleH = EYE_HEIGHT_CROUCH + 0.1;   // fully crouched capsule
 
@@ -397,7 +401,12 @@ export function updatePlayer(dt) {
   }
 
   // Ground support: highest walkable surface at-or-below feet + step-up.
-  const STEP_UP = 0.55;
+  // fps-edge: bumped 0.55 → 0.75. Quake stair risers are 8 u (0.25 m), but
+  // the importer's slope→stairs conversion produces 0.35 m steps and some
+  // imported brushes near stair landings have steeper one-frame drops the
+  // player has to clear. 0.75 m walks every Edge stairwell without jumps
+  // without making low cover crates auto-climbable (most are 1.0 m+).
+  const STEP_UP = 0.75;
   // The collision feet while airborne are the COMPRESSED feet (airLift): a
   // duck-jump lets the tucked feet clear/land on a ledge the standing feet
   // could not. The jump arc itself (position.y) is unchanged; only the hull
