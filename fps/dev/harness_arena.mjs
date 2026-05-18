@@ -96,7 +96,46 @@ ok('CATWALK_HE abuts HILLTOP east edge (x0==HILLTOP.x1)',
   ok('ground under CATWALK_HE is walkable floor (y=0)',
      Math.abs(groundHeightAt(bx,bz,CATWALK_HE.yMin-0.1,R)-0)<1e-6); }
 
-// 6. S55b: every external connector lets the player walk onto its target
+// 6. S55c: no wall body intrudes into a deck volume above it.
+// For every wall whose XZ footprint overlaps a deck (platform), the wall's
+// top Y must NOT exceed the deck's bottom Y (deck.top - deck.thick). If it
+// does, two solid bodies share the same volume → z-fighting / mesh clipping
+// at the deck top, which is what the user reported visually as "the wall
+// in the middle clips with the surface on top".
+{
+  const platforms = LAYOUT.filter((e) => e.t === 'platform').map((e) => {
+    const thick = e.thick == null ? 0.6 : e.thick;
+    return { id: e.id || '?', top: e.top, bot: e.top - thick,
+             x0: e.cx - e.sx / 2, x1: e.cx + e.sx / 2,
+             z0: e.cz - e.sz / 2, z1: e.cz + e.sz / 2 };
+  });
+  const walls = LAYOUT.filter((e) => e.t === 'wall');
+  let clipFails = 0;
+  for (const w of walls) {
+    const t = w.thick == null ? 0.5 : w.thick;
+    const wx0 = w.axis === 'x' ? w.cx - w.length / 2 : w.cx - t / 2;
+    const wx1 = w.axis === 'x' ? w.cx + w.length / 2 : w.cx + t / 2;
+    const wz0 = w.axis === 'z' ? w.cz - w.length / 2 : w.cz - t / 2;
+    const wz1 = w.axis === 'z' ? w.cz + w.length / 2 : w.cz + t / 2;
+    const wyTop = (w.base || 0) + w.height;
+    for (const p of platforms) {
+      const xOv = Math.min(wx1, p.x1) - Math.max(wx0, p.x0);
+      const zOv = Math.min(wz1, p.z1) - Math.max(wz0, p.z0);
+      if (xOv < 0.01 || zOv < 0.01) continue;
+      // Wall fully BELOW the deck bottom → fine (e.g. low cover-wall below an overhang)
+      if (wyTop <= p.bot + 0.001) continue;
+      // Wall fully ABOVE the deck top → fine (parapets sitting on top of the deck)
+      if ((w.base || 0) >= p.top - 0.001) continue;
+      // Otherwise the wall extends INTO the deck volume → clip
+      clipFails++;
+      console.log(`  CLIP  wall axis=${w.axis} @(${w.cx},${w.cz}) base=${w.base||0} top=${wyTop} intrudes ${p.id} deck y=[${p.bot},${p.top}]`);
+    }
+  }
+  ok('no wall body intrudes into any deck volume (S55c clipping check)',
+     clipFails === 0, `${walls.length} walls × ${platforms.length} platforms`);
+}
+
+// 7. S55b: every external connector lets the player walk onto its target
 // deck without being ejected by a wall body sitting in the landing zone.
 // For each connector, sample a point ~0.5m short of the deck edge along the
 // stair surface and verify collideCapsule does not horizontally displace

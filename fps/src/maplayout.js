@@ -99,15 +99,21 @@ export const LAYOUT = [
   // 2nd-floor deck (the upstairs floor / ground-floor ceiling).
   { t: 'platform', id: 'HOUSE_NW_F2', cx: -35, cz: -30, top: 4.0, sx: 14, sz: 14 },
   // Ground-floor walls (base=0, height=4.0) — perimeter of the room.
-  { t: 'wall', axis: 'x', cx: -35, cz: -37, length: 14, height: 4.0, thick: 0.5 },                  // N solid
-  { t: 'wall', axis: 'x', cx: -35, cz: -23, length: 14, height: 4.0, thick: 0.5,
+  // S55c: ground-floor walls run to the DECK BOTTOM (height = deck_top -
+  // thick = 4.0 - 0.6 = 3.4), so the deck rests cleanly on top instead of
+  // overlapping with the wall (the wall-poking-through-the-deck z-fighting).
+  // Stair-landing side gets a high-sill SLIT (not a doorway) so the wall
+  // stays solid at ground level — a doorway here would tempt the player to
+  // walk south, only to bounce off the stair wedge body sitting right
+  // outside. The stair landing on the deck above is unobstructed since the
+  // wall is now below the stair surface; the parapet doorway above does the
+  // rest.
+  { t: 'wall', axis: 'x', cx: -35, cz: -37, length: 14, height: 3.4, thick: 0.5 },                  // N solid
+  { t: 'wall', axis: 'x', cx: -35, cz: -23, length: 14, height: 3.4, thick: 0.5,
     door: { width: 2.4, height: 2.6 } },                                                            // S doorway (faces plaza)
-  // S55b: W wall has a TALL doorway sized to the external staircase that
-  // lands here. Without this the wall body sits in the stair's landing
-  // zone and blocks the player from reaching the 2nd-floor deck.
-  { t: 'wall', axis: 'z', cx: -42, cz: -30, length: 14, height: 4.0, thick: 0.5,
-    door: { width: 5.2, height: 4.0 } },                                                             // W: tall stair-doorway
-  { t: 'wall', axis: 'z', cx: -28, cz: -30, length: 14, height: 4.0, thick: 0.5,
+  { t: 'wall', axis: 'z', cx: -42, cz: -30, length: 14, height: 3.4, thick: 0.5,
+    window: { width: 5.0, height: 0.9, sill: 2.0 } },                                                // W: high-sill slit
+  { t: 'wall', axis: 'z', cx: -28, cz: -30, length: 14, height: 3.4, thick: 0.5,
     window: { width: 2.0, height: 1.2, sill: 1.0 } },                                                // E with window
   // External stairs up to the 2nd-floor deck (lands on the -x edge of HOUSE_NW_F2).
   { t: 'stairsTo', to: 'HOUSE_NW_F2', side: '-x', run: 7, width: 5, fromY: 0, steps: 7 },
@@ -116,8 +122,7 @@ export const LAYOUT = [
     window: { width: 6, height: 0.8, sill: 0.7 } },
   { t: 'wall', axis: 'x', cx: -35, cz: -23, base: 4.0, length: 14, height: 1.6, thick: 0.4,
     window: { width: 6, height: 0.8, sill: 0.7 } },
-  // S55b: W parapet has a doorway aligned with the stair so the player can
-  // walk OFF the stair onto the deck (was solid → blocked the landing).
+  // W parapet doorway lets the player walk OFF the stair onto the deck.
   { t: 'wall', axis: 'z', cx: -42, cz: -30, base: 4.0, length: 14, height: 1.6, thick: 0.4,
     door: { width: 5.2, height: 1.6 } },                                                             // W parapet doorway
   // The +x parapet leaves a doorway-sized gap so the player can drop / hop onto a catwalk
@@ -155,15 +160,16 @@ export const LAYOUT = [
   // =====================================================================
   { t: 'platform', id: 'HOUSE_NE_F2', cx: 40, cz: -42, top: 4.0, sx: 14, sz: 14 },
   // Ground-floor walls. Doorway faces west into the plaza.
-  { t: 'wall', axis: 'x', cx: 40, cz: -49, length: 14, height: 4.0, thick: 0.5 },                   // N solid
-  { t: 'wall', axis: 'x', cx: 40, cz: -35, length: 14, height: 4.0, thick: 0.5,
+  // S55c: walls lowered to deck-bottom height (3.4) so the deck rests on
+  // top without overlapping the wall. Stair-landing side (E) gets a
+  // high-sill slit, not a doorway, to keep the wall solid at ground level.
+  { t: 'wall', axis: 'x', cx: 40, cz: -49, length: 14, height: 3.4, thick: 0.5 },                   // N solid
+  { t: 'wall', axis: 'x', cx: 40, cz: -35, length: 14, height: 3.4, thick: 0.5,
     window: { width: 2.4, height: 1.3, sill: 1.0 } },                                                // S with window
-  { t: 'wall', axis: 'z', cx: 33, cz: -42, length: 14, height: 4.0, thick: 0.5,
-    door: { width: 2.4, height: 2.6 } },                                                             // W doorway
-  // S55b: E wall has a TALL doorway sized to the external staircase that
-  // lands here (was a window; the wall body blocked the stair landing).
-  { t: 'wall', axis: 'z', cx: 47, cz: -42, length: 14, height: 4.0, thick: 0.5,
-    door: { width: 5.2, height: 4.0 } },                                                             // E: tall stair-doorway
+  { t: 'wall', axis: 'z', cx: 33, cz: -42, length: 14, height: 3.4, thick: 0.5,
+    door: { width: 2.4, height: 2.6 } },                                                             // W doorway (entry)
+  { t: 'wall', axis: 'z', cx: 47, cz: -42, length: 14, height: 3.4, thick: 0.5,
+    window: { width: 5.0, height: 0.9, sill: 2.0 } },                                                // E: high-sill slit
   // External stairs to the 2nd-floor deck — lands on the +x edge.
   { t: 'stairsTo', to: 'HOUSE_NE_F2', side: '+x', run: 7, width: 5, fromY: 0, steps: 7 },
   // 2nd-floor parapets — slits on three sides + a doorway on +x where the
@@ -186,16 +192,17 @@ export const LAYOUT = [
   // =====================================================================
   { t: 'platform', id: 'TOWER_NE_TOP', cx: 55, cz: -18, top: 4.5, sx: 10, sz: 10 },
   // Ground-floor walls (height matches the deck base = 4.5).
-  { t: 'wall', axis: 'x', cx: 55, cz: -23, length: 10, height: 4.5, thick: 0.5,
+  // S55c: walls lowered to deck-bottom height (4.5 - 0.6 = 3.9) so the deck
+  // rests on top without overlapping. Stair-landing side (S) is a high-sill
+  // slit, not a doorway — wall stays solid at ground level so the player
+  // can't walk into the ramp wedge body sitting right outside.
+  { t: 'wall', axis: 'x', cx: 55, cz: -23, length: 10, height: 3.9, thick: 0.5,
     window: { width: 1.6, height: 1.0, sill: 1.1 } },                                                // N with window
-  // S55b: S wall has a TALL doorway sized to the external ramp that lands
-  // here (was a window; the wall body blocked the ramp landing).
-  { t: 'wall', axis: 'x', cx: 55, cz: -13, length: 10, height: 4.5, thick: 0.5,
-    door: { width: 5.2, height: 4.5 } },                                                             // S: tall ramp-doorway
-  // W wall: ground-floor entry doorway.
-  { t: 'wall', axis: 'z', cx: 50, cz: -18, length: 10, height: 4.5, thick: 0.5,
-    door: { width: 2.4, height: 2.6 } },                                                             // W doorway
-  { t: 'wall', axis: 'z', cx: 60, cz: -18, length: 10, height: 4.5, thick: 0.5,
+  { t: 'wall', axis: 'x', cx: 55, cz: -13, length: 10, height: 3.9, thick: 0.5,
+    window: { width: 5.0, height: 0.9, sill: 2.4 } },                                                // S: high-sill slit
+  { t: 'wall', axis: 'z', cx: 50, cz: -18, length: 10, height: 3.9, thick: 0.5,
+    door: { width: 2.4, height: 2.6 } },                                                             // W doorway (entry)
+  { t: 'wall', axis: 'z', cx: 60, cz: -18, length: 10, height: 3.9, thick: 0.5,
     window: { width: 1.6, height: 1.0, sill: 1.1 } },                                                // E with window
   // External ramp to the rooftop perch — lands on +z (south) edge of the deck,
   // an open side (no parapet on that side).
@@ -217,24 +224,23 @@ export const LAYOUT = [
   //   roof: walkable solid deck at y=4.0 — the whole 20×12 platform
   // =====================================================================
   { t: 'platform', id: 'WAREHOUSE_ROOF', cx: 45, cz: 8, top: 4.0, sx: 20, sz: 12 },
-  // Outer walls. S55b: S wall has a TALL doorway sized to the external
-  // staircase (was a window; the wall body blocked the stair landing).
-  { t: 'wall', axis: 'x', cx: 45, cz:  2, length: 20, height: 4.0, thick: 0.5,
+  // Outer walls. S55c: lowered to deck-bottom height (3.4) so the deck
+  // rests on top without overlapping the wall (was 4.0, deck top = 4.0 →
+  // wall and deck both occupied y=[3.4, 4.0]). Stair-landing side (S) is a
+  // high-sill slit, not a doorway, so the wall stays solid at ground level.
+  { t: 'wall', axis: 'x', cx: 45, cz:  2, length: 20, height: 3.4, thick: 0.5,
     window: { width: 3.0, height: 1.2, sill: 1.1 } },                                                // N (faces plaza)
-  { t: 'wall', axis: 'x', cx: 45, cz: 14, length: 20, height: 4.0, thick: 0.5,
-    door: { width: 5.2, height: 4.0 } },                                                             // S: tall stair-doorway
-  { t: 'wall', axis: 'z', cx: 35, cz:  8, length: 12, height: 4.0, thick: 0.5,
+  { t: 'wall', axis: 'x', cx: 45, cz: 14, length: 20, height: 3.4, thick: 0.5,
+    window: { width: 5.0, height: 0.9, sill: 2.0 } },                                                // S: high-sill slit
+  { t: 'wall', axis: 'z', cx: 35, cz:  8, length: 12, height: 3.4, thick: 0.5,
     door: { width: 2.6, height: 2.8 } },                                                             // W doorway (entry)
-  { t: 'wall', axis: 'z', cx: 55, cz:  8, length: 12, height: 4.0, thick: 0.5,
+  { t: 'wall', axis: 'z', cx: 55, cz:  8, length: 12, height: 3.4, thick: 0.5,
     window: { width: 2.4, height: 1.2, sill: 1.1 } },                                                // E
-  // Interior partition wall (axis=x, splits the building N/S at cz=8) with one doorway.
-  // Wait — interior splitting a 20×12 building (sx=20 sz=12, cz=8 center) would run along
-  // x at some inner z. But sz=12 means z extent is [2,14]. An x-axis wall at cz=8 cuts the
-  // building E-W; instead, what we want is a z-axis wall at some cx that splits the building
-  // into a west room and east room. Put it at cx=45 (center) with axis='x'? No — axis='x'
-  // means the wall runs along X.
-  // For splitting into west/east halves we need a wall running along Z (axis='z'), at cx=45.
-  { t: 'wall', axis: 'z', cx: 45, cz: 8, length: 12, height: 4.0, thick: 0.4,
+  // Interior partition wall — runs along Z (axis='z') at cx=45, splitting the
+  // 20×12 warehouse into a west room (entry) and east room (loot stash) with
+  // a doorway in the middle. Also lowered to deck-bottom height so the
+  // partition meets the deck cleanly without poking through.
+  { t: 'wall', axis: 'z', cx: 45, cz: 8, length: 12, height: 3.4, thick: 0.4,
     door: { width: 2.2, height: 2.6 } },                                                             // interior partition with doorway
   // Roof parapets — S side has a doorway aligned with the stair landing so
   // the player can walk OFF the stair onto the roof (was a window → blocked).
