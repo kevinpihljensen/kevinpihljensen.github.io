@@ -279,40 +279,46 @@ function render(camX, camY, camZ, lookX, lookY, lookZ, name) {
   writeFileSync(`${__DIR}/${name}.ppm`, Buffer.concat([Buffer.from(header, 'ascii'), buf]));
 }
 
-// --- CAMERA POSES --------------------------------------------------------
-// Eye height = 1.6 (matches player.js).
+// --- CAMERA POSES (fps-edge) -------------------------------------------
+// All poses derived from imported entity positions. Eye height = 1.6 (player.js).
 const EYE = 1.6;
-// SPAWN cardinal views.
-render(SPAWN.x, EYE, SPAWN.z,  SPAWN.x +  0, EYE - 0.2, SPAWN.z - 50, 'fps_spawn_N');
-render(SPAWN.x, EYE, SPAWN.z,  SPAWN.x + 50, EYE - 0.2, SPAWN.z +  0, 'fps_spawn_E');
-render(SPAWN.x, EYE, SPAWN.z,  SPAWN.x +  0, EYE - 0.2, SPAWN.z + 50, 'fps_spawn_S');
-render(SPAWN.x, EYE, SPAWN.z,  SPAWN.x - 50, EYE - 0.2, SPAWN.z +  0, 'fps_spawn_W');
+const SPAWN_Y = SPAWN.y == null ? 0 : SPAWN.y;   // spawn deck y (alcove floor)
 
-// Approach views: outside each building's main entry, looking at the entry.
-// (Standing 4m short of the doorway at eye height.)
-render(-35, EYE, -19, -35, EYE, -23, 'fps_outside_HOUSE_NW');           // facing N at S entry
-render( 33 - 4, EYE, -42, 33, EYE, -42, 'fps_outside_HOUSE_NE');         // facing E at W entry
-render( 50 - 4, EYE, -18, 50, EYE, -18, 'fps_outside_TOWER_NE');         // facing E at W entry
-render( 35 - 4, EYE,  8,  35, EYE,  8,  'fps_outside_WAREHOUSE');        // facing E at W entry
-// S55f arena additions.
-render(-35, EYE,  19, -35, EYE,  23, 'fps_outside_HOUSE_SW');           // facing S at N entry
-render( 29 - 4, EYE,  30, 29, EYE,  30, 'fps_outside_HOUSE_SE');         // facing E at W entry
+// SPAWN cardinal views — looking 30 m out in each direction at slight downward tilt.
+render(SPAWN.x, SPAWN_Y + EYE, SPAWN.z,  SPAWN.x +  0, SPAWN_Y + EYE - 1, SPAWN.z - 30, 'fps_spawn_N');
+render(SPAWN.x, SPAWN_Y + EYE, SPAWN.z,  SPAWN.x + 30, SPAWN_Y + EYE - 1, SPAWN.z +  0, 'fps_spawn_E');
+render(SPAWN.x, SPAWN_Y + EYE, SPAWN.z,  SPAWN.x +  0, SPAWN_Y + EYE - 1, SPAWN.z + 30, 'fps_spawn_S');
+render(SPAWN.x, SPAWN_Y + EYE, SPAWN.z,  SPAWN.x - 30, SPAWN_Y + EYE - 1, SPAWN.z +  0, 'fps_spawn_W');
 
-// Stair landing views: from the stair foot looking up at the deck edge.
-render( 45, EYE,  21, 45, EYE + 4,  14, 'fps_stair_up_WAREHOUSE');       // looking N + up
-render(-49, EYE, -30,-42, EYE + 4, -30, 'fps_stair_up_HOUSE_NW');        // looking E + up
-render( 54, EYE, -42, 47, EYE + 4, -42, 'fps_stair_up_HOUSE_NE');        // looking W + up
+// Iconic Edge landmarks (engine coords from import_edge.py output):
+//
+//   RL pit lift  cx=25.5,  cz=-12.9   bottom y=21.75  top y=40.0
+//   small lift   cx=14.5,  cz=-15.4   bottom y=28.4   top y=36.0
+//   sniper       (-21.0, 30.9, 22.0)
+//   shotgun A    (18.5, 14.1, 28.5)
+//   shotgun B    (5.5, -0.9, 18.3)
+//   nailgun A    (24.5, 16.1, 18.3)
+//   nailgun B    (12.0,  9.0,  5.7)    // SSG-like position
+//   SNG          (-1.5, 24.0, -40.5)
+//   LG (sniper map) (7.5, 14.0, 11.8)
+//
+// Look from courtyard floor up at the RL pit lift (one of The Edge's iconic
+// vertical sightlines).
+render(25.5, 22 + EYE, -8, 25.5, 22 + EYE * 2, -12.9, 'fps_lift_RL_from_below');
+// Standing on top of the RL platform looking back at the lift.
+render(25.5, 40 + EYE, -8, 25.5, 40 + EYE - 0.4, -12.9, 'fps_lift_RL_at_top');
+// Looking at the smaller lift from below.
+render(14.5, 28 + EYE, -19, 14.5, 28 + EYE * 1.5, -15.4, 'fps_lift_small_from_below');
 
-// On-roof views: standing on the deck near a pickup, looking around.
-render( 45, 4 + EYE,  6,  45, 4 + EYE - 0.2, 14, 'fps_roof_WAREHOUSE_at_shotgun');
-render(  0, 6 + EYE, -48,  0, 6 + EYE - 0.2, -57, 'fps_roof_HILLTOP_at_saw');
-render( 55, 4.5 + EYE, -14, 55, 4.5 + EYE - 0.2, -23, 'fps_roof_TOWER_NE_at_sniper');
-// S55f arena additions: SOUTH_BASTION perch + CENTRAL_ALTAR (sniper).
-render(  0, 5 + EYE,  47,   0, 5 + EYE - 0.2,  37, 'fps_roof_SOUTH_BASTION');
-render(  0, 2.5 + EYE, -12, 0, 2.5 + EYE - 0.2, -50, 'fps_altar_looking_HILLTOP'); // exposed shot at HILLTOP
-render(  0, EYE,  0,   0, EYE - 0.1, -12, 'fps_spawn_at_altar');         // spawn looking at altar (north)
+// Sightline from the sniper pickup looking down into the courtyard (classic
+// Edge sniper perch).
+render(-21, 22 + EYE, 30.9, 0, 22 + EYE - 4, 0, 'fps_sniper_perch_overlook');
 
-// Interior view: inside the WAREHOUSE west room, looking east at the partition.
-render( 38, EYE, 8, 55, EYE, 8, 'fps_inside_WAREHOUSE_W_room');
+// Teleporter trigger fps view — looking at the water section.
+render(7.8, 14 + EYE, 17.5, 7.8, 14 + EYE - 0.5, 14, 'fps_teleporter_water');
+
+// Overview from a high external vantage so the whole map's relative
+// elevations read in one frame.
+render(-35, 50, -35, 0, 15, 0, 'fps_overview_NW_high');
 
 console.log(`[wrote ${__DIR}/fps_*.ppm — convert with render-map.sh]`);

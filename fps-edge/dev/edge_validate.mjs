@@ -220,11 +220,17 @@ issues += tpIssues;
 log('');
 log('--- reachability from spawn (step-up + teleporter aware) ---');
 
-function cellKey(ix, iz) { return `${ix},${iz}`; }
+// Cell keys include a quantised Y bucket (BFS_Y) so the same (ix,iz) at two
+// different heights becomes two BFS nodes — The Edge has stacked corridors
+// where lower and upper rooms share the same footprint, and a single-level
+// BFS conflates them.
+const BFS_Y = 2.0;
+function yBucket(y) { return Math.round(y / BFS_Y); }
+function cellKey(ix, iz, iy) { return `${ix},${iz},${iy}`; }
 function cellPos(ix, iz) { return { x: ix * BFS_GRID, z: iz * BFS_GRID }; }
 function unkey(k) {
-  const i = k.indexOf(',');
-  return [parseInt(k.slice(0, i), 10), parseInt(k.slice(i + 1), 10)];
+  const parts = k.split(',');
+  return [parseInt(parts[0], 10), parseInt(parts[1], 10), parseInt(parts[2], 10)];
 }
 
 const visited = new Map();   // key → ground y at that cell
@@ -253,14 +259,13 @@ const seeds = [{ x: SPAWN.x, z: SPAWN.z, id: 'SPAWN' },
 let seededCells = 0;
 for (const s of seeds) {
   const c0 = snapCell(s.x, s.z);
-  const k0 = cellKey(c0.ix, c0.iz);
-  if (visited.has(k0)) continue;
   const gy0 = walkable(c0.ix * BFS_GRID, c0.iz * BFS_GRID);
-  if (gy0 !== null) {
-    visited.set(k0, gy0);
-    queue.push({ ix: c0.ix, iz: c0.iz, gy: gy0 });
-    seededCells++;
-  }
+  if (gy0 === null) continue;
+  const k0 = cellKey(c0.ix, c0.iz, yBucket(gy0));
+  if (visited.has(k0)) continue;
+  visited.set(k0, gy0);
+  queue.push({ ix: c0.ix, iz: c0.iz, gy: gy0 });
+  seededCells++;
 }
 log(`  seeded BFS from ${seededCells} spawn anchor(s)`);
 if (seededCells === 0) {
@@ -282,24 +287,22 @@ while (queue.length && bfsSteps < MAX_BFS) {
     for (let dx = -1; dx <= 1; dx++) {
       if (dx === 0 && dz === 0) continue;
       const nx = cur.ix + dx, nz = cur.iz + dz;
-      const k = cellKey(nx, nz);
-      if (visited.has(k)) continue;
       const p = cellPos(nx, nz);
-      // Two probes per neighbour: a high-clip probe (only catches surfaces
-      // the player can climb to from cur) gives the "step-up / jump-up" path,
-      // and a low probe catches drops onto whatever ground is at this XZ
-      // below the current level. The lower of the two wins as long as it
-      // exists; otherwise the higher.
+      // Two probes per neighbour: a CLIMB probe catches surfaces reachable
+      // by step-up + jump; a DROP probe catches the floor directly below
+      // current. Both are tested so the player can either climb to a higher
+      // platform or fall off a ledge from one cell to the next.
       const climbCeil = cur.gy + STEP_UP + JUMP_RISE + 0.05;
-      let gy = walkable(p.x, p.z, climbCeil);
-      if (gy === null) {
-        // No surface within climb reach — try a far-below probe for drops.
-        gy = walkable(p.x, p.z, cur.gy + STEP_UP + 0.05);
+      const climbGy = walkable(p.x, p.z, climbCeil);
+      const dropGy  = walkable(p.x, p.z, cur.gy + STEP_UP + 0.05);
+      for (const gy of [climbGy, dropGy]) {
         if (gy === null) continue;
+        if (gy - cur.gy > STEP_UP + JUMP_RISE) continue;
+        const k = cellKey(nx, nz, yBucket(gy));
+        if (visited.has(k)) continue;
+        visited.set(k, gy);
+        queue.push({ ix: nx, iz: nz, gy });
       }
-      if (gy - cur.gy > STEP_UP + JUMP_RISE) continue;
-      visited.set(k, gy);
-      queue.push({ ix: nx, iz: nz, gy });
     }
   }
   // Teleporter edges: if cur cell is inside any trigger volume, jump to dest.
@@ -309,9 +312,9 @@ while (queue.length && bfsSteps < MAX_BFS) {
         wz >= t.z0 - 0.5 && wz <= t.z1 + 0.5 &&
         cur.gy + 1.0 >= t.y0 && cur.gy <= t.y1) {
       const dc = snapCell(t.dx, t.dz);
-      const dk = cellKey(dc.ix, dc.iz);
+      const dk = cellKey(dc.ix, dc.iz, yBucket(t.dy));
       if (!visited.has(dk)) {
-        const dgy = walkable(dc.ix * BFS_GRID, dc.iz * BFS_GRID);
+        const dgy = walkable(dc.ix * BFS_GRID, dc.iz * BFS_GRID, t.dy + STEP_UP + 0.5);
         if (dgy !== null) {
           visited.set(dk, dgy);
           queue.push({ ix: dc.ix, iz: dc.iz, gy: dgy });
@@ -320,44 +323,22 @@ while (queue.length && bfsSteps < MAX_BFS) {
     }
   }
   // Elevator edges: a player standing on the plate XZ at either endpoint
-  // can ride to the other. Add both directions. Generous footprint margin
-  // (PLAYER_RADIUS) so adjacent cells trigger too — players approach the
-  // plate from beside it, not always landing perfectly on its centre.
+  // can ride to the other.
   for (const lift of lifts) {
     const onPlate = wx >= lift.cx - lift.sx / 2 - PLAYER_R &&
                     wx <= lift.cx + lift.sx / 2 + PLAYER_R &&
                     wz >= lift.cz - lift.sz / 2 - PLAYER_R &&
                     wz <= lift.cz + lift.sz / 2 + PLAYER_R;
     if (!onPlate) continue;
-    // From any cell whose ground y is roughly the bottom or the top,
-    // expose the other endpoint as reachable at this XZ.
     const atBottom = Math.abs(cur.gy - lift.bottomY) < 1.5;
     const atTop    = Math.abs(cur.gy - lift.topY)    < 1.5;
-    if (atBottom) {
-      const k = cellKey(cur.ix, cur.iz);
-      // Add a synthetic visit at top with the elevator's top y if a top
-      // cell sample doesn't already exist.
-      const topSampleX = lift.cx, topSampleZ = lift.cz;
-      const dc = snapCell(topSampleX, topSampleZ);
-      const dk = cellKey(dc.ix, dc.iz);
-      if (!visited.has(dk) || visited.get(dk) < lift.topY - 0.5) {
-        visited.set(dk, lift.topY);
-        queue.push({ ix: dc.ix, iz: dc.iz, gy: lift.topY });
-      }
-    }
-    if (atTop) {
+    if (atBottom || atTop) {
+      const dy = atBottom ? lift.topY : lift.bottomY;
       const dc = snapCell(lift.cx, lift.cz);
-      const dk = cellKey(dc.ix, dc.iz);
-      if (!visited.has(dk) || Math.abs(visited.get(dk) - lift.bottomY) > 0.5) {
-        // Already at this XZ via the top solid; just inject a low-y twin
-        // so neighbours of this twin pick up the bottom level.
-        // (Use a distinct key by offsetting the iz by 100000 to avoid
-        // overwriting the top-cell entry — separate "level" in the graph.)
-        const twinKey = `${dc.ix},${dc.iz}@b`;
-        if (!visited.has(twinKey)) {
-          visited.set(twinKey, lift.bottomY);
-          queue.push({ ix: dc.ix, iz: dc.iz, gy: lift.bottomY });
-        }
+      const dk = cellKey(dc.ix, dc.iz, yBucket(dy));
+      if (!visited.has(dk)) {
+        visited.set(dk, dy);
+        queue.push({ ix: dc.ix, iz: dc.iz, gy: dy });
       }
     }
   }
@@ -366,7 +347,7 @@ while (queue.length && bfsSteps < MAX_BFS) {
 // Diagnostic: bounds of visited region.
 let vminX = Infinity, vmaxX = -Infinity, vminZ = Infinity, vmaxZ = -Infinity, vminY = Infinity, vmaxY = -Infinity;
 for (const [k, gy] of visited) {
-  const [ix, iz] = unkey(k);
+  const [ix, iz, _iy] = unkey(k);
   const x = ix * BFS_GRID, z = iz * BFS_GRID;
   if (x < vminX) vminX = x; if (x > vmaxX) vmaxX = x;
   if (z < vminZ) vminZ = z; if (z > vmaxZ) vmaxZ = z;
@@ -375,18 +356,23 @@ for (const [k, gy] of visited) {
 log(`  visited ${visited.size} cells in ${bfsSteps} steps`);
 log(`  visited region: x=[${vminX.toFixed(1)},${vmaxX.toFixed(1)}] z=[${vminZ.toFixed(1)},${vmaxZ.toFixed(1)}] y=[${vminY.toFixed(1)},${vmaxY.toFixed(1)}]`);
 
-// Per-pickup reachability.
+// Per-pickup reachability. With multi-y cells we search visited keys that
+// share (ix,iz) with the pickup (within a 1-cell halo) AND whose stored y
+// is within 1.5 m of the pickup's y.
 let unreachable = 0;
 for (const p of PICKUPS) {
-  // Try the pickup's cell plus immediate neighbours.
   const c = snapCell(p.x, p.z);
   let reached = false;
-  for (let dz = -1; dz <= 1 && !reached; dz++) {
-    for (let dx = -1; dx <= 1 && !reached; dx++) {
-      if (visited.has(cellKey(c.ix + dx, c.iz + dz))) {
-        const gy = visited.get(cellKey(c.ix + dx, c.iz + dz));
-        // Pickup must be within reach in Y too (1.5 m of the cell ground).
-        if (Math.abs(gy - p.y) < 1.5) reached = true;
+  outer:
+  for (let dz = -1; dz <= 1; dz++) {
+    for (let dx = -1; dx <= 1; dx++) {
+      // Scan a y bucket window of ±1 around the pickup's y.
+      for (let dy = -1; dy <= 1; dy++) {
+        const k = cellKey(c.ix + dx, c.iz + dz, yBucket(p.y) + dy);
+        if (visited.has(k)) {
+          const gy = visited.get(k);
+          if (Math.abs(gy - p.y) < 1.5) { reached = true; break outer; }
+        }
       }
     }
   }

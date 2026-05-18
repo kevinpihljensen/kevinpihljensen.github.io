@@ -26,6 +26,39 @@ Format: newest entries at the top. Each entry lists what was added, what was cha
 
 ## Session log
 
+### 2026-05-18 — fps-edge: multi-y BFS, fps-render Edge poses → ALL GREEN
+
+After landing elevators, the validator still flagged 16 pickups as unreachable.
+Root cause was the validator, not the geometry: cells were keyed by `(ix,iz)`
+so when The Edge's stacked corridors share an XZ footprint at multiple
+floors, only one floor was tracked. Multi-y BFS resolves it.
+
+**Validator (`dev/edge_validate.mjs`)**
+- Cell key now includes a `yBucket(y)` (2 m buckets) → `${ix},${iz},${iy}`
+  string. The seed loop, neighbour expansion, teleporter edges, and
+  elevator edges all use the new key.
+- Neighbour expansion runs TWO probes per cell: a CLIMB probe (max y =
+  `cur.gy + STEP_UP + JUMP_RISE + 0.05`) catches "step / jump up" paths;
+  a DROP probe (max y = `cur.gy + STEP_UP + 0.05`) catches the floor
+  beneath, so falling off a ledge works.
+- Per-pickup reachability now searches a 3×3 XZ × 3 y-bucket window.
+- Teleporter dest probe uses a tightened ceiling so the destination's
+  surface (not whatever's overhead) is found.
+
+**Verified**: 48,957 BFS cells visited (was 16,669). All 28 pickups
+reachable from at least one spawn anchor. Battery ends `ALL GREEN`.
+
+**fps-render Edge poses (`dev/fps-render.mjs`)**
+- Spawn cardinals now use `SPAWN.y` (was hard-coded to 0).
+- Added Edge-specific poses: `fps_lift_RL_from_below`, `fps_lift_RL_at_top`,
+  `fps_lift_small_from_below`, `fps_sniper_perch_overlook`,
+  `fps_teleporter_water`, `fps_overview_NW_high`. Old fps/ poses (`HOUSE_NW`,
+  `HILLTOP`, etc.) removed since those landmarks don't exist in the Edge map.
+- Variable rename: `SY` (sun normal Y) was getting shadowed by a new spawn
+  `SY` — renamed the spawn local to `SPAWN_Y`.
+
+**fps/ unchanged**: zero line diff.
+
 ### 2026-05-18 — fps-edge elevators (func_plat) landed
 
 Top item on IMPORT_STATUS.md's next-step list. The Edge has two `func_plat`

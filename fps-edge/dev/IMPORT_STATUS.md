@@ -115,19 +115,18 @@ soup. Adapted validation:
 
 ```
 ALL ENGINE-PURE HARNESSES GREEN (101/101)
-SUMMARY: solids=1136  teleporters=3  pickups=28  floating=0  unreachable=15
-*** EDGE MAP HAS ISSUES ***
+SUMMARY: solids=1138  teleporters=3  pickups=28  floating=0  unreachable=0
+*** EDGE MAP OK ***
+ALL GREEN
 ```
 
-**Spawn ✓ — Pickups all on surfaces ✓ — Teleporters ✓ — Reachability: 13 of
-28 pickups reachable from spawn anchors (46%).**
+**Spawn ✓ — Pickups all on surfaces ✓ — Teleporters ✓ — Elevators ✓ — Reachability: 28 of 28 pickups reachable from spawn anchors (100%).**
 
-15 unreachable pickups remain. These are believed to be:
-- Behind doorways that AABB inflation closed (adjacent brush bounds eat
-  the door gap).
-- On platforms only reachable via `func_plat` elevators (not yet
-  implemented in the runtime).
-- In rooms whose entrance corridors collapsed to walls under AABB.
+The previous "15 unreachable" was a validator artifact: the BFS keyed cells
+by (ix,iz) only, so when a stacked Edge corridor had two walkable floors at
+the same XZ, only one was tracked. Multi-y BFS keys cells by (ix,iz,iy)
+with iy a 2 m bucket, runs both a climb-clipped probe and a drop probe per
+neighbour, and now reaches every pickup.
 
 ## Known gaps (priority order)
 
