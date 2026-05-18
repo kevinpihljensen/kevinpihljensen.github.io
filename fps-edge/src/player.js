@@ -207,14 +207,13 @@ export function updatePlayer(dt) {
   const jumpInput = game.bhopEnabled ? spaceDown : (spaceDown && !spacePrev);
   spacePrev = spaceDown;
   // fps-edge: in water, Space/Ctrl produce continuous up/down velocity;
-  // ground-anchored jumping is disabled. Handled in the water-physics
-  // branch in the vertical step below.
-  if (!player.inWater) {
-    const willJump = player.isGrounded && jumpInput;
-    if (willJump) {
-      player.velocityY = JUMP_VELOCITY;
-      player.isGrounded = false;
-    }
+  // ground-anchored jumping is disabled. willJump stays declared in this
+  // outer scope (the friction-skip block farther down references it) — we
+  // just never set it true in water.
+  const willJump = player.isGrounded && jumpInput && !player.inWater;
+  if (willJump) {
+    player.velocityY = JUMP_VELOCITY;
+    player.isGrounded = false;
   }
 
   // --- GROUND FRICTION ---
