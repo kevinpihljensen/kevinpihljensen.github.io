@@ -1,0 +1,15 @@
+# Optional one-file bundle produced by `node build-singlefile.mjs`.
+# Not used by GitHub Pages, not required to run the game, regenerated on
+# demand for file:// runs.
+fps-standalone.html
+
+# mapviz + fps-render generated artifacts (write to dev/ when run from
+# there). S55d adds elevation cross-section SVGs + PNG renders via
+# render-map.sh; S55e adds first-person raytraced PPM/PNGs.
+dev/map_report.txt
+dev/map_plan_*.svg
+dev/map_oblique.svg
+dev/map_elev_*.svg
+dev/map_*.png
+dev/fps_*.ppm
+dev/fps_*.png
