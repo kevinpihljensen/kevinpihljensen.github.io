@@ -360,6 +360,15 @@ export function updatePlayer(dt) {
     const damp = 1 - Math.exp(-WATER_VY_DAMP * dt);
     player.velocityY += (targetVy - player.velocityY) * damp;
     player.velocityY -= (WATER_GRAVITY - WATER_BUOYANCY) * dt;
+    // Surface-jump pop: when the player's head is at/above the water
+    // surface AND they're holding Space, hit them with a real JUMP_VELOCITY
+    // kick so they clear the bank lip. Without this the gentle 3.6 m/s
+    // swim-up can't climb out of a typical Quake water pit — you just bob
+    // at the surface forever.
+    const headY = player.position.y + EYE_HEIGHT_STAND;
+    if (jumpInput && !ctrlDown && headY >= player.waterTop - 0.25) {
+      if (player.velocityY < JUMP_VELOCITY) player.velocityY = JUMP_VELOCITY;
+    }
     // Horizontal drag — exponential decay.
     const hDamp = 1 - Math.exp(-WATER_DRAG * dt);
     player.velocityX -= player.velocityX * hDamp;
