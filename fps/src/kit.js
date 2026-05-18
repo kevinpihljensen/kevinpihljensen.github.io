@@ -42,20 +42,39 @@
 import * as THREE from 'three';
 import { scene } from './scene.js';
 import { makeBoxSolid, makeRampSolid, shootables, clamp } from './collision.js';
-import { makeFloorTexture } from './textures.js';
+import { makeFloorTexture, makeBrickTexture, makeWoodTexture,
+         makeConcreteTexture, makeMetalTexture } from './textures.js';
 
 // --- MATERIALS (shared; DoubleSide on structure so a winding mistake can
 // never read as see-through — the user requires structure be opaque) ---
+// S55: textured materials instead of flat colors. Each texture's repeat is
+// tuned for the typical surface size where the material lands. Walls vary
+// in length (4–20 m, plus 160 m perimeter), so the wall texture repeat is a
+// trade-off — set so a typical 12 m building wall reads with ~4 brick rows
+// across. The perimeter walls accept the tiling pattern.
 const floorTex = makeFloorTexture();
-floorTex.repeat.set(10, 10);
+floorTex.repeat.set(20, 20);                  // 160m ground / 8m per tile
+const brickTex = makeBrickTexture();
+brickTex.repeat.set(2, 1);                    // a couple of repeats across a typical wall
+const woodTex = makeWoodTexture();
+woodTex.repeat.set(1, 1);                     // crates are small — one tile reads
+const concreteTex = makeConcreteTexture();
+concreteTex.repeat.set(3, 3);
+const concreteRampTex = makeConcreteTexture();
+concreteRampTex.repeat.set(2, 2);
+const metalTex = makeMetalTexture();
+metalTex.repeat.set(2, 2);
+const overhangTex = makeConcreteTexture();
+overhangTex.repeat.set(2, 2);
+
 const MAT = {
-  floor:   new THREE.MeshStandardMaterial({ map: floorTex, roughness: 0.92, metalness: 0.05, side: THREE.DoubleSide }),
-  deck:    new THREE.MeshStandardMaterial({ color: 0x5b6470, roughness: 0.85, metalness: 0.12, side: THREE.DoubleSide }),
-  ramp:    new THREE.MeshStandardMaterial({ color: 0x4a4f57, roughness: 0.85, metalness: 0.18, side: THREE.DoubleSide }),
-  stair:   new THREE.MeshStandardMaterial({ color: 0x515761, roughness: 0.88, metalness: 0.15, side: THREE.DoubleSide }),
-  box:     new THREE.MeshStandardMaterial({ color: 0x6a5a44, roughness: 0.80, metalness: 0.10, side: THREE.DoubleSide }),
-  wall:    new THREE.MeshStandardMaterial({ color: 0x3a3f47, roughness: 0.80, metalness: 0.20, side: THREE.DoubleSide }),
-  overhang:new THREE.MeshStandardMaterial({ color: 0x4f545d, roughness: 0.85, metalness: 0.18, side: THREE.DoubleSide }),
+  floor:   new THREE.MeshStandardMaterial({ map: floorTex,    roughness: 0.92, metalness: 0.05, side: THREE.DoubleSide }),
+  deck:    new THREE.MeshStandardMaterial({ map: concreteTex, color: 0xb5b8bd, roughness: 0.85, metalness: 0.12, side: THREE.DoubleSide }),
+  ramp:    new THREE.MeshStandardMaterial({ map: concreteRampTex, color: 0xa2a6ac, roughness: 0.85, metalness: 0.18, side: THREE.DoubleSide }),
+  stair:   new THREE.MeshStandardMaterial({ map: metalTex,    color: 0x9aa1ac, roughness: 0.65, metalness: 0.40, side: THREE.DoubleSide }),
+  box:     new THREE.MeshStandardMaterial({ map: woodTex,     color: 0xc7b290, roughness: 0.80, metalness: 0.05, side: THREE.DoubleSide }),
+  wall:    new THREE.MeshStandardMaterial({ map: brickTex,    color: 0xd0c8bd, roughness: 0.85, metalness: 0.08, side: THREE.DoubleSide }),
+  overhang:new THREE.MeshStandardMaterial({ map: overhangTex, color: 0xa0a4aa, roughness: 0.85, metalness: 0.18, side: THREE.DoubleSide }),
 };
 
 function addMesh(geo, mat, castShadow) {
@@ -162,7 +181,9 @@ export function labeledBox({ cx, cz, base = 0, sx, sy, sz, label }) {
 // with and shoot, and the opening has NO mesh so bullets/vision pass.
 export function solidBox({ x0, x1, y0, y1, z0, z1 }, kind = 'wall') {
   if (x1 - x0 <= 1e-4 || y1 - y0 <= 1e-4 || z1 - z0 <= 1e-4) return;
-  makeBoxSolid(x0, x1, y0, y1, z0, z1);
+  // S55: wall-style solids are not walkable (see kit.wall comment).
+  const opts = kind === 'wall' ? { noWalk: true } : undefined;
+  makeBoxSolid(x0, x1, y0, y1, z0, z1, opts);
   const mat = MAT[kind] || MAT.wall;
   const m = new THREE.Mesh(new THREE.BoxGeometry(x1 - x0, y1 - y0, z1 - z0), mat);
   m.position.set((x0 + x1) / 2, (y0 + y1) / 2, (z0 + z1) / 2);
@@ -177,7 +198,11 @@ export function wall({ cx, cz, base = 0, length, height, thick = 0.5, axis = 'x'
   let x0, x1, z0, z1;
   if (axis === 'x') { x0 = cx - length / 2; x1 = cx + length / 2; z0 = cz - thick / 2; z1 = cz + thick / 2; }
   else              { z0 = cz - length / 2; z1 = cz + length / 2; x0 = cx - thick / 2; x1 = cx + thick / 2; }
-  makeBoxSolid(x0, x1, base, base + height, z0, z1);
+  // S55: walls are NOT walkable. A 0.5 m-thick beam shouldn't read as a
+  // walkable ledge — without this, a stair/ramp seam landing next to a wall
+  // (e.g. an external staircase passing the building wall) would pick up the
+  // wall top as the surface and the connector-seam check would fail.
+  makeBoxSolid(x0, x1, base, base + height, z0, z1, { noWalk: true });
   const m = new THREE.Mesh(new THREE.BoxGeometry(x1 - x0, height, z1 - z0), MAT.wall);
   m.position.set((x0 + x1) / 2, base + height / 2, (z0 + z1) / 2);
   m.castShadow = true; m.receiveShadow = true;

@@ -1,6 +1,7 @@
 // main.js — entry point. Imports register all side effects (scene, arena,
 // input listeners), then we set the initial state and start the render loop.
 
+import * as THREE from 'three';
 import { renderer, scene, camera, clock } from './scene.js';
 import { state, game } from './state.js';
 import { GAME_STATE, MAX_DT, LAYER_WORLD, LAYER_VIEWMODEL } from './constants.js';
@@ -15,9 +16,14 @@ import { updateDecals, updateBlood } from './decals.js';
 import { updatePickups } from './pickups.js';
 import { updateWave } from './wave.js';
 import { setGameState, updateHUD, updateToast } from './hud.js';
+import { updateAudioListener } from './audio.js';
 
 // Initial UI state: title overlay shown, no HUD, no canvas focus.
 setGameState(GAME_STATE.TITLE);
+
+// S55: reusable scratch vector for the per-frame audio listener forward
+// computation (avoids per-frame Vector3 allocation in the render loop).
+const _audioForward = new THREE.Vector3();
 
 function loop() {
   // dt is clamped so a long tab-suspend doesn't snap the player through walls.
@@ -42,6 +48,13 @@ function loop() {
     updateBlood(dt);
     updateHUD(dt);
     updateToast(dt);
+    // S55: keep the audio listener pose in sync with the camera so 3D-panned
+    // enemy gunshots are heard from the correct direction.
+    _audioForward.set(0, 0, -1).applyQuaternion(camera.quaternion);
+    updateAudioListener(
+      camera.position.x, camera.position.y, camera.position.z,
+      _audioForward.x, _audioForward.y, _audioForward.z,
+    );
   }
 
   // Two-pass render so the first-person weapon never clips into nearby

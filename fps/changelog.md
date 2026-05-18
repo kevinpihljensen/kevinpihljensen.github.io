@@ -26,6 +26,95 @@ Format: newest entries at the top. Each entry lists what was added, what was cha
 
 ## Session log
 
+### 2026-05-18 — Session 55 (Town map 2× + jetpack enemy + positional audio + textures + smarter AI)
+
+User went to sleep with a batch of 8 asks: (1) double the map size, (2) more elaborate structures, more floors, more whole-house-looking buildings, (3) more realistic textures, (4) positional weapon audio, (5) slightly bump enemy speed, (6) new jetpack enemy with a 3-round burst rifle, worse aim, starting at wave 3, increasing every other wave, (7) smarter AI movement (esp. ramps and rooms), (8) don't push to main until rigorously validated. All landed in one session; all 205 harness assertions pass; mapviz reports overlap=0, seams=0, stranded=0, loop=yes, dead-ends=6 → **MAP OK**.
+
+**1. Map scaled 2× (`constants.js`, `maplayout.js`, `dev/mapviz.mjs`, `dev/harness_arena.mjs`).** Arena went 80×80 → 160×160. `ARENA_SIZE = 160`, `ARENA_PLAYABLE_HALF = 76` (was 38), `SPAWN_MIN_DIST = 28` (was 22), `SPAWN_MAX_DIST = 50` (was 34), `SPAWN_MAX_ATTEMPTS = 22` (was 18), `SPAWN_RADIUS = 36`. The mapviz SVG renderer + reachability ground extent now READ the ground entry from LAYOUT (`GH = layout.ground.half`) so the analyzer scales with the map — no more hardcoded ±40 / WORLD=44. `harness_arena.mjs` imports `ARENA_PLAYABLE_HALF` instead of asserting `±38`; the BRIDGE/KEEP-flush assertions were rewritten against the new map's HILLTOP + CATWALK_HE pair.
+
+**2. RIDGEPOINT TOWN map (`maplayout.js`).** Wholesale rewrite. The single-courtyard Citadel is replaced with a town layout: spawn plaza in the centre, eight named structures around it, plus a perimeter rampart and ruins quadrant.
+- **HOUSE_NW / HOUSE_NE**: two-story houses. Ground-floor walled rooms (12×12 / 14×14) with doorways facing the plaza + windows on the sides. External stairs up to a 2nd-floor deck (the upstairs roof / 1st-floor ceiling) at y=4. 2nd-floor parapets with windows or a hop-out gap.
+- **HILLTOP**: fortified 16×14 sniper outpost at y=6, parapets with shooting slits on three sides + a south archway. Two access points (ramp + stairs).
+- **TOWER_NE**: 2-tier tower. Enclosed ground room (windows on three sides, doorway W) topped by a 10×10 roof at y=4.5 with parapets, ramp up the south face.
+- **WAREHOUSE**: long 20×12 walled building split by an interior partition wall (with its own doorway) into two rooms; walkable roof at y=4 via external stairs.
+- **GUARDHOUSE_W**: single-story walled 12×10 stash with doorway on the east.
+- **HOUSE_SW**: single-story 14×12 house with doorway + windows.
+- **BUNKER_S**: small enclosed 10×8 concrete bunker, doorway N + slit windows on the sides.
+- **RUINS_SE**: broken wall fragments + a small 6×6 deck at y=2 (collapsed-floor cover), plus an arch-style wall and cover crates.
+- **WEST_RAMPART**: 8×28 elevated walkway at y=5 along the west edge for a flanking sniper route, ramp up on the east face.
+- **CATWALK_HE**: a 22-m walkway box at y=6 that's flush with HILLTOP's east edge (creates a real walk-across) and now has its own stairsTo down to ground on the south face — **this is the loop closer**: ground → CATWALK_HE → HILLTOP → ground via ramp/stairs, three edges around three nodes.
+
+`DOORWAYS` exported separately — an array of `{x, z, axis}` doorway midpoints used by the new AI router (see #7). Kept in sync with the wall entries that have a `door`. Pickups distributed across the new map: weapons go on rooftops or in open structures (HARNESS_PICKUPS verifies each pickup lands on the highest walkable surface at its (x,z), so an indoor pickup with a roof deck overhead would shadow-fail — fixed by putting the shotgun on the warehouse roof + the smg in the open-topped bunker).
+
+**Walls are now non-walkable (`kit.js`, `dev/mapviz.mjs`, `dev/harness_arena.mjs`, `dev/harness_pickups.mjs`).** A 0.5 m-thick beam should not be a walkable ledge — the old behaviour caused the connector-seam check to fail whenever a stair landed next to a wall (the wall top read as a 0.5–1.6 m bump in `groundHeightAt`). `kit.wall` and `solidBox(..., 'wall')` now pass `{ noWalk: true }` to `makeBoxSolid`; the validators mirror this so simulated `groundHeightAt` agrees with the runtime.
+
+**3. Realistic procedural textures (`textures.js`, `kit.js`).** Replaced the flat-color industrial palette with material-y surfaces, all still procedural (CanvasTexture, no external assets). New helpers in textures.js:
+- `fbm(x, y, octaves, seed)` — multi-octave value noise on a hashed integer grid (own `hash2` + bilinear interp). Used to give every surface natural shading instead of flat grey.
+- `makeFloorTexture` — weathered concrete with hairline cracks, oil-stain gradients, mortar grooves, and per-pixel fbm shading.
+- `makeBrickTexture` — running-bond brick (8 courses, 96 px brick width, 4 px mortar), per-brick random tint, top-highlight + bottom-shadow strips for fake bevel, weathering streaks.
+- `makeWoodTexture` — vertical planks (6 wide) with grain stripes, knots, shadow strips between planks.
+- `makeConcreteTexture` — smooth poured concrete (decks/ramps/overhangs).
+- `makeMetalTexture` — brushed steel with diagonal scratches and tread-plate dots (stairs).
+
+`kit.js` MAT entries now use these maps with sensible per-surface repeats: floor 20×20 (160 m ground / 8 m per tile), brick 2×1 on walls, wood 1×1 on cover crates, concrete 3×3 on decks. Legacy `makeWallTexture` / `makeInteriorWallTexture` / `makeCoverTexture` / `makePillarTexture` retained (now also using fbm internally) so any external import still works.
+
+**4. Positional audio (`audio.js`, `main.js`, `enemies.js`).** Enemy gunfire now plays in 3D space via a WebAudio PannerNode (HRTF panning + inverse-distance falloff, `refDistance=6`, `maxDistance=140`, `rolloffFactor=1.4`). New helpers:
+- `playSamplePositional(slot, x, y, z, detuneCents)` — wraps `playSample` through a fresh per-shot PannerNode positioned at the muzzle.
+- `playNoisePositional(opts, x, y, z)` — synth-noise fallback if the sample failed to load (asset 404 in dev) so the spatial cue survives an asset miss.
+- `updateAudioListener(px, py, pz, fx, fy, fz)` — called once per active frame from `main.js` (after the per-frame Vector3 forward computation) to keep `audioCtx.listener` synced with the camera. Modern AudioParam API + `setPosition`/`setOrientation` fallback for older browsers.
+
+`sfxShooterFire(x, y, z)` accepts an optional position. When supplied, it routes through positional playback; when omitted, stays at the master bus (unchanged behaviour). All three enemy fire paths (`shooterFire`, `heavyFire`, `jetpackFire`) now pass the computed world muzzle. Player weapons stay non-positional (full volume / centred, which is how every FPS handles your own weapon).
+
+**5. Enemy speeds bumped (`enemies.js`).** `ENEMY_DEFS` speeds raised across the board so the bigger map doesn't make enemies feel sluggish:
+- grunt: 4.0 → 4.7
+- shooter: 2.5 → 3.1
+- heavy: 1.5 → 1.9
+- jetpack (new): 4.2 horizontal
+
+**6. JETPACK enemy (`constants.js`, `enemies.js`, `wave.js`).** New flying enemy that hovers above the player's floor and fires 3-round carbine bursts with worse aim than the ground shooter. Introduced in wave 3, +1 every second round (waves 1–2: 0; 3–4: 1; 5–6: 2; 7–8: 3; 9–10: 4). Stats: hp=35, speed=4.2 horizontal, radius=0.42, score=220, contactDmg=0.
+- **Model (`buildJetpackModel`)**: humanoid in a flight suit + dark wraparound visor helmet, back-mounted jetpack box with two side fuel cylinders and two downward thruster cones, carbine in both hands. Thruster cones use a fresh `MeshStandardMaterial` with `emissive` blue glow set to `emissiveIntensity = 1.8` in the AI tick so they read as "firing" while in the air.
+- **AI (`jetpackAI`)**: hovers at a random height in [JETPACK_HOVER_HEIGHT_MIN, MAX] = [5.5, 11.0] m above the player's floor, orbits at JETPACK_ORBIT_DIST = 14 m. Horizontal motion via `collideCapsule` against walls (so it can't fly through buildings); vertical motion is free toward the target Y at JETPACK_VERT_SPEED = 4.0 m/s + a small sine bob (JETPACK_BOB_AMP/FREQ). No `stepMove` ground-snap — jetpacks have their own movement path. No doorway routing or ramp navGoal (they fly over walls).
+- **Burst-fire state machine**: `idle → firing` once LOS + range + cooldown ≤ 0; fires `BURST_COUNT = 3` rounds at `BURST_INTERVAL = 0.10s` intervals; returns to idle with `BURST_COOLDOWN = 1.4s` cooldown. Aborts mid-burst if LOS drops. Aim uses `leadAim` with `JETPACK_LEAD_STRENGTH = 0.55` (vs 0.92 for the ground shooter, 0.75 for the heavy) + per-shot `JETPACK_AIM_WOBBLE = 0.025 rad` so jetpack bullets don't snap to the player's head. `JETPACK_FIRE_RANGE = 60` won't open up beyond that.
+- Spawn altitude set in `makeEnemy` right after the enemy object is created (overrides the default `position.y = 0`).
+- Dispatched in `updateEnemies` alongside the other three types.
+
+**7. SMARTER AI MOVEMENT (`enemies.js`, `constants.js`).** Three structural additions on top of the existing M12 state-machine AI:
+- **Doorway waypoint routing.** New `DOORWAYS` array in `maplayout.js` lists the world XZ midpoint of every door-bearing wall. `findRoutingDoorway(enemy, tx, tz)` scans the list for the doorway with the best (distance-to-doorway + remaining-distance-from-doorway-to-target) score, gated by max distance (`AI_DOORWAY_LATCH_DIST = 9 m`) and a "must be roughly toward the target" dot-product test. `updateDoorwayLatch(enemy, sees, dist)` is called from each AI function — when sees=false, the enemy latches the best doorway (re-evaluated only when the latch is dropped); the latch drops once the enemy is within `AI_DOORWAY_CLEAR_DIST = 1.6 m` of the doorway midpoint OR once LOS returns. `toPlayer(enemy)` now considers the doorway latch BETWEEN the ramp navGoal and the last-seen position in the routing priority.
+- **Last-known-player position.** New per-enemy fields `lastSeenX/Y/Z, lastSeenTimer`. `updateLastSeen(enemy, sees, dt)` updates the snapshot whenever the enemy has LOS; ages out after `AI_LAST_SEEN_TIME = 3.5 s`. When LOS just dropped and `lastSeenTimer > 0`, `toPlayer` redirects the goal to the last-seen position so the enemy pushes toward where the player WAS instead of immediately giving up at the cover edge.
+- **Stuck escalation.** Added `stuckCount` + `backoffTimer`. The stuck-check window (`AI_UNSTICK_CHECK`) now INCREMENTS `stuckCount` on each insufficient-move tick; after `AI_STUCK_ESCALATE = 2` back-to-back unsticks it switches to a deep BACKOFF: `backoffTimer = AI_BACKOFF_TIME (0.55s)` of reversing course while arcing sideways, drops the current doorway latch (`doorwayIdx = -1` → re-route fresh), and flips both the unstick sign AND flank sign. A successful move (> 2× MIN_MOVE) resets `stuckCount`. Each of `gruntAI`, `shooterAI`, `heavyAI` now checks `backoffTimer > 0` FIRST (before the regular `unstickTimer` branch) and runs the deep-backoff motion if set.
+
+The combination addresses the user's specific complaint: AIs that get stuck near ramps and especially in rooms now have three escape mechanisms (last-seen → doorway → deep-backoff), so the "paw at the wall forever" failure mode is much less likely.
+
+**8. Validation.** Battery ran continuously throughout the session. Final state:
+- 10 harnesses, **205 assertions ALL GREEN** (was 202; harness_arena +1 for the new connector seam, harness_pickups +3 for the new pickup positions).
+- mapviz: overlap=0, seams=0, stranded=0, loop=YES, dead-ends=6 → **MAP OK**.
+- node --check passes on every src/*.js module.
+- `node build-singlefile.mjs` still produces a runnable bundle (819 KB) — the top-level-identifier-uniqueness invariant is intact.
+
+**Changed (files)**
+- `src/constants.js` — ARENA_SIZE/_PLAYABLE_HALF/SPAWN_* scaled 2×; jetpack tunables; AI doorway/backoff/last-seen tunables; WAVE_TABLE entries get a `jetpacks` field.
+- `src/maplayout.js` — full rewrite (RIDGEPOINT TOWN); `DOORWAYS` exported for the AI router.
+- `src/kit.js` — `wall` + `solidBox` mark walls `noWalk`; MAT entries use the new procedural textures with per-surface repeats.
+- `src/textures.js` — full rewrite with `fbm` noise + brick/wood/concrete/metal helpers.
+- `src/audio.js` — added `playSamplePositional`, `playNoisePositional`, `updateAudioListener`; `sfxShooterFire` accepts optional `(x,y,z)`.
+- `src/main.js` — calls `updateAudioListener` each active frame with the camera pose; imports `THREE` for the per-frame forward vector.
+- `src/enemies.js` — bumped speeds; added jetpack to ENEMY_DEFS + MODEL_BUILDERS + AI dispatch; `buildJetpackModel`; `jetpackAI` + `jetpackFire`; doorway routing helpers (`findRoutingDoorway`, `updateDoorwayLatch`); last-seen tracker (`updateLastSeen`); `toPlayer` reads the new fields; stuck loop in `updateEnemies` escalates to `backoffTimer`; each AI function checks `backoffTimer` before its old branches and passes the muzzle position to `sfxShooterFire` for positional audio.
+- `src/wave.js` — spawn loop includes jetpacks (`table.jetpacks || 0`).
+- `dev/mapviz.mjs` — ground extent driven by LAYOUT; perimeter walls + apertures mark `noWalk`; SVG render scales with the arena size.
+- `dev/harness_arena.mjs` — imports `ARENA_PLAYABLE_HALF`; tracks HILLTOP + CATWALK_HE for the flush + raised-floor assertions; walls + perimeter built with `noWalk`.
+- `dev/harness_pickups.mjs` — perimeter + walls built with `noWalk`.
+
+**Known issues / known tradeoffs**
+- Most tuning is by feel; expect a dial pass once the user plays. Likely candidates: jetpack hover altitude (5.5–11 may feel low/high), jetpack burst cadence, AI doorway latch radius (9 m), brick texture repeat (2×1 may look stretched on the 28 m WEST_RAMPART face).
+- The new map has 6 dead-end spurs (most decks are reached by a single connector). One real loop exists (ground → CATWALK_HE → HILLTOP → ground). Adding more loops would require bridging upper decks, which the current 2D collision tolerates but visually conflicts with building footprints; deferred.
+- Positional audio uses a fresh PannerNode per shot — small allocation cost but bounded by enemy fire rate. PannerNode is garbage-collected when the BufferSource ends.
+- Jetpack model thrust cones glow constantly (set to `emissiveIntensity = 1.8` every frame). A future polish pass could dim them while idling, brighten while accelerating.
+- AI doorway routing only knows the doorways listed in `DOORWAYS`. If a doorway entry gets out of sync with the walls (e.g. moving a wall but forgetting to update DOORWAYS), the AI will route through empty air. Future improvement: derive DOORWAYS from `wall` entries with `door` apertures programmatically.
+- No texture filtering anisotropy escalation; using the default `anisotropy = 8`. On non-WebGL2 hardware this could be capped — visible as soft textures at grazing angles.
+- The shotgun moved from WAREHOUSE ground floor (shadowed by the roof) to the WAREHOUSE roof. Functionally fine but means the player has to climb stairs to grab it instead of walking through the entry doorway. Could re-architect the warehouse with no upper deck (open courtyard) to put the pickup inside, but the rooftop currently doubles as a sniper position which is good.
+
+---
+
 ### 2026-05-17 — Session 54 (Humanoid enemies + blood splatter + weapons held with hands)
 
 User asked for three things at once: (a) enemies that look more human/realistic instead of the M11 sci-fi stack of capsules with glowing visors, (b) blood splatter when an enemy is hit, (c) per-enemy weapon models the soldiers visibly hold with their arms. All three landed in one session.

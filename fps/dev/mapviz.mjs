@@ -66,7 +66,7 @@ for (const e of LAYOUT) {
       [h, h + t, -h - t, h + t], [-h - t, -h, -h - t, h + t],
     ];
     for (const [x0, x1, z0, z1] of segs) {
-      makeBoxSolid(x0, x1, 0, H2, z0, z1);
+      makeBoxSolid(x0, x1, 0, H2, z0, z1, { noWalk: true });
       rect({ kind: 'wall', id: '', x0, x1, z0, z1, yMin: 0, yMax: H2, top: H2 });
     }
   } else if (e.t === 'platform') {
@@ -89,7 +89,7 @@ for (const e of LAYOUT) {
            yMin: base, yMax: base + e.sy, top: base + e.sy });
   } else if (e.t === 'wall') {
     for (const r of wallBoxes(e)) {
-      makeBoxSolid(r.x0, r.x1, r.y0, r.y1, r.z0, r.z1);
+      makeBoxSolid(r.x0, r.x1, r.y0, r.y1, r.z0, r.z1, { noWalk: true });
       rect({ kind: 'wall', id: '', x0: r.x0, x1: r.x1, z0: r.z0, z1: r.z1,
              yMin: r.y0, yMax: r.y1, top: e.door || e.window ? -1 : r.y1 });
     }
@@ -207,8 +207,12 @@ P('');
 // 3) Reachability BFS from spawn.
 P('--- reachability from spawn (0,0) ---');
 // surfaces: ground + each platform/box top. connectors are edges.
+// S55: pull the ground extent from the LAYOUT instead of hardcoding ±40 so
+// the analyzer scales with the arena size.
+const _gnd = LAYOUT.find((e) => e.t === 'ground');
+const GH = _gnd ? _gnd.half : 40;
 const surfaces = [];
-surfaces.push({ name: 'GROUND', x0: -40, x1: 40, z0: -40, z1: 40, y: 0 });
+surfaces.push({ name: 'GROUND', x0: -GH, x1: GH, z0: -GH, z1: GH, y: 0 });
 for (const p of pieces) {
   if (p.kind === 'platform' || p.kind === 'box') {
     surfaces.push({ name: (p.id || p.kind) + '@' + f(p.top), x0: p.x0, x1: p.x1, z0: p.z0, z1: p.z1, y: p.top });
@@ -323,13 +327,14 @@ console.log(report);
 writeFileSync('/home/claude/build/dev/map_report.txt', report);
 
 // ---- SVG renderers ----
-const WORLD = 44, SZ = 760, sc = SZ / (WORLD * 2);
+// S55: WORLD scales with the actual ground extent so big maps still fit.
+const WORLD = GH + 4, SZ = 1100, sc = SZ / (WORLD * 2);
 const X = (x) => (x + WORLD) * sc, Z = (z) => (z + WORLD) * sc;
 function band(label, ymin, ymax) {
   const inb = (p) => p.top >= ymin - 0.01 && p.top <= ymax + 0.01;
   let s = `<svg xmlns="http://www.w3.org/2000/svg" width="${SZ}" height="${SZ}" font-family="monospace">`;
   s += `<rect width="${SZ}" height="${SZ}" fill="#0c0f14"/>`;
-  for (let g = -40; g <= 40; g += 10)
+  for (let g = -GH; g <= GH; g += 10)
     s += `<line x1="${X(g)}" y1="0" x2="${X(g)}" y2="${SZ}" stroke="#1b2230"/>` +
          `<line x1="0" y1="${Z(g)}" x2="${SZ}" y2="${Z(g)}" stroke="#1b2230"/>`;
   // faint context: everything below this band
@@ -350,7 +355,7 @@ function band(label, ymin, ymax) {
     }
   }
   s += `<circle cx="${X(SPAWN.x)}" cy="${Z(SPAWN.z)}" r="6" fill="#ffd23a"/><text x="${X(SPAWN.x)+9}" y="${Z(SPAWN.z)+4}" fill="#ffd23a" font-size="12">SPAWN</text>`;
-  s += `<rect x="${X(-40)}" y="${Z(-40)}" width="${80*sc}" height="${80*sc}" fill="none" stroke="#3a4658" stroke-dasharray="4 4"/>`;
+  s += `<rect x="${X(-GH)}" y="${Z(-GH)}" width="${GH*2*sc}" height="${GH*2*sc}" fill="none" stroke="#3a4658" stroke-dasharray="4 4"/>`;
   s += `<text x="14" y="26" fill="#fff" font-size="18">${label}</text></svg>`;
   return s;
 }
@@ -369,8 +374,12 @@ for (const t of tops) { writeFileSync(`/home/claude/build/dev/map_plan_t${bi}_${
 function oblique() {
   const W = 980, Hh = 640, a = 1.0, bb = 0.5, cc = 1.0;   // iso basis
   const ip = (x, y, z) => [ (x - z) * a, (x + z) * bb - y * cc ];
+  // S55: filter perimeter walls by length relative to ground size, not by a
+  // hardcoded 60m, so the oblique view doesn't suddenly include perimeter
+  // walls when the arena grows.
+  const PERIM_LEN = GH * 2 - 2;
   const draw = pieces.filter(p => p.kind !== 'ground' &&
-    !(p.kind === 'wall' && (p.x1 - p.x0 > 60 || p.z1 - p.z0 > 60)));
+    !(p.kind === 'wall' && (p.x1 - p.x0 > PERIM_LEN || p.z1 - p.z0 > PERIM_LEN)));
   // projected bounds for auto-fit
   let mnx = 1e9, mxx = -1e9, mny = 1e9, mxy = -1e9;
   for (const p of draw) for (const X0 of [p.x0, p.x1]) for (const Y0 of [p.yMin, p.yMax]) for (const Z0 of [p.z0, p.z1]) {

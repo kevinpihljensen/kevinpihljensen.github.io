@@ -25,6 +25,7 @@ export function startWave(n) {
     { type: 'grunt',   count: table.grunts   },
     { type: 'shooter', count: table.shooters },
     { type: 'heavy',   count: table.heavies  },
+    { type: 'jetpack', count: table.jetpacks || 0 },
   ];
   let total = 0;
   for (let i = 0; i < spec.length; i++) {
