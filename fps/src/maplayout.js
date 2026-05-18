@@ -60,27 +60,22 @@ export function wallBoxes(e) {
 // S55: doorway midpoints (world XZ + the wall axis they belong to) for the
 // AI router. When an enemy is blocked from reaching the player by a wall, it
 // can latch onto the nearest doorway, route to it, and re-engage on the other
-// side. Computed by hand from the wall entries below so the router does NOT
-// have to scan the layout every frame. Keep this in sync with the doorway
-// walls.
+// side. Each entry must be the EXACT wall center (cx, cz) of a wall that has
+// a `door` aperture. The mapviz DOORWAYS-consistency check (S55e) cross-
+// references this list against every door-bearing wall at ground level and
+// fails the map if any entry has drifted or any ground-floor door is
+// missing. Parapet doorways (base > 0) are intentionally NOT in this list —
+// the AI routes at ground level.
 export const DOORWAYS = [
-  // HOUSE_NW: doorway on the +z side (faces plaza)
-  { x: -35, z: -23,  axis: 'x' },
-  // HOUSE_NE: doorway on the -x side (faces plaza)
-  { x:  33, z: -35,  axis: 'z' },
-  // WAREHOUSE: two doorways (entry + interior partition)
-  { x:  35,  z:  8,  axis: 'z' },
-  { x:  45,  z:  2,  axis: 'x' },   // interior partition doorway
-  // BUNKER_S: doorway on the -z side (faces plaza)
-  { x:   0,  z:  36, axis: 'x' },
-  // GUARDHOUSE_W: doorway on the +x side (faces plaza)
-  { x: -33,  z:  14, axis: 'z' },
-  // TOWER_NE ground room: doorway on the -x side
-  { x:  50,  z: -18, axis: 'z' },
-  // HILLTOP arch: doorway in the parapet on the -z side (only opening up top)
-  { x:   0,  z: -32, axis: 'x' },
-  // RUINS_SE archway: door-shaped gap on -z
-  { x:  43,  z:  30, axis: 'x' },
+  { x: -35, z: -23,  axis: 'x' },   // HOUSE_NW S entry (faces plaza)
+  { x:  33, z: -42,  axis: 'z' },   // HOUSE_NE W entry (faces plaza)
+  { x:  50, z: -18,  axis: 'z' },   // TOWER_NE W entry (faces plaza)
+  { x:  35, z:   8,  axis: 'z' },   // WAREHOUSE W entry (faces plaza)
+  { x:  45, z:   8,  axis: 'z' },   // WAREHOUSE interior partition
+  { x: -34, z:  14,  axis: 'z' },   // GUARDHOUSE_W E entry (faces plaza)
+  { x: -50, z:  30,  axis: 'x' },   // HOUSE_SW N entry (faces plaza)
+  { x:   0, z:  36,  axis: 'x' },   // BUNKER_S N entry (faces plaza)
+  { x:  35, z:  30,  axis: 'x' },   // RUINS_SE archway
 ];
 
 export const LAYOUT = [
