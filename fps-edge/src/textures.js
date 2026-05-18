@@ -610,9 +610,10 @@ export function makeQuakeStoneTexture() {
   return finalize(c);
 }
 
-// QUAKE FLOOR — darker, grimier variant of the existing floor: warm brown
-// concrete with deep mortar grooves between 2×2 panels and more aggressive
-// dirt staining than the stock floor texture.
+// QUAKE FLOOR — light tan concrete with grime. Lightened from the original
+// dark-brown version per playtest. Sits between qstone (cool grey) and
+// qmetal (rust): warm sandstone concrete that reads as "floor" without
+// pulling the scene dark.
 export function makeQuakeFloorTexture() {
   const N = 512;
   const c = makeCanvas(N);
@@ -622,36 +623,36 @@ export function makeQuakeFloorTexture() {
   for (let y = 0; y < N; y++) {
     for (let x = 0; x < N; x++) {
       const n = fbm(x / 56, y / 56, 5, 91);
-      const base = 44 + n * 48;
-      const [r, g, b] = tinted(base, 1.10, 0.95, 0.72);  // warm brown
+      const base = 110 + n * 70;                          // 110-180 (was 44-92)
+      const [r, g, b] = tinted(base, 1.06, 1.00, 0.86);   // light warm sand (was 1.10/0.95/0.72)
       const i = (y * N + x) * 4;
       d[i] = r; d[i + 1] = g; d[i + 2] = b; d[i + 3] = 255;
     }
   }
   ctx.putImageData(id, 0, 0);
-  // Heavy grime stains.
-  for (let s = 0; s < 9; s++) {
+  // Lighter grime stains — same shape, less opacity.
+  for (let s = 0; s < 7; s++) {
     const sx = Math.random() * N, sy = Math.random() * N;
     const sr = 50 + Math.random() * 90;
     const grad = ctx.createRadialGradient(sx, sy, 0, sx, sy, sr);
-    grad.addColorStop(0, 'rgba(10,7,4,0.65)');
-    grad.addColorStop(0.6, 'rgba(20,14,8,0.25)');
+    grad.addColorStop(0, 'rgba(40,30,18,0.35)');
+    grad.addColorStop(0.6, 'rgba(60,48,30,0.15)');
     grad.addColorStop(1, 'rgba(0,0,0,0)');
     ctx.fillStyle = grad;
     ctx.fillRect(sx - sr, sy - sr, sr * 2, sr * 2);
   }
-  // 2×2 panel grooves.
-  ctx.strokeStyle = 'rgba(8,5,2,0.85)';
-  ctx.lineWidth = 4;
+  // 2×2 panel grooves — softer.
+  ctx.strokeStyle = 'rgba(40,32,18,0.65)';
+  ctx.lineWidth = 3;
   const step = N / 2;
   for (let i = 0; i <= 2; i++) {
     ctx.beginPath(); ctx.moveTo(i * step, 0); ctx.lineTo(i * step, N); ctx.stroke();
     ctx.beginPath(); ctx.moveTo(0, i * step); ctx.lineTo(N, i * step); ctx.stroke();
   }
   // Hairline cracks.
-  ctx.strokeStyle = 'rgba(15,10,5,0.55)';
+  ctx.strokeStyle = 'rgba(60,48,28,0.45)';
   ctx.lineWidth = 1;
-  for (let k = 0; k < 18; k++) {
+  for (let k = 0; k < 16; k++) {
     let x = Math.random() * N, y = Math.random() * N;
     const len = 30 + Math.random() * 100;
     let ang = Math.random() * Math.PI * 2;

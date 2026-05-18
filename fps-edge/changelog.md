@@ -26,6 +26,37 @@ Format: newest entries at the top. Each entry lists what was added, what was cha
 
 ## Session log
 
+### 2026-05-18 — fps-edge: swimming physics + lighter qfloor (no diagonal-prune)
+
+Re-applies the SAFE parts of the previous (reverted) commit 03bbedc.
+That commit combined three things — lighter qfloor, swimming physics,
+and a "heavily-diagonal brush" pruning pass in the importer. The
+diagonal-prune was the prime suspect for the black-screen regression
+(it dropped 116 brushes; some were likely structural walls around the
+spawn). This commit keeps the harmless changes and skips the prune.
+
+**Changes vs. main**
+- `src/textures.js` qfloor lightened: base 110–180 (was 44–92), tint
+  1.06/1.00/0.86 (was 1.10/0.95/0.72 mud-brown).
+- `src/kit.js` `MAT.qfloor` color `0x9e8a70` → `0xc8b89a`.
+- `src/water.js` NEW — `updateWaterState(dt)` flags `player.inWater`
+  when capsule torso (feet+0.9 m) overlaps any water AABB.
+- `src/state.js` adds `player.inWater` + `player.waterTop`.
+- `src/constants.js` adds WATER_GRAVITY=6, WATER_BUOYANCY=4.5,
+  WATER_SWIM_UP/DOWN=3.6, WATER_SPEED_MULT=0.55, WATER_DRAG=2.8,
+  WATER_VY_DAMP=2.2.
+- `src/player.js` water branch in `updatePlayer`: wishSpeed×
+  WATER_SPEED_MULT, normal jump suppressed, vertical velocity damped
+  toward target (Space→up, Ctrl→down, neither→buoyant drift),
+  horizontal exponential drag.
+- `src/arena.js` + `src/main.js` water case registers + updateWaterState
+  wired before updatePlayer.
+
+**Importer untouched.** LAYOUT identical to 48342b1 (1116 solids,
+0 unreachable, 0 floating).
+
+**Battery**: 101/101 engine-pure + EDGE MAP OK. fps/ unchanged.
+
 ### 2026-05-18 — fps-edge: lighter stone, water surfaces, clipping detector + auto-prune
 
 User feedback: "the one dark texture is a little too dark, try more grey-ish

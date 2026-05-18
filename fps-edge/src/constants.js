@@ -35,6 +35,19 @@ export const CROUCH_SPEED = 2.5;
 export const SCOPE_SPEED = 2.5;        // M10: sniper-scoped movement is slow
 export const JUMP_VELOCITY = 6.0;
 export const GRAVITY = 20.0;
+
+// --- SWIMMING (fps-edge) ---------------------------------------------------
+// Player inside a water volume gets a separate physics regime: reduced
+// gravity, buoyancy when idle, Space/Ctrl produce continuous vertical
+// motion instead of a single jump.
+export const WATER_GRAVITY    = 6.0;
+export const WATER_BUOYANCY   = 4.5;
+export const WATER_SWIM_UP    = 3.6;
+export const WATER_SWIM_DOWN  = 3.6;
+export const WATER_SPEED_MULT = 0.55;
+export const WATER_DRAG       = 2.8;
+export const WATER_VY_DAMP    = 2.2;
+
 export const EYE_HEIGHT_STAND = 1.6;
 export const EYE_HEIGHT_CROUCH = 1.2;
 export const PLAYER_RADIUS = 0.4;
