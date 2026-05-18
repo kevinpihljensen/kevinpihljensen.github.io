@@ -90,7 +90,7 @@ const MAT = {
   // importer to give floor / stone / metal brushes the right material.
   qmetal:  new THREE.MeshStandardMaterial({ map: qMetalTex,   color: 0x9e8b76, roughness: 0.78, metalness: 0.35, side: THREE.DoubleSide }),
   qstone:  new THREE.MeshStandardMaterial({ map: qStoneTex,   color: 0xcfcec8, roughness: 0.92, metalness: 0.06, side: THREE.DoubleSide }),
-  qfloor:  new THREE.MeshStandardMaterial({ map: qFloorTex,   color: 0xc8b89a, roughness: 0.92, metalness: 0.06, side: THREE.DoubleSide }),
+  qfloor:  new THREE.MeshStandardMaterial({ map: qFloorTex,   color: 0x9e8a70, roughness: 0.92, metalness: 0.08, side: THREE.DoubleSide }),
 };
 
 function addMesh(geo, mat, castShadow) {

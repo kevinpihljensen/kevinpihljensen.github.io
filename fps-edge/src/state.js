@@ -54,8 +54,6 @@ export const player = {
   pitch: 0,
   isGrounded: true,
   isCrouching: false,
-  inWater: false,           // fps-edge: capsule centre is inside a water volume
-  waterTop: 0,              // fps-edge: y of the surface of the water we're in
   // Smooth stance amount: 0 = fully standing, 1 = fully crouched. Lerps
   // quickly toward the target each frame; the camera eye height AND the
   // collision capsule height both interpolate with it (fast but not instant).

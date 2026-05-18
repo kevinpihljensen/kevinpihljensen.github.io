@@ -272,33 +272,6 @@ def main():
     boxes = []
     water_brushes = []   # NEW: water surfaces (rendered as translucent volumes)
     skipped = defaultdict(int)
-
-    # Pre-extract pickup Quake positions so we don't skip a brush that's
-    # serving as a pickup's floor — the AABB approximation may have eaten
-    # most of the brush's volume but the pickup depends on its top surface.
-    pickup_q_pts = []
-    for e in ents:
-        cn = e['kv'].get('classname', '')
-        if cn in ('info_player_deathmatch', 'info_player_start',
-                  'item_health', 'weapon_supershotgun', 'weapon_nailgun',
-                  'weapon_supernailgun', 'weapon_lightning'):
-            o = e['kv'].get('origin')
-            if not o: continue
-            try:
-                qx, qy, qz = [float(v) for v in o.split()]
-            except ValueError: continue
-            pickup_q_pts.append((qx, qy, qz))
-
-    def supports_pickup(qmin, qmax):
-        """True if any pickup XZ falls within this brush AND the pickup's
-        Quake Z is within 2 units (a Quake player half-height ≈ 28u, so
-        a pickup sitting on the brush's top has Z ≈ qmax_z + small)."""
-        for (qx, qy, qz) in pickup_q_pts:
-            if qmin[0] - 2 <= qx <= qmax[0] + 2 and \
-               qmin[1] - 2 <= qy <= qmax[1] + 2 and \
-               abs(qz - qmax[2]) <= 32:    # within ~1 m above brush top
-                return True
-        return False
     for brush in static_brushes:
         planes, texs = parse_brush(brush)
         if planes is None:
@@ -337,27 +310,6 @@ def main():
             skipped['no_top'] += 1; continue
 
         mat = classify_material(texs)
-
-        # ── heavily-diagonal brush filter ──
-        # AABB-from-Quake conversion is exact for axis-aligned brushes and
-        # tighter the fewer non-axis-aligned plane normals a brush has. A
-        # brush with 2+ diagonal faces is a wedge / cut / bevel whose AABB
-        # over-encloses its true volume — these are the boxes that pile up
-        # into clipping pairs. Drop big ones; small ones (cosmetic trim) are
-        # already filtered by the volume gate.
-        diag_faces = sum(1 for n, _d in planes
-                         if max(abs(n[0]), abs(n[1]), abs(n[2])) < 0.99)
-        aabb_vol = ((qmax[0] - qmin[0]) * (qmax[1] - qmin[1]) * (qmax[2] - qmin[2])) * (S ** 3)
-        # The slope→stairs path catches the common 1-diagonal-face case
-        # (sloped top); keep that working. Skip only HEAVILY diagonal
-        # brushes — 3+ diagonal faces AND large (≥ 6 m³). A 2-diagonal-face
-        # brush (e.g. a sloped wedge bounding a ramp's side bevel) often
-        # serves as a pickup-bearing surface, so keeping those.
-        if (diag_faces >= 3 and aabb_vol > 6.0
-                and not (SLOPE_TOP_MIN < top_dot < SLOPE_TOP_MAX)
-                and not supports_pickup(qmin, qmax)):
-            skipped['heavily_diagonal'] += 1
-            continue
 
         if SLOPE_TOP_MIN < top_dot < SLOPE_TOP_MAX:
             # Sloped walkable top → stair-step approximation; the steps

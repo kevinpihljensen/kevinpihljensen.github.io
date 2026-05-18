@@ -30,8 +30,6 @@ import {
   AIR_WISH_SPEED_CAP, MAX_HORIZONTAL_SPEED,
   PLAYER_MAX_HEALTH, DAMAGE_FLASH_TIME, DAMAGE_INDICATOR_TIME,
   DEFAULT_FOV, SCOPE_FOV, ARENA_PLAYER_RESPAWN_DELAY,
-  WATER_GRAVITY, WATER_BUOYANCY, WATER_SWIM_UP, WATER_SWIM_DOWN,
-  WATER_SPEED_MULT, WATER_DRAG, WATER_VY_DAMP,
 } from './constants.js';
 import { sfxPlayerHurt, sfxGameOver } from './audio.js';
 import { setGameState } from './hud.js';
@@ -174,8 +172,6 @@ export function updatePlayer(dt) {
   else if (player.isCrouching) wishSpeed = CROUCH_SPEED;
   else if (keys['ShiftLeft'] || keys['ShiftRight']) wishSpeed = SPRINT_SPEED;
   else wishSpeed = WALK_SPEED;
-  // fps-edge: swim is slow.
-  if (player.inWater) wishSpeed *= WATER_SPEED_MULT;
 
   // Knife out → small mobility buff (lighter than a gun): a flat multiplier
   // on whatever the current move state is, so scoped/crouch/sprint all keep
@@ -206,16 +202,10 @@ export function updatePlayer(dt) {
   const spaceDown = !!keys['Space'];
   const jumpInput = game.bhopEnabled ? spaceDown : (spaceDown && !spacePrev);
   spacePrev = spaceDown;
-  // fps-edge: in water, Space/Ctrl produce continuous up/down velocity;
-  // ground-anchored jumping is disabled. Handled fully in the water-physics
-  // branch in the vertical step below; we only suppress the normal jump
-  // here so we don't double-fire on the entry frame.
-  if (!player.inWater) {
-    const willJump = player.isGrounded && jumpInput;
-    if (willJump) {
-      player.velocityY = JUMP_VELOCITY;
-      player.isGrounded = false;
-    }
+  const willJump = player.isGrounded && jumpInput;
+  if (willJump) {
+    player.velocityY = JUMP_VELOCITY;
+    player.isGrounded = false;
   }
 
   // --- GROUND FRICTION ---
@@ -350,32 +340,7 @@ export function updatePlayer(dt) {
   // applies to walking down ramps/stairs but NOT to a jump's descent.
   const wasGrounded = player.isGrounded;
   const feetYStart = player.position.y;   // for step/ledge view smoothing
-  if (player.inWater) {
-    // fps-edge SWIMMING: reduced gravity + steady buoyancy. Space targets
-    // an upward swim velocity; Ctrl targets a downward one; both ease the
-    // current velocityY toward the target so input feels responsive but not
-    // teleportey. Without either input, buoyancy keeps the player roughly
-    // neutral or slightly rising — matches Quake's swim feel.
-    const ctrlDown = !!(keys['ControlLeft'] || keys['ControlRight']);
-    let targetVy;
-    if (jumpInput && ctrlDown)      targetVy = 0;
-    else if (jumpInput)             targetVy = WATER_SWIM_UP;
-    else if (ctrlDown)              targetVy = -WATER_SWIM_DOWN;
-    else                            targetVy = (WATER_BUOYANCY - WATER_GRAVITY) * 0.35; // gentle drift
-    // Damp current vy toward target.
-    const damp = 1 - Math.exp(-WATER_VY_DAMP * dt);
-    player.velocityY += (targetVy - player.velocityY) * damp;
-    // Apply residual gravity − buoyancy (small) so falling INTO water
-    // decelerates over a few frames instead of stopping instantly.
-    player.velocityY -= (WATER_GRAVITY - WATER_BUOYANCY) * dt;
-    // Horizontal drag — exponential decay toward the wish velocity, no
-    // ground/air distinction in water.
-    const hDamp = 1 - Math.exp(-WATER_DRAG * dt);
-    player.velocityX -= player.velocityX * hDamp;
-    player.velocityZ -= player.velocityZ * hDamp;
-  } else {
-    player.velocityY -= GRAVITY * dt;
-  }
+  player.velocityY -= GRAVITY * dt;
   let nextY = player.position.y + player.velocityY * dt;
 
   // Ceiling: lowest solid surface above the head clips a rising jump. The
