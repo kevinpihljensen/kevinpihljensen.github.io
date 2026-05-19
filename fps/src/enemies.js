@@ -809,6 +809,13 @@ export function makeEnemy(type, x, z) {
     canJump: (type === 'grunt' || type === 'shooter'),
     velocityY: 0,
     jumpCooldown: 0,
+
+    // --- S55ac PASSIVE MODE ---
+    // When true, the AI tick is skipped (no movement, no attacks). Animation
+    // (head tracking, idle sway, leg cycle) still runs so the model reads as
+    // alive. Used by Map Test mode to line up inspectable enemies that don't
+    // fight you.
+    passive: false,
   };
 
   // M13: register the grunt's knife meshes as shootable + enemy-tagged, just
@@ -1956,17 +1963,25 @@ export function updateEnemies(dt) {
   for (let i = 0; i < enemies.length; i++) {
     const e = enemies[i];
     if (e.alive) {
-      if      (e.type === 'grunt')   gruntAI(e, dt);
-      else if (e.type === 'shooter') shooterAI(e, dt);
-      else if (e.type === 'heavy')   heavyAI(e, dt);
-      else if (e.type === 'jetpack') jetpackAI(e, dt);
-      syncEnemy(e);
+      if (e.passive) {
+        // S55ac: passive (Map Test) — no AI, no movement, no attack. Just keep
+        // the AABB / group transform in sync at the parked position. Animation
+        // ticks below still run (head pitch tracking, arm sway, leg cycle).
+        syncEnemy(e);
+      } else {
+        if      (e.type === 'grunt')   gruntAI(e, dt);
+        else if (e.type === 'shooter') shooterAI(e, dt);
+        else if (e.type === 'heavy')   heavyAI(e, dt);
+        else if (e.type === 'jetpack') jetpackAI(e, dt);
+        syncEnemy(e);
+      }
 
       // Track no-LOS duration (drives the vantage-seek in navGoal) and
       // detect being wedged on geometry. canSeePlayer set e._saw this frame.
+      // S55ac: passive enemies don't move, so skip the wedge-detection block.
       e.noLosTimer = e._saw ? 0 : e.noLosTimer + dt;
       e.stuckCheckTimer -= dt;
-      if (e.stuckCheckTimer <= 0) {
+      if (!e.passive && e.stuckCheckTimer <= 0) {
         const moved = Math.hypot(e.position.x - e.stuckX, e.position.z - e.stuckZ);
         const pdx = player.position.x - e.position.x;
         const pdz = player.position.z - e.position.z;

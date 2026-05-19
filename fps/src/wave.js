@@ -88,11 +88,24 @@ export function resetGame() {
   game.gameMode = 'wave';
 }
 
-// MAP TEST: a free-roam run with NO enemies. Identical setup to a fresh run
-// (entities cleared, ammo/weapons reset → pistol+knife are the starting kit,
-// player returned to origin, pickups respawned) but no wave is spawned. Stays
-// in PLAYING with enemiesAlive = 0; updateWave only acts BETWEEN_WAVES and
-// onWaveCleared only fires on a kill, so with no enemies this is stable.
+// MAP TEST: free-roam mode for inspecting the map AND the enemy models.
+// S55ac: spawns one of each enemy type lined up along z just north of the
+// spawn pad, all marked `passive` so they don't move or attack — the user
+// can walk around them, knife them for fun, and inspect the rigs. Killing
+// them doesn't trigger wave-clear (updateWave only acts BETWEEN_WAVES, and
+// onWaveCleared only fires on kill if enemiesAlive hits 0 — passive kills
+// still decrement it but the game stays PLAYING). Identical setup to a
+// fresh run otherwise (entities cleared, ammo/weapons reset, pickups
+// respawned, player returned to origin).
+const MAPTEST_LINEUP = [
+  // Lined up along the X axis a few metres north of SPAWN (which is at z=6).
+  // All face -Z (toward the player, since spawn looks toward -Z by default).
+  { type: 'grunt',   x: -4.5, z: -1 },
+  { type: 'shooter', x: -1.5, z: -1 },
+  { type: 'heavy',   x:  1.5, z: -1 },
+  { type: 'jetpack', x:  4.5, z: -1 },
+];
+
 export function startMapTest() {
   clearEnemies();
   clearProjectiles();
@@ -107,8 +120,18 @@ export function startMapTest() {
   game.breakTimer = 0;
   game.elapsed = 0;
   game.gameMode = 'maptest';
+  // Spawn the inspection lineup: passive enemies, one of each type.
+  for (let i = 0; i < MAPTEST_LINEUP.length; i++) {
+    const spec = MAPTEST_LINEUP[i];
+    const e = makeEnemy(spec.type, spec.x, spec.z);
+    e.passive = true;
+    // Face the player (whose spawn is at z=+6 looking toward -Z); facing +Z
+    // means each model's chest points at the player.
+    if (e.group) e.group.rotation.y = 0;
+  }
+  game.enemiesAlive = 0;   // passive lineup doesn't count as a wave target
   setGameState(GAME_STATE.PLAYING);
-  showToast(`MAP TEST — no enemies   •   Bunny Hop: ${game.bhopEnabled ? 'ON' : 'OFF'}`, 2.6);
+  showToast(`MAP TEST — inspection lineup   •   Bunny Hop: ${game.bhopEnabled ? 'ON' : 'OFF'}`, 2.6);
 }
 
 // ARENA: continuous-combat alternative to wave mode. Maintains a fixed
