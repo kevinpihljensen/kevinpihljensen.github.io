@@ -242,6 +242,35 @@ for (const p of pieces) {
   }
   if (lo >= 0 && hi >= 0) { adj[lo].push({ to: hi, via: 'connector' }); adj[hi].push({ to: lo, via: 'connector' }); }
 }
+// teleporter edges (S55i): each `teleporter` LAYOUT entry links the
+// surface CONTAINING its trigger AABB (at the trigger's foot Y) to the
+// surface at its destination position. Treated as a one-way edge in the
+// REACHABILITY BFS (target reachable from source) but added in both
+// directions so the route graph also acknowledges the link for loop
+// counting — the player can in principle walk back via the rest of the
+// map even if not via this portal.
+for (const e of LAYOUT) {
+  if (e.t !== 'teleporter') continue;
+  const f = e.from, t = e.to;
+  let src = -1, dst = -1;
+  for (let i = 0; i < N; i++) {
+    const s = surfaces[i];
+    if (Math.abs(s.y - f.y) < 0.4 &&
+        f.cx >= s.x0 - 0.01 && f.cx <= s.x1 + 0.01 &&
+        f.cz >= s.z0 - 0.01 && f.cz <= s.z1 + 0.01) {
+      if (src < 0 || surfaces[i].y > surfaces[src].y) src = i;
+    }
+    if (Math.abs(s.y - t.y) < 0.4 &&
+        t.x >= s.x0 - 0.01 && t.x <= s.x1 + 0.01 &&
+        t.z >= s.z0 - 0.01 && t.z <= s.z1 + 0.01) {
+      if (dst < 0 || surfaces[i].y > surfaces[dst].y) dst = i;
+    }
+  }
+  if (src >= 0 && dst >= 0) {
+    adj[src].push({ to: dst, via: 'teleport' });
+    adj[dst].push({ to: src, via: 'teleport' });
+  }
+}
 // proximity edges: step/jump/duck between surfaces overlapping in XZ
 for (let i = 0; i < N; i++) for (let j = i + 1; j < N; j++) {
   if (!near(surfaces[i], surfaces[j])) continue;
@@ -292,7 +321,7 @@ for (let u = 0; u < N; u++) for (const e of adj[u]) {
   // two MAJOR surfaces (platform/named structural box) — e.g. running off
   // the keep onto the bridge, or across the catwalk. Incidental jump/duck
   // links onto small cover crates are NOT routes and are excluded.
-  const isRoute = e.via === 'connector' ||
+  const isRoute = e.via === 'connector' || e.via === 'teleport' ||
     (e.via === 'step' && major(u) && major(e.to));
   if (!isRoute) continue;
   const a = Math.min(u, e.to), b = Math.max(u, e.to), k = a + '-' + b;

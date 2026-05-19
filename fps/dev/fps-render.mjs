@@ -305,8 +305,14 @@ render(  9, EYE, -15,  14, EYE, -15, 'fps_outside_FOUNDRY_W');
 render(SPAWN.x, EYE, SPAWN.z, 0, EYE + 3, -15, 'fps_spawn_at_citadel');
 // On the CITADEL_BASE mezzanine looking up at HILLTOP keep.
 render(  0, 4 + EYE,  -9,    0, 8 + EYE, -17, 'fps_mezzanine_at_HILLTOP');
-// On HILLTOP at the sniper, looking south over CITADEL_BASE toward spawn.
-render(  0, 8 + EYE, -17,    0, 8 + EYE - 0.3,  20, 'fps_HILLTOP_at_sniper');
+// On HILLTOP looking south at CITADEL_BASE + spawn (the SPIRE looms above).
+render(  0, 8 + EYE, -17,    0, 8 + EYE - 0.3,  20, 'fps_HILLTOP_view'),
+// On the SPIRE top at the sniper (y=14), looking south over the whole map.
+render(  0, 14 + EYE, -17,   0, 14 + EYE - 0.6,  30, 'fps_SPIRE_at_sniper');
+// Looking up at the SPIRE from below — sells the verticality.
+render(  0, EYE,  6,         0, 14, -17, 'fps_spawn_looking_at_SPIRE');
+// Standing in front of the TELE_SPIRE portal looking through it.
+render(  6 - 2, EYE,  12,    6, EYE, 12, 'fps_TELE_SPIRE_entry');
 // Walking the CATWALK_HE looking east at the foundry roof drop.
 render(  6, 8 + EYE, -17,   18, 8 + EYE - 0.3, -17, 'fps_CATWALK_HE_looking_east');
 

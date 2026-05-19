@@ -714,6 +714,45 @@ export function makeRuneSlabTexture() {
   return finalize(c);
 }
 
+// --- PORTAL (teleporter glyph) ----------------------------------------------
+// Magenta-cyan swirling vortex with bright sparks. Animated at runtime by
+// scrolling texture.offset (teleporters.js). Used with AdditiveBlending so
+// the portal glows against dark surfaces. Radial swirl plus fbm chaos.
+export function makePortalTexture() {
+  const N = 256;
+  const c = makeCanvas(N);
+  const ctx = c.getContext('2d');
+  const id = ctx.createImageData(N, N);
+  const d = id.data;
+  const cx = N / 2, cy = N / 2;
+  for (let y = 0; y < N; y++) {
+    for (let x = 0; x < N; x++) {
+      const dx = x - cx, dy = y - cy;
+      const r = Math.hypot(dx, dy) / N;
+      const ang = Math.atan2(dy, dx);
+      const n = fbm(x / 22 + ang * 1.5, y / 22 - r * 6, 4, 71);
+      const swirl = (Math.sin(ang * 4 + r * 14) + 1) * 0.5;
+      const v = n * 0.55 + swirl * 0.45;
+      const i = (y * N + x) * 4;
+      // Magenta core fading to cyan edges.
+      d[i]     = Math.min(255, 60  + v * 200);                 // R
+      d[i + 1] = Math.min(255, 30  + v * 100 + (1 - r) * 80);  // G
+      d[i + 2] = Math.min(255, 150 + v * 105);                 // B
+      d[i + 3] = 255;
+    }
+  }
+  ctx.putImageData(id, 0, 0);
+  // Bright spark sprinkles for "energy".
+  for (let s = 0; s < 36; s++) {
+    const sx = Math.random() * N, sy = Math.random() * N;
+    ctx.fillStyle = `rgba(255,${180 + Math.random() * 75 | 0},255,${0.45 + Math.random() * 0.45})`;
+    ctx.beginPath();
+    ctx.arc(sx, sy, 1 + Math.random() * 2.2, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  return finalize(c);
+}
+
 // --- LEGACY ENTRY POINTS (kept so any external import still works) --------
 
 export function makeWallTexture() {

@@ -30,18 +30,24 @@ renderer.outputColorSpace = THREE.SRGBColorSpace;
 document.body.appendChild(renderer.domElement);
 
 // --- SKY ---
-// A vertical-gradient canvas: deep blue-grey at top, warmer near horizon.
-// Used as scene.background. Cheap, no shader, no asset.
+// S55i: stormy-dusk gradient. Deep indigo zenith bleeds into a violent
+// orange band at the horizon, with a dark ground line below. The amber
+// horizon picks up the torches + rune-sentinel lights in the same hue
+// family, so the warm lights read as belonging to the world rather than
+// floating on it. Cheap, no shader, no asset — a 4×256 vertical strip
+// upscaled by THREE's wrapping at draw time.
 function makeSkyTexture() {
   const W = 4, H = 256;
   const c = document.createElement('canvas');
   c.width = W; c.height = H;
   const ctx = c.getContext('2d');
   const grad = ctx.createLinearGradient(0, 0, 0, H);
-  grad.addColorStop(0.00, '#1a2030');  // zenith
-  grad.addColorStop(0.55, '#3d4655');
-  grad.addColorStop(0.90, '#6b6358');  // warmer horizon
-  grad.addColorStop(1.00, '#8a7864');
+  grad.addColorStop(0.00, '#0a0a1c');  // deep indigo zenith
+  grad.addColorStop(0.40, '#2a1832');  // bruised violet
+  grad.addColorStop(0.70, '#5a2a28');  // dim ember
+  grad.addColorStop(0.86, '#a85020');  // orange ember
+  grad.addColorStop(0.93, '#cc6628');  // peak horizon glow
+  grad.addColorStop(1.00, '#2a1a18');  // dark ground line
   ctx.fillStyle = grad;
   ctx.fillRect(0, 0, W, H);
   const tex = new THREE.CanvasTexture(c);
@@ -52,9 +58,10 @@ function makeSkyTexture() {
 // --- SCENE ---
 export const scene = new THREE.Scene();
 scene.background = makeSkyTexture();
-// Linear fog: starts close enough to soften the far perimeter, dense enough
-// at the horizon that you don't see the harsh edge between floor and sky.
-scene.fog = new THREE.Fog(0x5a5868, 30, 95);
+// S55i: dusty-orange fog matched to the dusk sky's horizon. Denser
+// (28→85, was 30→95) so distant geometry hazes earlier, intensifying
+// the citadel's "looming" silhouette from spawn.
+scene.fog = new THREE.Fog(0x4a2a28, 28, 85);
 
 // --- CAMERA ---
 export const camera = new THREE.PerspectiveCamera(
@@ -86,15 +93,20 @@ export const clock = new THREE.Clock();
 //                  black when you face away from the sun (the view model is
 //                  lit by world lights like everything else, so without this
 //                  its shadowed side is whatever faces the camera).
-const hemi = new THREE.HemisphereLight(0xaebdd6, 0x6a5a48, 1.25);
+// S55i: dusk-mood lighting. Hemisphere palette shifts warmer (violet sky
+// + warm dim ground); sun direction lowered to a long oblique angle from
+// the horizon so shadows stretch dramatically across the plaza; sun color
+// warmed toward orange-red. Ambient nudged down so the torches and rune
+// sentinels actually MATTER as light sources.
+const hemi = new THREE.HemisphereLight(0x6a4878, 0x4a3024, 0.95);
 hemi.position.set(0, 50, 0);
 scene.add(hemi);
 
-const ambient = new THREE.AmbientLight(0xffffff, 0.65);
+const ambient = new THREE.AmbientLight(0xffe0c4, 0.45);
 scene.add(ambient);
 
-const sun = new THREE.DirectionalLight(0xffe5b8, 1.05);
-sun.position.set(30, 60, 20);
+const sun = new THREE.DirectionalLight(0xffae64, 1.20);
+sun.position.set(45, 22, 35);
 sun.castShadow = true;
 sun.shadow.mapSize.set(2048, 2048);
 // Shadow camera sized for the 80x80 arena. Bigger = softer / lower res; we
@@ -127,19 +139,22 @@ camera.add(viewLight);
 // side. No shadows (a 9-light shadowed grid is far too expensive and the
 // sun already supplies the shaped shadows). World layer only — the held
 // weapon is handled by viewLight, so these don't double-blow-out the gun.
+// S55i: flood lights warmed (was 0xf3f6ff cool-white, now amber 0xffd098)
+// and dimmed (0.85→0.55) so the dusk mood is preserved while still keeping
+// the play area readable at distance. Density of 9 lights unchanged so no
+// pocket of the arena ever crushes to black.
 const floodLights = [];
 for (let gx = -1; gx <= 1; gx++) {
   for (let gz = -1; gz <= 1; gz++) {
-    const fl = new THREE.PointLight(0xf3f6ff, 0.85, 70, 1.0);
+    const fl = new THREE.PointLight(0xffd098, 0.55, 70, 1.0);
     fl.castShadow = false;
     fl.position.set(gx * 24, 19, gz * 24);
     scene.add(fl);
     floodLights.push(fl);
   }
 }
-// A broad ambient bump so deep-shadow faces away from every flood light
-// still keep detail (the user wants the whole map lit up).
-const skyFill = new THREE.HemisphereLight(0xdfe8ff, 0x4a4640, 0.55);
+// A broad ambient bump matched to the dusk sky.
+const skyFill = new THREE.HemisphereLight(0xb88a78, 0x3a2418, 0.45);
 skyFill.position.set(0, 60, 0);
 scene.add(skyFill);
 

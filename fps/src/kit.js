@@ -45,7 +45,9 @@ import { makeBoxSolid, makeRampSolid, shootables, clamp } from './collision.js';
 import { makeFloorTexture, makeBrickTexture, makeWoodTexture,
          makeConcreteTexture, makeMetalTexture,
          makeSlateStoneTexture, makeIronPlateTexture, makeMarbleSlabTexture,
-         makeSandstoneTexture, makeRuneSlabTexture } from './textures.js';
+         makeSandstoneTexture, makeRuneSlabTexture,
+         makePortalTexture } from './textures.js';
+import { registerTeleporter } from './teleporters.js';
 
 // --- MATERIALS (shared; DoubleSide on structure so a winding mistake can
 // never read as see-through — the user requires structure be opaque) ---
@@ -417,4 +419,43 @@ export function perimeter(half, height, thick = 1.0) {
   wall({ cx: 0, cz: -half, length: half * 2 + t * 2, height, thick: t, axis: 'x' });
   wall({ cx:  half, cz: 0, length: half * 2 + t * 2, height, thick: t, axis: 'z' });
   wall({ cx: -half, cz: 0, length: half * 2 + t * 2, height, thick: t, axis: 'z' });
+}
+
+// --- PORTAL / TELEPORTER --------------------------------------------------
+// Build a glowing portal mesh AND register a teleporter trigger volume.
+// `from` is the trigger AABB (the gate the player walks into); `to` is the
+// destination position. The visible mesh is an additive-blended box at the
+// trigger position, sized to make the portal feel like a doorway you step
+// through (not a tile you walk on). The mesh is NOT a collider — bullets
+// and vision pass through it.
+//
+// Schema for a LAYOUT entry:
+//   { t: 'teleporter', id, from:{cx,cz,y,sx,sy,sz}, to:{x,z,y,yaw?} }
+//
+// Internally the portal texture is CLONED per portal so each one animates
+// independently (different scroll speeds + phase).
+export function portal({ id, from, to }) {
+  const tex = makePortalTexture();
+  tex.wrapS = THREE.RepeatWrapping;
+  tex.wrapT = THREE.RepeatWrapping;
+  const mat = new THREE.MeshBasicMaterial({
+    map: tex,
+    transparent: true,
+    opacity: 0.78,
+    blending: THREE.AdditiveBlending,
+    depthWrite: false,
+    side: THREE.DoubleSide,
+  });
+  const geo = new THREE.BoxGeometry(from.sx, from.sy, from.sz);
+  const mesh = new THREE.Mesh(geo, mat);
+  mesh.position.set(from.cx, from.y + from.sy / 2, from.cz);
+  mesh.renderOrder = 2;
+  scene.add(mesh);
+  // Trigger AABB in world coords.
+  const trigger = {
+    x0: from.cx - from.sx / 2, x1: from.cx + from.sx / 2,
+    y0: from.y,                y1: from.y + from.sy,
+    z0: from.cz - from.sz / 2, z1: from.cz + from.sz / 2,
+  };
+  registerTeleporter({ id, trigger, to, mesh, texture: tex });
 }

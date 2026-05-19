@@ -208,6 +208,26 @@ export const LAYOUT = [
   { t: 'wall', axis: 'z', cx:  4, cz: -17, base: 8, length: 8, height: 1.6, thick: 0.4, mat: 'slate',
     door: { width: 4.0, height: 1.6 } },                                                     // E parapet (CATWALK_HE landing)
 
+  // THE SPIRE — y=14 marble obelisk above HILLTOP. Sits as a 4×4 solid
+  // block on top of HILLTOP (y=8 → 14), creating the map's tallest
+  // landmark visible from anywhere. The sniper pickup lives on top of the
+  // SPIRE, accessible ONLY via the south-plaza teleporter — no walkable
+  // route from HILLTOP up (6 m delta, too tall for duck-jump). This is the
+  // map's premier commitment beat: enter the portal at ground level,
+  // pop out 14 m up with no easy retreat except a long fall.
+  { t: 'platform', id: 'SPIRE', cx: 0, cz: -17, top: 14, sx: 4, sz: 4, thick: 6, mat: 'marble' },
+  // Spire crown parapets — slate slits on all 4 sides. Door-style aperture
+  // height equals wall height so the sniper has clear sightlines through
+  // every face from the perch's center.
+  { t: 'wall', axis: 'x', cx: 0, cz: -19, base: 14, length: 4, height: 1.2, thick: 0.3, mat: 'slate',
+    window: { width: 2.6, height: 0.7, sill: 0.4 } },
+  { t: 'wall', axis: 'x', cx: 0, cz: -15, base: 14, length: 4, height: 1.2, thick: 0.3, mat: 'slate',
+    window: { width: 2.6, height: 0.7, sill: 0.4 } },
+  { t: 'wall', axis: 'z', cx: -2, cz: -17, base: 14, length: 4, height: 1.2, thick: 0.3, mat: 'slate',
+    window: { width: 2.6, height: 0.7, sill: 0.4 } },
+  { t: 'wall', axis: 'z', cx:  2, cz: -17, base: 14, length: 4, height: 1.2, thick: 0.3, mat: 'slate',
+    window: { width: 2.6, height: 0.7, sill: 0.4 } },
+
   // CATWALK_HE — high catwalk bridging HILLTOP east face (x=4, y=8) to a
   // point above FOUNDRY_ROOF. y=8 (flush with HILLTOP top). Player can
   // either drop off the east end onto FOUNDRY_ROOF at y=4 (one-way commit)
@@ -380,6 +400,52 @@ export const LAYOUT = [
     c0: -12, c1: -8, thick: 0.4 },
 
   // =====================================================================
+  // TELEPORTERS — Quake-style portal pairs. Two one-way portals introduce
+  // movement mechanics no other route in the map provides:
+  //
+  //   TELE_SPIRE: south plaza (visible from spawn) → SPIRE top.
+  //     Vertical 14 m leap. The portal stands as a glowing magenta gate
+  //     7 m east of the citadel grand ramp. Only way to reach the SPIRE
+  //     where the sniper lives.
+  //
+  //   TELE_TUNNEL: inside the VAULT east room → colonnade ground.
+  //     ~50 m horizontal hop across the map. An escape route for cornered
+  //     vault defenders, or a fast offensive pivot from N to W.
+  //
+  // Trigger AABBs are vertical (sy=3) so jumping through them still fires;
+  // visible mesh = the trigger box rendered with additive-blended portal
+  // texture. Cooldown 0.3 s in teleporters.js prevents re-trigger loops.
+  // =====================================================================
+  { t: 'teleporter', id: 'TELE_SPIRE',
+    from: { cx:  6, cz: 12, y: 0, sx: 2, sy: 3, sz: 2 },
+    to:   { x:  0, z: -17, y: 14, yaw: Math.PI } },                                // facing south, looking down at the citadel + map
+  { t: 'teleporter', id: 'TELE_TUNNEL',
+    from: { cx:  5, cz: -46, y: 0, sx: 2, sy: 3, sz: 2 },
+    to:   { x: -46, z:   0, y:  0, yaw: -Math.PI / 2 } },                          // facing west, into the colonnade
+
+  // =====================================================================
+  // TORCHES — wall-mounted flickering flames at every building entry.
+  // Each torch is a tiny wood pole + glowing tip + warm point light
+  // (range 11 m). Flicker animates intensity ±20 % via sin/cos noise.
+  // Placement traces the player's natural approach to each entry:
+  //   - VAULT S door
+  //   - FOUNDRY S door
+  //   - TERRACE N approach
+  //   - COLONNADE north + south column bases
+  //   - SPIRE base (HILLTOP top, flanking the spire)
+  // =====================================================================
+  { t: 'torch', x: -2.0, y: 0,   z: -37.5 },   // VAULT S door, west side
+  { t: 'torch', x:  2.0, y: 0,   z: -37.5 },   // VAULT S door, east side
+  { t: 'torch', x: 19.5, y: 0,   z:  -8.0 },   // FOUNDRY S door, west side
+  { t: 'torch', x: 24.5, y: 0,   z:  -8.0 },   // FOUNDRY S door, east side
+  { t: 'torch', x: -2.5, y: 0,   z:  17.5 },   // TERRACE N approach, west
+  { t: 'torch', x:  2.5, y: 0,   z:  17.5 },   // TERRACE N approach, east
+  { t: 'torch', x: -50, y: 0,   z: -20 },      // COLONNADE Col 1
+  { t: 'torch', x: -50, y: 0,   z:  20 },      // COLONNADE Col 4
+  { t: 'torch', x: -2.5, y: 8,   z: -13 },     // HILLTOP S edge, flanking SPIRE base
+  { t: 'torch', x:  2.5, y: 8,   z: -13 },     // HILLTOP S edge, flanking SPIRE base
+
+  // =====================================================================
   // RUNE SENTINELS — two glowing rune-marked monoliths flanking the S
   // grand ramp at its foot, telegraphing "you are entering the citadel".
   // Built as `wall` entries (square footprint 1.4×1.4, height 2.5 m) so
@@ -435,7 +501,7 @@ export const LAYOUT = [
 // on a surface with open sky above.
 export const PICKUPS = [
   // Weapons.
-  { kind: 'weapon', what: 'sniper',  x:   0, z: -17, y: 8.0 },         // HILLTOP perch
+  { kind: 'weapon', what: 'sniper',  x:   0, z: -17, y: 14.0 },        // SPIRE top — accessible only via TELE_SPIRE portal
   { kind: 'weapon', what: 'shotgun', x:  22, z: -12, y: 4.0 },         // FOUNDRY_ROOF center (clear of CATWALK_HE shadow and the new stair)
   { kind: 'weapon', what: 'smg',     x:   0, z: -45, y: 4.0 },         // VAULT_ROOF center
   { kind: 'weapon', what: 'saw',     x: -48, z:   0, y: 0.0 },         // COLONNADE ground (between cols 2 & 3)
@@ -446,6 +512,7 @@ export const PICKUPS = [
   { kind: 'health', x: -18, z:  18, y: 0 },                            // SW plaza
   // Deck health — one per accessible elevated landmark.
   { kind: 'health', x:   0, z:  -7, y: 4.0 },                          // CITADEL_BASE mezzanine (S edge, by S parapet door)
+  { kind: 'health', x:   3, z: -17, y: 8.0 },                          // HILLTOP perch (east of SPIRE base — catwalk staging point)
   { kind: 'health', x:   0, z:  33, y: 3.0 },                          // TERRACE (S half)
   { kind: 'health', x: -30, z:   0, y: 5.0 },                          // WEST_RAMPART center
 ];
