@@ -20,10 +20,7 @@ import { updateAudioListener } from './audio.js';
 import { applyTeleport, updateTeleporters } from './teleporters.js';
 import { applyJumpPad, updateJumpPads } from './jumppads.js';
 import { updateTorchFlicker } from './torches.js';
-import { initStorm, updateStorm } from './storm.js';
 import { updateSpawnFX } from './spawnfx.js';
-
-initStorm();
 
 // Initial UI state: title overlay shown, no HUD, no canvas focus.
 setGameState(GAME_STATE.TITLE);
@@ -62,12 +59,13 @@ function loop() {
     updateBlood(dt);
     updateHUD(dt);
     updateToast(dt);
-    // S55i/k: portal swirl + jump-pad glow pulse + torch flicker +
-    // lightning strikes. Visual-only ticks; cheap, no allocations.
+    // S55i/k: portal swirl + jump-pad glow pulse + torch flicker.
+    // Visual-only ticks; cheap, no allocations. (Storm lightning
+    // removed in S55o — created scene light churn that recompiled
+    // every MeshStandardMaterial's shader on each strike.)
     updateTeleporters(dt);
     updateJumpPads(dt);
     updateTorchFlicker(dt);
-    updateStorm(dt);
     updateSpawnFX(dt);
     // S55: keep the audio listener pose in sync with the camera so 3D-panned
     // enemy gunshots are heard from the correct direction.

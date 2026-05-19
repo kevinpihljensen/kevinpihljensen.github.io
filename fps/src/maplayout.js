@@ -496,26 +496,17 @@ export const LAYOUT = [
   //   - COLONNADE north + south column bases
   //   - SPIRE base (HILLTOP top, flanking the spire)
   // =====================================================================
-  { t: 'torch', x: -2.0, y: 0,   z: -37.5 },   // VAULT S door, west side
-  { t: 'torch', x:  2.0, y: 0,   z: -37.5 },   // VAULT S door, east side
-  { t: 'torch', x: 19.5, y: 0,   z:  -8.0 },   // FOUNDRY S door, west side
-  { t: 'torch', x: 24.5, y: 0,   z:  -8.0 },   // FOUNDRY S door, east side
-  { t: 'torch', x: -2.5, y: 0,   z:  17.5 },   // TERRACE N approach, west
-  { t: 'torch', x:  2.5, y: 0,   z:  17.5 },   // TERRACE N approach, east
-  { t: 'torch', x: -50, y: 0,   z: -20 },      // COLONNADE Col 1
-  { t: 'torch', x: -50, y: 0,   z:  20 },      // COLONNADE Col 4
-  { t: 'torch', x: -2.5, y: 8,   z: -13 },     // HILLTOP S edge, flanking SPIRE base
-  { t: 'torch', x:  2.5, y: 8,   z: -13 },     // HILLTOP S edge, flanking SPIRE base
-  // S55k torches at all new buildings.
-  { t: 'torch', x: 39.5, y: 0,   z: -30 },     // BARRACKS S door, west side
-  { t: 'torch', x: 44.5, y: 0,   z: -30 },     // BARRACKS S door, east side
-  { t: 'torch', x: -39.5, y: 0,  z: -27 },     // WATCHTOWER S door, east side
-  { t: 'torch', x: -44.5, y: 0,  z: -27 },     // WATCHTOWER S door, west side
-  { t: 'torch', x: -3.0, y: 0,   z:  51 },     // SOUTH_KEEP N door
-  { t: 'torch', x:  3.0, y: 0,   z:  51 },     // SOUTH_KEEP N door
-  { t: 'torch', x: 50.0, y: 0,   z:   0 },     // EAST_TOWER front door
-  { t: 'torch', x: 12.0, y: 0,   z:  19, opts: { color: 0xff9a30 } },   // CENTRAL_SHRINE altar light (matches rune emissive)
-  { t: 'torch', x: -58, y: 0,    z:  0,  opts: { color: 0xff6a30 } },   // WEST_RUIN flickering remnant fire
+  // S55o: culled 19 torches down to 5 (one per major outer-building
+  // entry). Every torch is a PointLight; with 9 floodlights + 2 rune
+  // sentinels + 4 braziers already in the scene, 19 extras pushed
+  // total point-light count past where the Standard material's
+  // fragment shader runs cheaply. Each torch now centers on its
+  // doorway rather than flanking it as a pair.
+  { t: 'torch', x:  0,   y: 0, z: -37.5 },   // VAULT S door (centered)
+  { t: 'torch', x: 22.0, y: 0, z:  -8.0 },   // FOUNDRY S door (centered)
+  { t: 'torch', x: 42.0, y: 0, z: -30.0 },   // BARRACKS S door (centered)
+  { t: 'torch', x:-42.0, y: 0, z: -27.0 },   // WATCHTOWER S door (centered)
+  { t: 'torch', x:  0,   y: 0, z:  51.0 },   // SOUTH_KEEP N door (centered)
 
   // =====================================================================
   // RUNE SENTINELS — two glowing rune-marked monoliths flanking the S
@@ -759,12 +750,13 @@ export const LAYOUT = [
   // 2× point-light range. Placed at the map's grandest moments where a
   // small torch would feel underweight.
   // =====================================================================
+  // S55o: culled 6 braziers down to 2. Keep the citadel mezzanine
+  // pair — these flank the S parapet door and are visible from spawn
+  // (the map's most-seen lighting beat). Drop the HILLTOP pair, the
+  // TERRACE one, and the SHRINE one — their atmosphere is already
+  // covered by the rune sentinels + the marble HILLTOP material.
   { t: 'brazier', x: -4.0, y: 4, z: -6.5 },                                 // CITADEL_BASE mezzanine S edge, west of door
   { t: 'brazier', x:  4.0, y: 4, z: -6.5 },                                 // CITADEL_BASE mezzanine S edge, east of door
-  { t: 'brazier', x: -2.5, y: 8, z: -12.5 },                                // HILLTOP top flanking the SPIRE south face
-  { t: 'brazier', x:  2.5, y: 8, z: -12.5 },                                // HILLTOP top flanking the SPIRE south face
-  { t: 'brazier', x:  0,   y: 3, z:  33,  opts: { color: 0xffb050 } },      // TERRACE center
-  { t: 'brazier', x:  12,  y: 0, z:  22,  opts: { color: 0xff9a30 } },      // between MARKET + CENTRAL_SHRINE altar
 
   // =====================================================================
   // JUMP PADS — new movement mechanic. Step on the glowing cyan tile;

@@ -26,6 +26,78 @@ Format: newest entries at the top. Each entry lists what was added, what was cha
 
 ## Session log
 
+### 2026-05-19 — Session 55o (perf cleanup — kill storm flash, drop spawn-FX point light, cull torches/braziers/floodlights)
+
+User report: "Now the game lags every now and then. I really don't
+need all the fancy lightning bullshit." Investigation of the lighting
+load added in S55i-S55l identified three sources:
+
+**ROOT CAUSE 1 — point-light count CHANGES.** Three.js's
+`MeshStandardMaterial` compiles its fragment shader against the
+scene's current light count. Whenever the count changes at runtime,
+EVERY MeshStandardMaterial in the scene recompiles — and the map's
+got dozens of them. Two systems were doing this every few seconds:
+
+  - The spawn-FX point light (`spawnfx.js`): added per arena spawn
+    (≈ every 1.7 s in arena mode), removed 0.85 s later. Every
+    add/remove cycle triggered a full-scene shader recompile and
+    produced a visible hitch.
+  - The storm-lightning DirectionalLight (`storm.js`): added at
+    boot (only one recompile, at startup), but the user explicitly
+    asked to drop the "lightning bullshit" so the module is gone
+    entirely.
+
+**ROOT CAUSE 2 — point-light COUNT (sustained per-pixel cost).** The
+fragment shader's lights loop runs once per light per pixel. Counts
+that piled up across recent sessions:
+
+  - Torches: 19 (one or two per building entry).
+  - Braziers: 6.
+  - Floodlights: 9 (a 3×3 ambient grid).
+  - Rune sentinels: 2.
+  - View/gun rig: 2.
+  Total point lights: ~38, plus directional + hemisphere lights.
+
+**FIX 1 — `storm.js` REMOVED ENTIRELY.** Module deleted, import +
+initStorm() + updateStorm() calls stripped from `main.js`.
+
+**FIX 2 — `spawnfx.js`: point light removed.** Kept the
+additive-blended pillar mesh (visually reads bright thanks to the
+blend mode) but dropped the PointLight + its add/remove dance. Light
+count is now static while the game runs.
+
+**FIX 3 — torches culled 19 → 5.** One centred torch per major
+outer-building entry (VAULT, FOUNDRY, BARRACKS, WATCHTOWER,
+SOUTH_KEEP). Dropped: HILLTOP torches, COLONNADE torches, EAST_TOWER,
+CENTRAL_SHRINE, WEST_RUIN, TERRACE-N approach, all flanking pairs.
+
+**FIX 4 — braziers culled 6 → 2.** Kept the citadel-mezzanine pair
+flanking the S parapet door — these are visible from spawn and are
+the most-seen lighting beat. Dropped HILLTOP pair, TERRACE, MARKET.
+
+**FIX 5 — floodlights culled 9 → 5.** Replaced the 3×3 grid with a
+sparse 5-point pattern (centre + 4 cardinals at ±32). Each light's
+range bumped 70 → 80 to preserve coverage; intensity bumped
+0.55 → 0.70 so total scene illumination stays close to before. Net
+fragment-shader work ≈ 44 % less per pixel from this change alone.
+
+**Net point-light count: 38 → ~16.** Combined with eliminating
+runtime light-count changes, the hitch source is gone and the
+sustained per-pixel cost is roughly 2.4× lighter.
+
+**Verified.** Battery: 283/283 ALL GREEN. MAP OK; loop=yes;
+geomWarns=0; unreachable pickups=0; doorway drift=0; stranded
+surfaces=0. fps-standalone.html rebuilds clean (899 KB).
+
+**Changed.**
+- `src/storm.js`: REMOVED.
+- `src/spawnfx.js`: PointLight + LAYER_WORLD import dropped; mesh
+  pillar only.
+- `src/main.js`: storm imports + initStorm() + updateStorm() removed.
+- `src/scene.js`: floodlight grid 9 → 5 (range 70 → 80, intensity
+  0.55 → 0.70).
+- `src/maplayout.js`: torch entries 19 → 5, brazier entries 6 → 2.
+
 ### 2026-05-19 — Session 55n (SPIRE return portal + foundry→south shortcut + capped-groundHeightAt harness fixes)
 
 Two more teleporters + harness improvements that the new portals

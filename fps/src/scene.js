@@ -139,19 +139,28 @@ camera.add(viewLight);
 // side. No shadows (a 9-light shadowed grid is far too expensive and the
 // sun already supplies the shaped shadows). World layer only — the held
 // weapon is handled by viewLight, so these don't double-blow-out the gun.
-// S55i: flood lights warmed (was 0xf3f6ff cool-white, now amber 0xffd098)
-// and dimmed (0.85→0.55) so the dusk mood is preserved while still keeping
-// the play area readable at distance. Density of 9 lights unchanged so no
-// pocket of the arena ever crushes to black.
+// S55o: the 3×3 = 9-flood grid was a major contributor to the recent
+// frame-rate hitches — each PointLight runs another iteration of the
+// fragment-shader light loop per pixel. Reduced to a sparse 5-point
+// pattern (1 centre + 4 cardinals at ±32) with each light's range
+// bumped 70 → 80 so coverage is preserved. Same dusk-amber tint,
+// each light slightly brighter (0.55 → 0.70) so the total scene
+// illumination level stays close to what it was. Net fragment-shader
+// work: ≈ 44 % less per pixel.
 const floodLights = [];
-for (let gx = -1; gx <= 1; gx++) {
-  for (let gz = -1; gz <= 1; gz++) {
-    const fl = new THREE.PointLight(0xffd098, 0.55, 70, 1.0);
-    fl.castShadow = false;
-    fl.position.set(gx * 24, 19, gz * 24);
-    scene.add(fl);
-    floodLights.push(fl);
-  }
+const FLOOD_POSITIONS = [
+  [  0, 19,   0],
+  [ 32, 19,   0],
+  [-32, 19,   0],
+  [  0, 19,  32],
+  [  0, 19, -32],
+];
+for (const [px, py, pz] of FLOOD_POSITIONS) {
+  const fl = new THREE.PointLight(0xffd098, 0.70, 80, 1.0);
+  fl.castShadow = false;
+  fl.position.set(px, py, pz);
+  scene.add(fl);
+  floodLights.push(fl);
 }
 // A broad ambient bump matched to the dusk sky.
 const skyFill = new THREE.HemisphereLight(0xb88a78, 0x3a2418, 0.45);
