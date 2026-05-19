@@ -46,8 +46,9 @@ import { makeFloorTexture, makeBrickTexture, makeWoodTexture,
          makeConcreteTexture, makeMetalTexture,
          makeSlateStoneTexture, makeIronPlateTexture, makeMarbleSlabTexture,
          makeSandstoneTexture, makeRuneSlabTexture,
-         makePortalTexture } from './textures.js';
+         makePortalTexture, makeJumpPadTexture } from './textures.js';
 import { registerTeleporter } from './teleporters.js';
+import { registerJumpPad } from './jumppads.js';
 
 // --- MATERIALS (shared; DoubleSide on structure so a winding mistake can
 // never read as see-through — the user requires structure be opaque) ---
@@ -458,4 +459,44 @@ export function portal({ id, from, to }) {
     z0: from.cz - from.sz / 2, z1: from.cz + from.sz / 2,
   };
   registerTeleporter({ id, trigger, to, mesh, texture: tex });
+}
+
+// --- JUMP PAD --------------------------------------------------------------
+// A flat glowing tile on the ground. Player walks onto it; their vertical
+// velocity is forced to launchVy (preserving horizontal speed, so a
+// running-jump onto the pad lobs the player into a forward arc). Visual
+// is a single horizontal plane lying flat on the floor, alpha-blended
+// additive so it reads as a glow patch, never an obstacle.
+//
+// Schema for a LAYOUT entry:
+//   { t: 'jumppad', id, cx, cz, sx, sz, launchVy }
+//
+// launchVy defaults to 14 → peak height ≈ 4.9 m (v²/2g with GRAVITY=20).
+// Trigger AABB is sx × 1.5 m tall (so a sprinting/crouched player still
+// fires it) × sz, centered at (cx, 0.75, cz).
+export function jumppad({ id, cx, cz, sx = 3, sz = 3, launchVy = 14 }) {
+  const tex = makeJumpPadTexture();
+  const mat = new THREE.MeshBasicMaterial({
+    map: tex,
+    transparent: true,
+    opacity: 0.78,
+    blending: THREE.AdditiveBlending,
+    depthWrite: false,
+    side: THREE.DoubleSide,
+  });
+  // Plane lying flat on the ground (slightly above to avoid z-fight
+  // with the floor decals).
+  const geo = new THREE.PlaneGeometry(sx, sz);
+  const mesh = new THREE.Mesh(geo, mat);
+  mesh.rotation.x = -Math.PI / 2;
+  mesh.position.set(cx, 0.04, cz);
+  mesh.renderOrder = 1;
+  scene.add(mesh);
+  // Trigger AABB. Vertical span 0..1.5 catches walking + crouched feet.
+  const trigger = {
+    x0: cx - sx / 2, x1: cx + sx / 2,
+    y0: 0,           y1: 1.5,
+    z0: cz - sz / 2, z1: cz + sz / 2,
+  };
+  registerJumpPad({ id, trigger, launchVy, mesh, texture: tex });
 }

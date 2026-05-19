@@ -150,6 +150,12 @@ export const DOORWAYS = [
   { x:  42, z: -36, axis: 'z' },   // interior partition
   // WATCHTOWER (NW sentinel tower, S55j).
   { x: -42, z: -28, axis: 'x' },   // S front door
+  // SOUTH_KEEP (far-south bastion, S55k).
+  { x:   0, z: 50, axis: 'x' },    // N front door
+  { x: -12, z: 55, axis: 'z' },    // W flank door
+  { x:   0, z: 55, axis: 'z' },    // interior partition
+  // EAST_TOWER (far-east watchtower, S55k).
+  { x:  51, z:  0, axis: 'z' },    // W front door
 ];
 
 // S55j: Arena-mode enemy spawn points scattered across the WHOLE MAP so
@@ -165,10 +171,10 @@ export const DOORWAYS = [
 // fallbacks every quadrant means even when 3 are gated out by the
 // avoidance heuristics, at least 1 is always usable.
 export const ENEMY_SPAWN_POINTS = [
-  // Cardinals at the perimeter.
+  // Cardinals at the perimeter (clear of the new corner buildings).
   { x:   0, z: -55 },                                                   // far N (behind VAULT)
-  { x:  55, z:   0 },                                                   // far E (east of FOUNDRY)
-  { x:   0, z:  55 },                                                   // far S (south of TERRACE)
+  { x:  45, z:   8 },                                                   // E (south of EAST_TOWER, open ground)
+  { x: -18, z:  43 },                                                   // S (NW of SOUTH_KEEP, open ground)
   { x: -55, z:   0 },                                                   // far W (west of COLONNADE)
   // Diagonal corners.
   { x:  52, z: -52 },                                                   // NE corner (past BARRACKS)
@@ -457,6 +463,13 @@ export const LAYOUT = [
   { t: 'teleporter', id: 'TELE_TUNNEL',
     from: { cx:  5, cz: -46, y: 0, sx: 2, sy: 3, sz: 2 },
     to:   { x: -46, z:   0, y:  0, yaw: -Math.PI / 2 } },                          // facing west, into the colonnade
+  // S55k: two more teleporters wire the map's far corners to its core.
+  { t: 'teleporter', id: 'TELE_SOUTH_TO_FOUNDRY',
+    from: { cx: -8, cz: 46, y: 0, sx: 2, sy: 3, sz: 2 },
+    to:   { x:  22, z: -15, y: 4, yaw: 0 } },                                      // SOUTH_KEEP approach → FOUNDRY_ROOF center, facing north
+  { t: 'teleporter', id: 'TELE_EAST_TO_RAMPART',
+    from: { cx: 55, cz: 22, y: 0, sx: 2, sy: 3, sz: 2 },
+    to:   { x: -30, z:  0, y:  5, yaw: -Math.PI / 2 } },                           // EAST_TOWER approach → WEST_RAMPART top, facing west
 
   // =====================================================================
   // TORCHES — wall-mounted flickering flames at every building entry.
@@ -479,6 +492,16 @@ export const LAYOUT = [
   { t: 'torch', x: -50, y: 0,   z:  20 },      // COLONNADE Col 4
   { t: 'torch', x: -2.5, y: 8,   z: -13 },     // HILLTOP S edge, flanking SPIRE base
   { t: 'torch', x:  2.5, y: 8,   z: -13 },     // HILLTOP S edge, flanking SPIRE base
+  // S55k torches at all new buildings.
+  { t: 'torch', x: 39.5, y: 0,   z: -30 },     // BARRACKS S door, west side
+  { t: 'torch', x: 44.5, y: 0,   z: -30 },     // BARRACKS S door, east side
+  { t: 'torch', x: -39.5, y: 0,  z: -27 },     // WATCHTOWER S door, east side
+  { t: 'torch', x: -44.5, y: 0,  z: -27 },     // WATCHTOWER S door, west side
+  { t: 'torch', x: -3.0, y: 0,   z:  51 },     // SOUTH_KEEP N door
+  { t: 'torch', x:  3.0, y: 0,   z:  51 },     // SOUTH_KEEP N door
+  { t: 'torch', x: 50.0, y: 0,   z:   0 },     // EAST_TOWER front door
+  { t: 'torch', x: 12.0, y: 0,   z:  19, opts: { color: 0xff9a30 } },   // CENTRAL_SHRINE altar light (matches rune emissive)
+  { t: 'torch', x: -58, y: 0,    z:  0,  opts: { color: 0xff6a30 } },   // WEST_RUIN flickering remnant fire
 
   // =====================================================================
   // RUNE SENTINELS — two glowing rune-marked monoliths flanking the S
@@ -581,6 +604,101 @@ export const LAYOUT = [
   // Market crate stalls.
   { t: 'box', cx: 36, cz: 32, base: 0, sx: 1.6, sy: 0.9, sz: 1.6 },
   { t: 'box', cx: 32, cz: 34, base: 0, sx: 1.4, sy: 0.7, sz: 2.6 },
+
+  // =====================================================================
+  // THE SOUTH KEEP — far-south slate bastion. The map's southernmost
+  // landmark, balancing VAULT's mass at the north. Two-level access:
+  // ground-floor 24×10 hall with N front door + W flank door + interior
+  // partition, walkable roof at y=4. The roof has a sniper slit looking
+  // back at the citadel — a long sightline across the whole map.
+  // =====================================================================
+  { t: 'platform', id: 'SOUTH_KEEP_ROOF', cx: 0, cz: 55, top: 4, sx: 24, sz: 10, mat: 'slate' },
+  // Ground walls.
+  { t: 'wall', axis: 'x', cx:  0, cz: 50, length: 24, height: 3.4, thick: 0.5, mat: 'slate',
+    door: { width: 3.0, height: 2.8, offset: -6 } },                                         // N front door (W half)
+  { t: 'wall', axis: 'x', cx:  0, cz: 60, length: 24, height: 3.4, thick: 0.5, mat: 'slate' },// S back wall (closed)
+  { t: 'wall', axis: 'z', cx:-12, cz: 55, length: 10, height: 3.4, thick: 0.5, mat: 'slate',
+    door: { width: 2.6, height: 2.8 } },                                                     // W flank door
+  { t: 'wall', axis: 'z', cx: 12, cz: 55, length: 10, height: 3.4, thick: 0.5, mat: 'slate',
+    window: { width: 4.0, height: 1.0, sill: 1.2 } },                                        // E flank slit (stair side)
+  { t: 'wall', axis: 'z', cx:  0, cz: 55, length: 10, height: 3.4, thick: 0.4, mat: 'slate',
+    door: { width: 2.6, height: 2.6 } },                                                     // interior partition
+  // External stair on east face — lands on the roof.
+  { t: 'stairsTo', to: 'SOUTH_KEEP_ROOF', side: '+x', run: 7, width: 5, fromY: 0, steps: 7 },
+  // Roof parapets — N has a wide slit aimed at the citadel.
+  { t: 'wall', axis: 'x', cx:  0, cz: 50, base: 4, length: 24, height: 1.6, thick: 0.4, mat: 'slate',
+    window: { width: 16, height: 0.9, sill: 0.4 } },
+  { t: 'wall', axis: 'x', cx:  0, cz: 60, base: 4, length: 24, height: 1.6, thick: 0.4, mat: 'slate',
+    window: { width: 10, height: 0.8, sill: 0.5 } },
+  { t: 'wall', axis: 'z', cx:-12, cz: 55, base: 4, length: 10, height: 1.6, thick: 0.4, mat: 'slate',
+    window: { width: 6, height: 0.8, sill: 0.5 } },
+  { t: 'wall', axis: 'z', cx: 12, cz: 55, base: 4, length: 10, height: 1.6, thick: 0.4, mat: 'slate',
+    door: { width: 5.2, height: 1.6 } },                                                     // E parapet (stair landing)
+
+  // =====================================================================
+  // THE EAST TOWER — far-east slim sandstone watchtower. 8×8 footprint
+  // with a slight height premium (roof y=5) versus the rest of the
+  // map's y=4 standard, so it's the second-tallest landmark after the
+  // SPIRE. Slit windows on N + S + E, front door on W. The tower's
+  // east side abuts the perimeter wall — gives a "back-against-the-
+  // edge" feel to combat there.
+  // =====================================================================
+  { t: 'platform', id: 'EAST_TOWER_ROOF', cx: 55, cz: 0, top: 5, sx: 8, sz: 8, mat: 'sandstone' },
+  { t: 'wall', axis: 'x', cx: 55, cz: -4, length: 8, height: 4.4, thick: 0.5, mat: 'sandstone',
+    window: { width: 3.0, height: 0.9, sill: 2.0 } },
+  { t: 'wall', axis: 'x', cx: 55, cz:  4, length: 8, height: 4.4, thick: 0.5, mat: 'sandstone',
+    window: { width: 3.0, height: 0.9, sill: 2.0 } },
+  { t: 'wall', axis: 'z', cx: 51, cz:  0, length: 8, height: 4.4, thick: 0.5, mat: 'sandstone',
+    door: { width: 2.4, height: 2.8 } },
+  { t: 'wall', axis: 'z', cx: 59, cz:  0, length: 8, height: 4.4, thick: 0.5, mat: 'sandstone',
+    window: { width: 3.0, height: 0.9, sill: 2.0 } },
+  // External stair (north face this time, for variety).
+  { t: 'stairsTo', to: 'EAST_TOWER_ROOF', side: '-z', run: 7, width: 5, fromY: 0, steps: 8 },
+  // Roof parapets (slits on 3 sides + door on N for stair landing).
+  { t: 'wall', axis: 'x', cx: 55, cz: -4, base: 5, length: 8, height: 1.6, thick: 0.4, mat: 'sandstone',
+    door: { width: 5.2, height: 1.6 } },                                                     // N parapet (stair)
+  { t: 'wall', axis: 'x', cx: 55, cz:  4, base: 5, length: 8, height: 1.6, thick: 0.4, mat: 'sandstone',
+    window: { width: 5, height: 0.9, sill: 0.5 } },
+  { t: 'wall', axis: 'z', cx: 51, cz:  0, base: 5, length: 8, height: 1.6, thick: 0.4, mat: 'sandstone',
+    window: { width: 5, height: 0.9, sill: 0.5 } },
+  { t: 'wall', axis: 'z', cx: 59, cz:  0, base: 5, length: 8, height: 1.6, thick: 0.4, mat: 'sandstone',
+    window: { width: 5, height: 0.9, sill: 0.5 } },
+
+  // =====================================================================
+  // WEST_RUIN — far-west crumbling sandstone arch. Two tall partial
+  // walls + a low remnant. No roof, no platform — visual landmark only
+  // to anchor the colonnade's far west edge. Reads as a single arch in
+  // a wasteland.
+  // =====================================================================
+  { t: 'wall', axis: 'z', cx: -58, cz: -4, length: 6, height: 3.6, thick: 0.7, mat: 'sandstone' },           // N pillar
+  { t: 'wall', axis: 'z', cx: -58, cz:  4, length: 6, height: 3.6, thick: 0.7, mat: 'sandstone' },           // S pillar
+  { t: 'wall', axis: 'x', cx: -58, cz:  0, length: 5, height: 1.5, thick: 0.4, mat: 'sandstone' },           // low arch base (broken)
+
+  // =====================================================================
+  // CENTRAL SHRINE — small rune-marked monument in the SE plaza near
+  // the MARKET. Three short walls + a rune-slab accent wall + a low
+  // brazier-sized overhang. Visual emissive accent piece; the rune wall
+  // glows amber, drawing the eye into the SE corner.
+  // =====================================================================
+  { t: 'wall', axis: 'x', cx: 12, cz: 15, length: 5, height: 2.4, thick: 0.5, mat: 'sandstone' },            // N shrine wall
+  { t: 'wall', axis: 'z', cx: 14.5, cz: 18, length: 6, height: 2.4, thick: 0.5, mat: 'sandstone' },          // E side
+  { t: 'wall', axis: 'z', cx: 9.5, cz: 18, length: 6, height: 2.4, thick: 0.5, mat: 'sandstone' },           // W side
+  // Rune-marked accent slab as the focal "altar" face.
+  { t: 'wall', axis: 'x', cx: 12, cz: 17, length: 3, height: 1.8, thick: 0.5, mat: 'rune' },                 // glowing altar
+  // Awning over the shrine.
+  { t: 'overhang', axis: 'z', loPos: 15, hiPos: 21, loY: 2.4, hiY: 2.8, c0: 9, c1: 15, thick: 0.3 },
+
+  // =====================================================================
+  // JUMP PADS — new movement mechanic. Step on the glowing cyan tile;
+  // velocityY launches you up to ≈ 4.9 m peak height (vy=14, GRAVITY=20
+  // → v²/2g). Horizontal velocity is preserved so a running-jump arcs
+  // forward into the destination. Four pads placed to give alternative
+  // vertical access to each new corner building's roof.
+  // =====================================================================
+  { t: 'jumppad', id: 'PAD_BARRACKS',  cx:  35, cz: -27, sx: 3, sz: 3, launchVy: 13 },        // → BARRACKS roof
+  { t: 'jumppad', id: 'PAD_WATCHTOWER',cx: -35, cz: -28, sx: 3, sz: 3, launchVy: 13 },        // → WATCHTOWER roof
+  { t: 'jumppad', id: 'PAD_TERRACE',   cx:  18, cz:  22, sx: 3, sz: 3, launchVy: 12 },        // → MARKET awning / TERRACE deck
+  { t: 'jumppad', id: 'PAD_SOUTHKEEP', cx:  18, cz:  46, sx: 3, sz: 3, launchVy: 13 },        // → SOUTH_KEEP roof
 
   // =====================================================================
   // PLAZA COVER — scattered low boxes around spawn anchors and the open

@@ -18,7 +18,11 @@ import { updateWave, updateArena } from './wave.js';
 import { setGameState, updateHUD, updateToast } from './hud.js';
 import { updateAudioListener } from './audio.js';
 import { applyTeleport, updateTeleporters } from './teleporters.js';
+import { applyJumpPad, updateJumpPads } from './jumppads.js';
 import { updateTorchFlicker } from './torches.js';
+import { initStorm, updateStorm } from './storm.js';
+
+initStorm();
 
 // Initial UI state: title overlay shown, no HUD, no canvas focus.
 setGameState(GAME_STATE.TITLE);
@@ -42,10 +46,11 @@ function loop() {
     processAutoFire();
     updateEnemies(dt);
     updateProjectiles(dt);
-    // S55i: portal-trigger check BEFORE player movement so the snap happens
-    // before this frame's collision pass — avoids one frame of "stuck in a
-    // wall at the destination" between teleport and the next physics step.
+    // S55i/k: portal-trigger + jumppad-trigger checks BEFORE player
+    // movement. Teleporter snaps position; jumppad sets velocityY. Both
+    // must run pre-collision so the change is reflected this same frame.
     applyTeleport(dt);
+    applyJumpPad(dt);
     updatePlayer(dt);
     updateWeaponTimers(dt);
     updatePickups(dt);
@@ -56,10 +61,12 @@ function loop() {
     updateBlood(dt);
     updateHUD(dt);
     updateToast(dt);
-    // S55i: portal swirl animation + torch flame flicker. Both are
-    // visual-only and tick every active frame.
+    // S55i/k: portal swirl + jump-pad glow pulse + torch flicker +
+    // lightning strikes. Visual-only ticks; cheap, no allocations.
     updateTeleporters(dt);
+    updateJumpPads(dt);
     updateTorchFlicker(dt);
+    updateStorm(dt);
     // S55: keep the audio listener pose in sync with the camera so 3D-panned
     // enemy gunshots are heard from the correct direction.
     _audioForward.set(0, 0, -1).applyQuaternion(camera.quaternion);

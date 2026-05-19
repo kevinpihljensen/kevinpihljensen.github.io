@@ -753,6 +753,62 @@ export function makePortalTexture() {
   return finalize(c);
 }
 
+// --- JUMP PAD (launch tile) ---------------------------------------------
+// Radial chevron glow — concentric rings of arrows pointing UP. Animated
+// at runtime by `updateJumpPads` (alpha pulse only — the texture itself
+// is static). Bright cyan/green to differentiate from portal magenta.
+export function makeJumpPadTexture() {
+  const N = 256;
+  const c = makeCanvas(N);
+  const ctx = c.getContext('2d');
+  // Transparent base — pad is alpha-blended over the floor.
+  ctx.clearRect(0, 0, N, N);
+  const cx = N / 2, cy = N / 2;
+  // Outer ring soft glow.
+  for (let r = N / 2; r > 0; r -= 2) {
+    const t = 1 - r / (N / 2);
+    const a = Math.max(0, 0.30 * t - 0.05);
+    ctx.fillStyle = `rgba(80,255,180,${a.toFixed(3)})`;
+    ctx.beginPath();
+    ctx.arc(cx, cy, r, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  // Three concentric chevron rings (arrows pointing toward center / up).
+  ctx.strokeStyle = '#a8ffd6';
+  ctx.lineWidth = 4;
+  ctx.lineCap = 'round';
+  for (let ring = 0; ring < 3; ring++) {
+    const rr = 30 + ring * 28;
+    const wedges = 8;
+    for (let w = 0; w < wedges; w++) {
+      const a = (w / wedges) * Math.PI * 2 + ring * 0.18;
+      const x0 = cx + Math.cos(a) * rr;
+      const y0 = cy + Math.sin(a) * rr;
+      const x1 = cx + Math.cos(a) * (rr - 14);
+      const y1 = cy + Math.sin(a) * (rr - 14);
+      const x2 = cx + Math.cos(a + 0.22) * (rr - 8);
+      const y2 = cy + Math.sin(a + 0.22) * (rr - 8);
+      ctx.beginPath();
+      ctx.moveTo(x0, y0);
+      ctx.lineTo(x1, y1);
+      ctx.lineTo(x2, y2);
+      ctx.stroke();
+    }
+  }
+  // Bright center dot — focal point.
+  const grad = ctx.createRadialGradient(cx, cy, 0, cx, cy, 24);
+  grad.addColorStop(0, 'rgba(220,255,235,0.95)');
+  grad.addColorStop(0.5, 'rgba(80,255,180,0.40)');
+  grad.addColorStop(1, 'rgba(0,0,0,0)');
+  ctx.fillStyle = grad;
+  ctx.beginPath();
+  ctx.arc(cx, cy, 24, 0, Math.PI * 2);
+  ctx.fill();
+  const tex = new THREE.CanvasTexture(c);
+  tex.anisotropy = 8;
+  return tex;
+}
+
 // --- LEGACY ENTRY POINTS (kept so any external import still works) --------
 
 export function makeWallTexture() {

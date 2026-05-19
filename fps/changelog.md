@@ -26,6 +26,95 @@ Format: newest entries at the top. Each entry lists what was added, what was cha
 
 ## Session log
 
+### 2026-05-19 — Session 55k (JUMP PADS + 4 more buildings + 2 more teleporters + storm lightning + 9 torches)
+
+User: "What instructions do you need to just go nuts and build a lot
+of stuff." Answer: explicit scope numbers, multi-commit per-turn, no
+ceiling. This session adds five distinct features at once.
+
+**1. JUMP PAD MECHANIC (NEW, `src/jumppads.js` 53 lines).** Step on a
+glowing cyan tile; vertical velocity is forced to `launchVy` (default
+14, peak height ≈ 4.9 m from v²/2g with GRAVITY=20). Horizontal
+velocity is preserved so a sprint-jump onto a pad arcs forward into
+the destination. 0.40 s per-pad cooldown prevents stuck-in-the-air
+re-launch loops. `applyJumpPad(dt)` runs alongside `applyTeleport(dt)`
+in main.js before `updatePlayer(dt)`.
+
+**2. JUMP PAD VISUALS (`src/textures.js`, `src/kit.js`).** New
+`makeJumpPadTexture` — radial chevron glow + concentric arrow rings +
+bright cyan focal point on a transparent canvas. Material is
+additive-blended for "glow" feel, alpha-pulsing at 3.5 Hz between
+0.35 and 0.95. New `kit.jumppad()` builds a flat horizontal plane
+geometry just above the floor (y=0.04 to avoid z-fight).
+
+**3. FOUR JUMP PAD PLACEMENTS in the layout.**
+  - PAD_BARRACKS: (35, -27) → BARRACKS roof, vy=13
+  - PAD_WATCHTOWER: (-35, -28) → WATCHTOWER roof, vy=13
+  - PAD_TERRACE: (18, 22) → MARKET awning / TERRACE deck, vy=12
+  - PAD_SOUTHKEEP: (18, 46) → SOUTH_KEEP roof, vy=13
+
+**4. FOUR MORE BUILDINGS, every remaining empty zone covered.**
+
+- **SOUTH_KEEP** (cz=55, sx=24×sz=10, slate, walkable roof y=4):
+  far-south bastion balancing VAULT's mass at the north. Two front
+  doors (N front + W flank) + interior partition + east-face stair
+  to the roof. Roof has a wide N parapet slit aimed at the citadel —
+  the longest sniper sightline in the map (~80 m).
+
+- **EAST_TOWER** (cx=55, 8×8, sandstone, walkable roof y=5):
+  slim watchtower, roof 1 m taller than the y=4 norm (second tallest
+  after SPIRE at y=14). North-face external stair (varies the
+  access-side pattern). Slit windows on every other face.
+
+- **WEST_RUIN** (cx=-58, two pillars + a low arch base): far-west
+  visual landmark anchoring the COLONNADE's outer edge. Pure sandstone
+  ruin, no roof.
+
+- **CENTRAL_SHRINE** (cx=12, cz=18): three sandstone walls + a
+  rune-marked emissive accent slab as the focal altar face + an
+  awning. Glowing amber accent draws the eye into the SE plaza, near
+  the MARKET.
+
+**5. TWO MORE TELEPORTERS (4 total now).**
+  - TELE_SOUTH_TO_FOUNDRY: outside SOUTH_KEEP → FOUNDRY roof.
+    Cross-map S→E hop with a vertical pop.
+  - TELE_EAST_TO_RAMPART: outside EAST_TOWER → WEST_RAMPART top.
+    Cross-map E→W hop with a vertical pop.
+
+**6. STORM LIGHTNING (NEW, `src/storm.js` 78 lines).** Periodic
+DirectionalLight flash on an 8-18 s random interval. Two-pulse
+envelope per strike (rising 0.10 s → falling 0.25 s) with ~55% chance
+of a forked-bolt secondary spike. Peak intensity randomized 2.4-4.0,
+direction re-jittered per strike. Initialized at module-import in
+`main.js`, ticked in the active block. No DOM, no shader — just one
+hidden light's intensity animated.
+
+**7. NINE MORE TORCHES at the new buildings + shrines** (19 total
+now). Two custom-color torches: CENTRAL_SHRINE altar (matches rune
+emissive 0xff9a30); WEST_RUIN flicker (deeper amber 0xff6a30 for
+"remnant fire" feel).
+
+**Verified.** Battery: 271/271 ALL GREEN (was 244/244, +4 building
+seam tests + 8 new teleporter assertions for the 2 new portals + 15
+new harness_jumppads assertions). MAP OK; loop=yes; geomWarns=0;
+unreachable pickups=0; doorway drift=0; stranded surfaces=0.
+fps-standalone.html rebuilds clean (887 KB).
+
+**Changed.**
+- `src/maplayout.js`: +94 lines (SOUTH_KEEP + EAST_TOWER + WEST_RUIN
+  + CENTRAL_SHRINE + 4 jumppads + 2 teleporters + 9 torches + 4
+  DOORWAYS entries; 2 ENEMY_SPAWN_POINTS repositioned off the new
+  building footprints).
+- `src/textures.js`: +47 lines `makeJumpPadTexture`.
+- `src/kit.js`: +29 lines `jumppad()` function + import.
+- `src/arena.js`: handle `jumppad` entry type.
+- `src/main.js`: applyJumpPad + updateJumpPads + initStorm/updateStorm
+  wired into the tick loop.
+- `src/jumppads.js`: NEW (53 lines).
+- `src/storm.js`: NEW (78 lines).
+- `dev/harness_jumppads.mjs`: NEW (15 assertions).
+- `dev/test-all.sh`: harness_jumppads added.
+
 ### 2026-05-19 — Session 55j (4 new buildings filling every quadrant + arena spawn-distribution)
 
 User: "focus more on adding more buildings... for arena, we need these

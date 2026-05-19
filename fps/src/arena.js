@@ -5,7 +5,7 @@
 
 import {
   ground, platform, connectRamp, connectStairs, box, wall, overhang, perimeter, solidBox,
-  portal,
+  portal, jumppad,
 } from './kit.js';
 import { makeTorch } from './torches.js';
 import { LAYOUT, wallBoxes } from './maplayout.js';
@@ -53,6 +53,9 @@ for (const e of LAYOUT) {
       break;
     case 'torch':
       makeTorch(e.x, e.y || 0, e.z, e.opts);
+      break;
+    case 'jumppad':
+      jumppad({ id: e.id, cx: e.cx, cz: e.cz, sx: e.sx, sz: e.sz, launchVy: e.launchVy });
       break;
     default:
       console.warn('arena: unknown layout entry', e.t);
