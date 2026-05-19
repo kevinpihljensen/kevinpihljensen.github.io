@@ -77,6 +77,76 @@ export function makeTorch(x, y, z, opts) {
   return torch;
 }
 
+// Brazier — a beefier torch. Wider iron pole, larger flame tip + extra
+// flicker glow halo, double the light intensity + range. Used at iconic
+// landmark approaches where the regular torch would feel underweight
+// (citadel ramp foot, foundry entrance, etc).
+export function makeBrazier(x, y, z, opts) {
+  const o = opts || {};
+  const color = o.color === undefined ? 0xff8030 : o.color;
+  const baseI = o.intensity === undefined ? 3.2 : o.intensity;
+  const range = o.range === undefined ? 16 : o.range;
+  const poleH = o.poleH === undefined ? 1.2 : o.poleH;
+
+  // Wider iron pole (cylinder approximated by a thick box).
+  const pole = new THREE.Mesh(
+    new THREE.BoxGeometry(0.20, poleH, 0.20),
+    new THREE.MeshStandardMaterial({ color: 0x1a1a20, roughness: 0.55, metalness: 0.55 }),
+  );
+  pole.position.set(x, y + poleH / 2, z);
+  scene.add(pole);
+
+  // Bowl (squat ring at the top).
+  const bowl = new THREE.Mesh(
+    new THREE.BoxGeometry(0.55, 0.15, 0.55),
+    new THREE.MeshStandardMaterial({ color: 0x2c2820, roughness: 0.7, metalness: 0.45 }),
+  );
+  bowl.position.set(x, y + poleH + 0.08, z);
+  scene.add(bowl);
+
+  // Bigger flame core + outer halo (two stacked spheres).
+  const tipMat = new THREE.MeshStandardMaterial({
+    color: 0xffd070,
+    roughness: 0.30,
+    metalness: 0.0,
+    emissive: color,
+    emissiveIntensity: 3.4,
+  });
+  const tipY = y + poleH + 0.40;
+  const tip = new THREE.Mesh(new THREE.SphereGeometry(0.34, 12, 10), tipMat);
+  tip.position.set(x, tipY, z);
+  scene.add(tip);
+
+  const haloMat = new THREE.MeshBasicMaterial({
+    color: color,
+    transparent: true,
+    opacity: 0.35,
+    blending: THREE.AdditiveBlending,
+    depthWrite: false,
+  });
+  const halo = new THREE.Mesh(new THREE.SphereGeometry(0.55, 12, 10), haloMat);
+  halo.position.set(x, tipY, z);
+  halo.renderOrder = 1;
+  scene.add(halo);
+
+  const light = new THREE.PointLight(color, baseI, range, 1.4);
+  light.castShadow = false;
+  light.position.set(x, tipY + 0.10, z);
+  scene.add(light);
+
+  const torch = {
+    light, tip, tipMat,
+    baseI, baseEmissive: 3.4,
+    halo, haloMat, baseHaloOpacity: 0.35,
+    seed: Math.random() * 100,
+    f1: 9 + Math.random() * 3,
+    f2: 5 + Math.random() * 3,
+    isBrazier: true,
+  };
+  torchList.push(torch);
+  return torch;
+}
+
 // Tick. Called from main.js every frame.
 export function updateTorchFlicker(dt) {
   flickerTime += dt;
@@ -90,5 +160,8 @@ export function updateTorchFlicker(dt) {
     const f = 0.95 + 0.16 * a + 0.07 * b;
     T.light.intensity = T.baseI * f;
     T.tipMat.emissiveIntensity = T.baseEmissive * f;
+    if (T.halo && T.haloMat) {
+      T.haloMat.opacity = T.baseHaloOpacity * (0.7 + 0.4 * f);
+    }
   }
 }

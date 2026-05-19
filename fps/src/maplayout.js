@@ -689,6 +689,41 @@ export const LAYOUT = [
   { t: 'overhang', axis: 'z', loPos: 15, hiPos: 21, loY: 2.4, hiY: 2.8, c0: 9, c1: 15, thick: 0.3 },
 
   // =====================================================================
+  // BANNERS — hanging fabric flourish on every faction's front face.
+  // Three tones: gold (citadel keep), crimson (slate strongholds: vault,
+  // south keep), azure (iron-clad foundry + barracks). Pure decoration;
+  // non-collider. Sized 1.4 × 3.0 m, hung from y≈0.3 so the bottom kisses
+  // the ground and the top hits y=3.3 (under most building parapets).
+  // =====================================================================
+  // CITADEL_BASE south face — gold banners flanking the rune sentinels.
+  { t: 'banner', x: -3.0, y: 0.3, z: -7.30, face: 'south', tone: 'gold' },
+  { t: 'banner', x:  3.0, y: 0.3, z: -7.30, face: 'south', tone: 'gold' },
+  // VAULT south face — crimson.
+  { t: 'banner', x: -5.0, y: 0.3, z: -39.30, face: 'south', tone: 'crimson' },
+  { t: 'banner', x:  5.0, y: 0.3, z: -39.30, face: 'south', tone: 'crimson' },
+  // FOUNDRY south face — azure.
+  { t: 'banner', x: 18.0, y: 0.3, z:  -9.30, face: 'south', tone: 'azure' },
+  { t: 'banner', x: 26.0, y: 0.3, z:  -9.30, face: 'south', tone: 'azure' },
+  // BARRACKS south face — azure.
+  { t: 'banner', x: 38.0, y: 0.3, z: -31.30, face: 'south', tone: 'azure' },
+  { t: 'banner', x: 46.0, y: 0.3, z: -31.30, face: 'south', tone: 'azure' },
+  // SOUTH_KEEP north face — gold (visible from the citadel approach).
+  { t: 'banner', x: -5.0, y: 0.3, z:  49.70, face: 'north', tone: 'gold' },
+  { t: 'banner', x:  5.0, y: 0.3, z:  49.70, face: 'north', tone: 'gold' },
+
+  // =====================================================================
+  // BRAZIERS — bigger torch variant with wider iron pole + flame halo +
+  // 2× point-light range. Placed at the map's grandest moments where a
+  // small torch would feel underweight.
+  // =====================================================================
+  { t: 'brazier', x: -4.0, y: 4, z: -6.5 },                                 // CITADEL_BASE mezzanine S edge, west of door
+  { t: 'brazier', x:  4.0, y: 4, z: -6.5 },                                 // CITADEL_BASE mezzanine S edge, east of door
+  { t: 'brazier', x: -2.5, y: 8, z: -12.5 },                                // HILLTOP top flanking the SPIRE south face
+  { t: 'brazier', x:  2.5, y: 8, z: -12.5 },                                // HILLTOP top flanking the SPIRE south face
+  { t: 'brazier', x:  0,   y: 3, z:  33,  opts: { color: 0xffb050 } },      // TERRACE center
+  { t: 'brazier', x:  12,  y: 0, z:  22,  opts: { color: 0xff9a30 } },      // between MARKET + CENTRAL_SHRINE altar
+
+  // =====================================================================
   // JUMP PADS — new movement mechanic. Step on the glowing cyan tile;
   // velocityY launches you up to ≈ 4.9 m peak height (vy=14, GRAVITY=20
   // → v²/2g). Horizontal velocity is preserved so a running-jump arcs

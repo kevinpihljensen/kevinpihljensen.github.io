@@ -46,7 +46,7 @@ import { makeFloorTexture, makeBrickTexture, makeWoodTexture,
          makeConcreteTexture, makeMetalTexture,
          makeSlateStoneTexture, makeIronPlateTexture, makeMarbleSlabTexture,
          makeSandstoneTexture, makeRuneSlabTexture,
-         makePortalTexture, makeJumpPadTexture } from './textures.js';
+         makePortalTexture, makeJumpPadTexture, makeBannerTexture } from './textures.js';
 import { registerTeleporter } from './teleporters.js';
 import { registerJumpPad } from './jumppads.js';
 
@@ -499,4 +499,34 @@ export function jumppad({ id, cx, cz, sx = 3, sz = 3, launchVy = 14 }) {
     z0: cz - sz / 2, z1: cz + sz / 2,
   };
   registerJumpPad({ id, trigger, launchVy, mesh, texture: tex });
+}
+
+// --- BANNER (hanging fabric flourish) -------------------------------------
+// A flat fabric mesh hanging vertically from (or against) a structure.
+// Pure decoration — non-collider. Default size 1.4 m wide × 3.0 m tall.
+// `face` controls which way the banner shows ('north', 'south', 'east',
+// 'west'); the geometry is a single PlaneGeometry, double-sided so the
+// banner reads from both sides without z-fight. `tone` picks the palette.
+export function banner({ x, y, z, face = 'south', tone = 'crimson', w = 1.4, h = 3.0 }) {
+  const tex = makeBannerTexture(tone);
+  const mat = new THREE.MeshStandardMaterial({
+    map: tex,
+    roughness: 0.92,
+    metalness: 0.05,
+    side: THREE.DoubleSide,
+    transparent: false,
+  });
+  const geo = new THREE.PlaneGeometry(w, h);
+  const mesh = new THREE.Mesh(geo, mat);
+  mesh.position.set(x, y + h / 2, z);
+  // Face flag rotates the plane around Y so the printed side points the
+  // requested direction.
+  if (face === 'north')      mesh.rotation.y = Math.PI;
+  else if (face === 'east')  mesh.rotation.y = -Math.PI / 2;
+  else if (face === 'west')  mesh.rotation.y = Math.PI / 2;
+  // (south = 0 default)
+  mesh.castShadow = false;
+  mesh.receiveShadow = true;
+  scene.add(mesh);
+  return mesh;
 }

@@ -809,6 +809,70 @@ export function makeJumpPadTexture() {
   return tex;
 }
 
+// --- BANNER (hanging fabric) ----------------------------------------------
+// Vertical stripe pattern with a procedural emblem in the middle band.
+// Used by kit.banner() — hung from building parapets as visual flourish.
+// Three color schemes (returned via `tone` arg): 'crimson' (slate-house
+// red), 'azure' (foundry-iron blue), 'gold' (citadel-marble amber).
+export function makeBannerTexture(tone) {
+  const N = 256;
+  const c = makeCanvas(N);
+  const ctx = c.getContext('2d');
+  // Palette per tone.
+  let bg, edge, emblem;
+  if (tone === 'azure') {        bg = '#1c2d4a'; edge = '#0a1530'; emblem = '#a4c8f0'; }
+  else if (tone === 'gold') {    bg = '#5a3f10'; edge = '#1f1306'; emblem = '#f0c850'; }
+  else                       {   bg = '#5a141c'; edge = '#1d0608'; emblem = '#f0c4b8'; }   // crimson default
+  // Base fabric.
+  ctx.fillStyle = bg;
+  ctx.fillRect(0, 0, N, N);
+  // Weave noise overlay.
+  const id = ctx.getImageData(0, 0, N, N);
+  const d = id.data;
+  for (let y = 0; y < N; y++) {
+    for (let x = 0; x < N; x++) {
+      const n = fbm(x / 14, y / 14, 4, 31) - 0.5;
+      const i = (y * N + x) * 4;
+      const k = 1 + n * 0.30;
+      d[i]     = Math.max(0, Math.min(255, d[i]     * k));
+      d[i + 1] = Math.max(0, Math.min(255, d[i + 1] * k));
+      d[i + 2] = Math.max(0, Math.min(255, d[i + 2] * k));
+    }
+  }
+  ctx.putImageData(id, 0, 0);
+  // Edge trim (top + bottom bands).
+  ctx.fillStyle = edge;
+  ctx.fillRect(0, 0, N, 14);
+  ctx.fillRect(0, N - 14, N, 14);
+  // Vertical pinstripe accents (3 stripes).
+  for (let s = 0; s < 3; s++) {
+    const sx = N * (0.20 + s * 0.30);
+    ctx.fillStyle = `rgba(255,255,255,0.10)`;
+    ctx.fillRect(sx, 14, 2, N - 28);
+  }
+  // Central emblem — a chevron / star approximation.
+  ctx.strokeStyle = emblem;
+  ctx.lineWidth = 6;
+  ctx.lineCap = 'round';
+  ctx.lineJoin = 'round';
+  const cx = N / 2, cy = N / 2;
+  ctx.beginPath();
+  // Star-of-light: 4 strokes radiating from center.
+  for (let arm = 0; arm < 8; arm++) {
+    const a = (arm / 8) * Math.PI * 2;
+    const r = 38 + (arm % 2) * 18;
+    ctx.moveTo(cx, cy);
+    ctx.lineTo(cx + Math.cos(a) * r, cy + Math.sin(a) * r);
+  }
+  ctx.stroke();
+  // Center disc.
+  ctx.fillStyle = emblem;
+  ctx.beginPath();
+  ctx.arc(cx, cy, 10, 0, Math.PI * 2);
+  ctx.fill();
+  return finalize(c, false);    // banner is not seamless-repeating
+}
+
 // --- LEGACY ENTRY POINTS (kept so any external import still works) --------
 
 export function makeWallTexture() {

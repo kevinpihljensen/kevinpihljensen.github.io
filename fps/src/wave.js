@@ -10,6 +10,7 @@ import {
   ARENA_ENEMY_POPULATION, ARENA_ENEMY_MIX, ARENA_ENEMY_RESPAWN_DELAY,
 } from './constants.js';
 import { enemies, makeEnemy, pickSpawnPoint, pickArenaSpawnPoint, clearEnemies, resetSpawnMemory } from './enemies.js';
+import { spawnSpawnFX } from './spawnfx.js';
 import { projectiles, clearProjectiles } from './projectiles.js';
 import { decals, clearDecals, clearBlood } from './decals.js';
 import { resetWeapons } from './weapons.js';
@@ -146,6 +147,7 @@ export function startArena() {
     const type = types[i % types.length];
     const pt = pickArenaSpawnPoint();
     makeEnemy(type, pt.x, pt.z);
+    spawnSpawnFX(pt.x, 0, pt.z);
     game.enemiesAlive += 1;
   }
   setGameState(GAME_STATE.PLAYING);
@@ -175,6 +177,7 @@ export function updateArena(dt) {
       // instead of being funneled in from one zone.
       const pt = pickArenaSpawnPoint();
       makeEnemy(type, pt.x, pt.z);
+      spawnSpawnFX(pt.x, 0, pt.z);
       game.enemiesAlive += 1;
     }
   }

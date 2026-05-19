@@ -5,9 +5,9 @@
 
 import {
   ground, platform, connectRamp, connectStairs, box, wall, overhang, perimeter, solidBox,
-  portal, jumppad,
+  portal, jumppad, banner,
 } from './kit.js';
-import { makeTorch } from './torches.js';
+import { makeTorch, makeBrazier } from './torches.js';
 import { LAYOUT, wallBoxes } from './maplayout.js';
 
 const H = {};   // id -> kit handle (platform/box/connector foot)
@@ -56,6 +56,12 @@ for (const e of LAYOUT) {
       break;
     case 'jumppad':
       jumppad({ id: e.id, cx: e.cx, cz: e.cz, sx: e.sx, sz: e.sz, launchVy: e.launchVy });
+      break;
+    case 'banner':
+      banner({ x: e.x, y: e.y || 0, z: e.z, face: e.face, tone: e.tone, w: e.w, h: e.h });
+      break;
+    case 'brazier':
+      makeBrazier(e.x, e.y || 0, e.z, e.opts);
       break;
     default:
       console.warn('arena: unknown layout entry', e.t);

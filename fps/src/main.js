@@ -21,6 +21,7 @@ import { applyTeleport, updateTeleporters } from './teleporters.js';
 import { applyJumpPad, updateJumpPads } from './jumppads.js';
 import { updateTorchFlicker } from './torches.js';
 import { initStorm, updateStorm } from './storm.js';
+import { updateSpawnFX } from './spawnfx.js';
 
 initStorm();
 
@@ -67,6 +68,7 @@ function loop() {
     updateJumpPads(dt);
     updateTorchFlicker(dt);
     updateStorm(dt);
+    updateSpawnFX(dt);
     // S55: keep the audio listener pose in sync with the camera so 3D-panned
     // enemy gunshots are heard from the correct direction.
     _audioForward.set(0, 0, -1).applyQuaternion(camera.quaternion);

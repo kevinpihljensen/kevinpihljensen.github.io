@@ -365,10 +365,14 @@ export const SPAWN_RADIUS = 36;
 // short delay at a SPAWN_ANCHORS point far from the player. Player respawns
 // on death at the farthest-from-enemies anchor instead of GAMEOVER. Score
 // counts kills, not waves.
-export const ARENA_ENEMY_POPULATION = 5;
-export const ARENA_ENEMY_RESPAWN_DELAY = 1.8;   // seconds from kill to replacement
+// S55k: bumped 5 → 7 to match the bigger / denser map. Still pacy
+// enough for a single player; 12 ENEMY_SPAWN_POINTS + spread picker
+// keeps engagements developing from every direction. Jetpack added
+// so the player has to scan the sky as well as the ground.
+export const ARENA_ENEMY_POPULATION = 7;
+export const ARENA_ENEMY_RESPAWN_DELAY = 1.7;   // seconds from kill to replacement
 export const ARENA_PLAYER_RESPAWN_DELAY = 1.0;  // seconds player stays dead before respawn
-export const ARENA_ENEMY_MIX = { grunt: 2, shooter: 2, heavy: 1, jetpack: 0 };
+export const ARENA_ENEMY_MIX = { grunt: 3, shooter: 2, heavy: 1, jetpack: 1 };
 
 // --- HUD POLISH ---
 export const HIT_MARKER_TIME = 0.18;

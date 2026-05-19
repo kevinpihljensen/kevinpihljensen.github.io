@@ -26,6 +26,59 @@ Format: newest entries at the top. Each entry lists what was added, what was cha
 
 ## Session log
 
+### 2026-05-19 — Session 55l (banners + braziers + arena spawn FX + arena population bump)
+
+Continuing the "go nuts" push.
+
+**1. BANNERS (new `kit.banner()` + `makeBannerTexture` in textures.js).**
+Hanging fabric flourish, 1.4 × 3.0 m vertical PlaneGeometry. Three
+faction palettes via the `tone` arg: gold (citadel/keep), crimson
+(slate strongholds: vault, south keep), azure (iron foundry/barracks).
+Procedural texture has woven-fbm noise + vertical pinstripes + a
+radiating star-of-light emblem. 10 banners placed at every faction's
+front face: CITADEL S × 2 gold, VAULT S × 2 crimson, FOUNDRY S × 2
+azure, BARRACKS S × 2 azure, SOUTH_KEEP N × 2 gold.
+
+**2. BRAZIERS (new `makeBrazier()` in torches.js).** Beefier torch
+variant: wider iron pole (0.20 × 0.20), squat iron bowl at top, larger
+flame core sphere (0.34 m) + outer additive halo sphere (0.55 m,
+0.35 opacity), 2× brighter point light (3.2 vs 1.6) with 1.5× range
+(16 m vs 11 m). Same per-torch two-octave flicker; halo opacity also
+flickers in unison. 6 braziers placed at the grandest moments —
+CITADEL_BASE mezzanine flanking the S parapet door (2), HILLTOP top
+flanking the SPIRE base (2), TERRACE center (1), and between MARKET +
+CENTRAL_SHRINE (1, amber to match the rune accent).
+
+**3. ARENA SPAWN FX (new `src/spawnfx.js`).** Short-lived visual
+flourish when an arena enemy is placed. A glowing additive-blended
+pillar (magenta `0xff44a4`) appears at the spawn position with a
+co-located flash point light; scale grows 0.6 → 1.6 over 0.85 s while
+opacity decays quadratically. Wired into wave.js: every arena
+spawn — startArena seed + the respawn queue — fires one. Cleans up
+geometry/material/light when expired (no leak).
+
+**4. ARENA POPULATION BUMP (`src/constants.js`).** Bigger map deserves
+more enemies: `ARENA_ENEMY_POPULATION` 5 → 7. `ARENA_ENEMY_RESPAWN_DELAY`
+1.8 → 1.7 to keep replacement pace. `ARENA_ENEMY_MIX` rebalanced to
+{ grunt: 3, shooter: 2, heavy: 1, jetpack: 1 } — adds a jetpack so the
+player must scan the sky as well as the ground.
+
+**Verified.** Battery: 271/271 ALL GREEN. MAP OK; loop=yes;
+geomWarns=0; unreachable pickups=0; doorway drift=0; stranded
+surfaces=0. fps-standalone.html rebuilds clean (893 KB).
+
+**Changed.**
+- `src/maplayout.js`: +33 lines (10 banner entries + 6 brazier entries).
+- `src/textures.js`: +57 lines `makeBannerTexture`.
+- `src/kit.js`: +27 lines `banner()` + import.
+- `src/torches.js`: +57 lines `makeBrazier()` + halo support in
+  updateTorchFlicker.
+- `src/arena.js`: `banner` + `brazier` entry types handled.
+- `src/wave.js`: spawnSpawnFX call after every arena `makeEnemy`.
+- `src/main.js`: updateSpawnFX wired into the active tick block.
+- `src/constants.js`: arena population + mix retuned.
+- `src/spawnfx.js`: NEW (61 lines).
+
 ### 2026-05-19 — Session 55k (JUMP PADS + 4 more buildings + 2 more teleporters + storm lightning + 9 torches)
 
 User: "What instructions do you need to just go nuts and build a lot
