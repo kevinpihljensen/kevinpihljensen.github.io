@@ -168,13 +168,25 @@ const ITERATIONS = 4;
 // the walk surface must not push the body or it would feel like a slide.
 const GROUND_SKIN = 0.12;
 
-function resolveBodyHoriz(P, r, h, s) {
+function resolveBodyHoriz(P, r, h, s, ctx) {
   if (P.x < s.minX - r || P.x > s.maxX + r ||
       P.z < s.minZ - r || P.z > s.maxZ + r) return;
 
   const yLo = P.feetY + GROUND_SKIN;
   const yHi = P.feetY + h;
   if (yLo > s.maxY + 0.001 || yHi < s.minY - 0.001) return;
+
+  // S55ad: stair→deck smooth transition. If we're currently on a ramp whose
+  // hi end matches this walkable box's top, skip horizontal push so we can
+  // walk straight onto the deck instead of being pinned by the deck's
+  // vertical face at the last 12 cm of climb. Restricted to the ramp case
+  // (ctx.rampHiY only set when collideCapsule found a ramp under the feet)
+  // so cover-box mechanics in open ground are untouched.
+  if (ctx && ctx.rampHiY !== -Infinity &&
+      s.kind === 'box' && s.walkable &&
+      Math.abs(s.maxY - ctx.rampHiY) < 0.05) {
+    return;
+  }
 
   // RAMP body-push.
   //   * Non-skirtSolid ramps (overhang / walk-under pieces): body-push stays
@@ -355,8 +367,22 @@ function rampOverheadClip(P, r, bodyH) {
 
 export function collideCapsule(x, feetY, z, r, h) {
   const P = { x, feetY, z };
+  // S55ad: if the feet are currently on (or very close to the top of) a
+  // RAMP, remember that ramp's hiY. resolveBodyHoriz uses this to let a
+  // walkable box whose top matches the ramp's hiY skip its horizontal
+  // push, smoothing the stair→deck transition.
+  let rampHiY = -Infinity;
+  for (let i = 0; i < solids.length; i++) {
+    const s = solids[i];
+    if (s.kind !== 'ramp') continue;
+    if (x < s.minX - r || x > s.maxX + r ||
+        z < s.minZ - r || z > s.maxZ + r) continue;
+    const surf = rampSurfaceY(s, x, z);
+    if (Math.abs(surf - feetY) < 0.20 && s.hiY > rampHiY) rampHiY = s.hiY;
+  }
+  const ctx = { rampHiY };
   for (let it = 0; it < ITERATIONS; it++) {
-    for (let i = 0; i < solids.length; i++) resolveBodyHoriz(P, r, h, solids[i]);
+    for (let i = 0; i < solids.length; i++) resolveBodyHoriz(P, r, h, solids[i], ctx);
   }
   // Overhead clip is a separate, final pass (does not feed back into the
   // body-push iterations, so it can't destabilise them).

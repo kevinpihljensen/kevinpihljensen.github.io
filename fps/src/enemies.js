@@ -44,6 +44,8 @@ import {
   AI_SCATTER_RADIUS, AI_SCATTER_STRENGTH,
   GRAVITY,
   ENEMY_JUMP_VY, ENEMY_MAX_JUMP_HEIGHT, ENEMY_JUMP_COOLDOWN, ENEMY_TERMINAL_VY,
+  GRUNT_FIRE_RANGE, GRUNT_DIST_MIN, GRUNT_DIST_MAX,
+  GRUNT_ATTACK_COOLDOWN, GRUNT_DAMAGE, GRUNT_AIM_WOBBLE, GRUNT_LEAD_STRENGTH,
 } from './constants.js';
 import { sfxEnemyDeath, sfxShooterFire } from './audio.js';
 import { spawnProjectile } from './projectiles.js';
@@ -69,7 +71,10 @@ const ENEMY_BODY_H = 1.7;
 // New jetpack type added — flies, burst-fires a 3-round carbine, worse aim.
 export const ENEMY_DEFS = {
   grunt: {
-    hp: 30, speed: 4.7, radius: 0.35, score: 100, contactDmg: 10,
+    // S55ad: grunt is now a low-damage pistolier (no melee). contactDmg=0
+    // so a stray collision with the grunt body never does damage; all
+    // grunt damage now flows through gruntFire → spawnProjectile.
+    hp: 30, speed: 4.7, radius: 0.35, score: 100, contactDmg: 0,
     fatigue: 0x6b1212, gear: 0x1a0a0a, accent: 0x3a1212, skin: 0xc99a73,
   },
   shooter: {
@@ -1300,28 +1305,11 @@ function faceAndCool(enemy, dt) {
   }
 }
 
-// Melee contact.
-//   * Heavy: instant hit + knockback the moment you're in range (unchanged
-//     feel — it's a brute, not a duelist).
-//   * Grunt: initiates a knife SWIPE animation instead of dealing damage
-//     instantly. The actual hit is applied partway through the swing by
-//     updateGruntSwipe (so the damage visibly corresponds to the blade
-//     connecting, and you can back out of range during the wind-up to dodge).
+// Melee contact. S55ad: the grunt knife-swipe was removed (broken since
+// the CS-rig swap had no knifePivot, so swipes never connected; grunts
+// just hugged the player). Heavy keeps its instant-melee + knockback.
 function tryMeleeContact(enemy, dist) {
   const contactRange = PLAYER_RADIUS + enemy.def.radius + ENEMY_CONTACT_RANGE_EXTRA;
-
-  if (enemy.type === 'grunt') {
-    // Start a swing if in range, not cooling down, and not already swinging.
-    if (dist <= contactRange && enemy.attackCooldown <= 0 &&
-        enemy.swipeTimer <= 0 && player.alive) {
-      enemy.swipeTimer = enemy.swipeDuration;
-      enemy.swipeHitDone = false;
-      enemy.attackCooldown = MELEE_ATTACK_COOLDOWN;
-    }
-    return;
-  }
-
-  // Heavy (and any other melee type): instant.
   if (dist <= contactRange && enemy.attackCooldown <= 0 && player.alive) {
     damagePlayer(enemy.def.contactDmg, enemy.position.x, enemy.position.z);
     enemy.attackCooldown = MELEE_ATTACK_COOLDOWN;
@@ -1332,81 +1320,14 @@ function tryMeleeContact(enemy, dist) {
   }
 }
 
-// M13: drive the grunt's knife-swipe animation + apply the hit mid-swing.
-//
-// Swing timeline (swipeTimer counts DOWN from swipeDuration → 0):
-//   phase = 1 - swipeTimer/swipeDuration   (0 = start, 1 = end)
-//   * 0.00–0.30  wind-up: arm cocks back, knife raised
-//   * 0.30–0.55  slash: fast arc across the front; the HIT lands at ~0.45
-//   * 0.55–1.00  recover: arm + knife ease back to the resting pose
-//
-// The damage is applied once, on the first frame phase passes the connect
-// point, and ONLY if the player is still within reach (so retreating during
-// wind-up dodges it — the swing still animates, it just whiffs).
-const SWIPE_CONNECT = 0.45;
-
-function updateGruntSwipe(enemy, dt) {
-  const pivot = enemy.knifePivot;
-  if (!pivot) return;
-  const rest = enemy.knifeRestRot;
-
-  if (enemy.swipeTimer <= 0) {
-    // Idle: hold the resting pose (idle arm-sway already moved armR; the
-    // knife pivot is independent of the arm so just keep it at rest).
-    pivot.rotation.set(rest.x, rest.y, rest.z);
-    return;
-  }
-
-  enemy.swipeTimer -= dt;
-  const phase = 1 - Math.max(0, enemy.swipeTimer) / enemy.swipeDuration;
-
-  // Build the slash arc. The pivot mostly rotates about Y (horizontal slash
-  // across the player's front) with a little X (downward chop) for weight.
-  let yRot, xRot;
-  if (phase < 0.30) {
-    // Wind-up: cock back (knife swings out to the grunt's right + raised).
-    const t = phase / 0.30;
-    yRot = rest.y + t * 1.2;            // rotate blade back/outward
-    xRot = rest.x - t * 0.5;            // raise it
-  } else if (phase < 0.55) {
-    // Slash: whip across to the left + down. Fast, eased.
-    const t = (phase - 0.30) / 0.25;
-    const e2 = t * t * (3 - 2 * t);     // smoothstep for a snappy feel
-    yRot = (rest.y + 1.2) - e2 * 2.6;   // sweep all the way across
-    xRot = (rest.x - 0.5) + e2 * 0.9;   // chop downward through the arc
-  } else {
-    // Recover: ease everything back to rest.
-    const t = (phase - 0.55) / 0.45;
-    const e2 = t * t * (3 - 2 * t);
-    yRot = (rest.y - 1.4) + e2 * (rest.y - (rest.y - 1.4));
-    xRot = (rest.x + 0.4) + e2 * (rest.x - (rest.x + 0.4));
-  }
-  pivot.rotation.set(xRot, yRot, rest.z);
-
-  // Apply the hit once, at the connect point, if still in reach + facing.
-  if (!enemy.swipeHitDone && phase >= SWIPE_CONNECT) {
-    enemy.swipeHitDone = true;
-    const dx = player.position.x - enemy.position.x;
-    const dz = player.position.z - enemy.position.z;
-    const d = Math.sqrt(dx * dx + dz * dz);
-    const reach = PLAYER_RADIUS + enemy.def.radius + ENEMY_CONTACT_RANGE_EXTRA + 0.25;
-    if (d <= reach && player.alive) {
-      damagePlayer(enemy.def.contactDmg, enemy.position.x, enemy.position.z);
-    }
-  }
-
-  if (enemy.swipeTimer <= 0) {
-    enemy.swipeTimer = 0;
-    pivot.rotation.set(rest.x, rest.y, rest.z);
-  }
-}
-
-// --- GRUNT --------------------------------------------------------------
-// Aggressive rusher, but the "juker" fraction weaves: alternates short
-// advance bursts with strafing so it's not a straight line you can track.
-// Non-jukers still beeline (keeps pressure high, adds variety across a wave).
-// If LOS is blocked, all grunts arc toward the player's side to come around
-// cover rather than grinding into a wall.
+// --- GRUNT (S55ad: pistolier) -------------------------------------------
+// The previous knife-swipe rig didn't survive the CS-rig swap (the new
+// player models have no knifePivot, so swipes whiffed and grunts just
+// hugged the player). Grunts now carry a low-damage pistol and behave
+// like a shorter-ranged, faster-firing, less-accurate shooter:
+//   * Closes to GRUNT_DIST_MIN..MAX (6-14 m) instead of melee
+//   * Fires every GRUNT_ATTACK_COOLDOWN seconds for GRUNT_DAMAGE damage
+//   * Worse lead + wider per-shot wobble than the shooter
 function gruntAI(enemy, dt) {
   const dist = toPlayer(enemy);
   faceAndCool(enemy, dt);
@@ -1415,55 +1336,85 @@ function gruntAI(enemy, dt) {
   updateDoorwayLatch(enemy, sees, dist);
   const spd = enemy.def.speed;
 
-  // S55: deep backoff. After several back-to-back unsticks, reverse course
-  // for AI_BACKOFF_TIME and arc wide before re-engaging — gets unjammed from
-  // corners/doorways/cover-knots that the short unstick can't escape.
+  tick(enemy, 'aiTimer', dt);
+  maybeFlipStrafe(enemy, dt);
+
   if (enemy.backoffTimer > 0) {
     enemy.backoffTimer -= dt;
     const s = enemy.unstickSign;
     stepMove(enemy, (-_vec.x * 0.7 + (-_vec.z) * s * 0.6) * spd,
                      (-_vec.z * 0.7 + ( _vec.x) * s * 0.6) * spd, dt);
+    enemy.hadLOS = false;
     return;
   }
-
   if (enemy.unstickTimer > 0) {
-    // Wedged on geometry (window sill, ramp side, cover corner): slide
-    // perpendicular to the goal with a little forward bias to scrape free.
     enemy.unstickTimer -= dt;
     const s = enemy.unstickSign;
     stepMove(enemy, (-_vec.z * s * 0.9 + _vec.x * 0.35) * spd,
                      ( _vec.x * s * 0.9 + _vec.z * 0.35) * spd, dt);
+    enemy.hadLOS = false;
     return;
   }
-
   if (enemy.navActive) {
-    // Player is on another floor and we're committed to a ramp: drive
-    // STRAIGHT for it. (Without this the no-LOS arc below would spin us
-    // sideways forever and we'd never climb — the elevation bug.)
+    // Cross-floor: drive for the ramp. Still fire if we can see the player.
     stepMove(enemy, _vec.x * spd, _vec.z * spd, dt);
+    if (sees) gruntCombatTick(enemy, dist);
+    else      enemy.hadLOS = false;
+    return;
+  }
+  if (!sees) {
+    // No LOS → arc to find one (juker fraction strafes wider).
+    const s = enemy.flankSign;
+    const sideMix = enemy.juker ? 0.95 : 0.75;
+    const vx = (_vec.x * 0.55 + (-_vec.z) * s * sideMix) * spd;
+    const vz = (_vec.z * 0.55 + ( _vec.x) * s * sideMix) * spd;
+    stepMove(enemy, vx, vz, dt);
+    enemy.hadLOS = false;
     return;
   }
 
-  if (!sees && dist > 2.0) {
-    // Lost sight: arc around the obstacle. Blend forward + sideways so it
-    // sweeps around corners instead of pawing at the wall.
-    const s = enemy.flankSign;
-    const vx = (_vec.x * 0.55 + (-_vec.z) * s * 0.85) * spd;
-    const vz = (_vec.z * 0.55 + ( _vec.x) * s * 0.85) * spd;
-    stepMove(enemy, vx, vz, dt);
-  } else if (enemy.juker && dist > 3.0) {
-    // Weave: bias forward but add a strafe component.
-    maybeFlipStrafe(enemy, dt);
-    const sv = strafeVelocity(enemy, spd * 0.7);
-    const vx = _vec.x * spd * 0.75 + sv.x;
-    const vz = _vec.z * spd * 0.75 + sv.z;
-    stepMove(enemy, vx, vz, dt);
-  } else {
-    // Close the gap directly.
-    stepMove(enemy, _vec.x * spd, _vec.z * spd, dt);
-  }
+  // LOS: hold the grunt range band while strafing.
+  let approach = 0;
+  if      (dist > GRUNT_DIST_MAX) approach =  1;
+  else if (dist < GRUNT_DIST_MIN) approach = -1;
+  const sv = strafeVelocity(enemy, spd * AI_STRAFE_SPEED_MULT);
+  const vx = sv.x + _vec.x * spd * 0.7 * approach;
+  const vz = sv.z + _vec.z * spd * 0.7 * approach;
+  stepMove(enemy, vx, vz, dt);
 
-  tryMeleeContact(enemy, dist);
+  gruntCombatTick(enemy, dist);
+}
+
+// Fire on cadence when we have LOS, range-gated to GRUNT_FIRE_RANGE.
+function gruntCombatTick(enemy, dist) {
+  enemy.hadLOS = true;
+  if (dist > GRUNT_FIRE_RANGE) return;
+  if (enemy.attackCooldown > 0 || !player.alive) return;
+  gruntFire(enemy);
+  enemy.attackCooldown = GRUNT_ATTACK_COOLDOWN;
+}
+
+function gruntFire(enemy) {
+  const ox = enemy.position.x;
+  const oy = enemy.position.y + SHOOTER_MUZZLE_Y;
+  const oz = enemy.position.z;
+  const aimY = enemy._losAimY != null ? enemy._losAimY : (player.isCrouching ? 0.8 : 1.0);
+  const dir = leadAim(ox, oy, oz, aimY, GRUNT_LEAD_STRENGTH);
+  // Add per-shot wobble so a stationary grunt at the edge of range doesn't
+  // pixel-bead the player. Two independent Gaussian-ish samples on yaw +
+  // pitch — uniform suffices at this scale.
+  const wob = GRUNT_AIM_WOBBLE;
+  const yawErr   = (Math.random() - 0.5) * 2 * wob;
+  const pitchErr = (Math.random() - 0.5) * 2 * wob;
+  // Rotate dir by small yaw + pitch errors. dir is normalized.
+  const cyaw = Math.cos(yawErr), syaw = Math.sin(yawErr);
+  let dx = dir.x * cyaw - dir.z * syaw;
+  let dz = dir.x * syaw + dir.z * cyaw;
+  let dy = dir.y + pitchErr;
+  const len = Math.hypot(dx, dy, dz) || 1;
+  dx /= len; dy /= len; dz /= len;
+  spawnProjectile(ox, oy, oz, dx, dy, dz, GRUNT_DAMAGE);
+  sfxShooterFire(ox, oy, oz);
 }
 
 // --- SHOOTER ------------------------------------------------------------
@@ -2057,8 +2008,8 @@ export function updateEnemies(dt) {
         e.head.rotation.x = clamped;
       }
 
-      // M13: grunt knife-swipe animation overrides arm sway while attacking.
-      if (e.type === 'grunt') updateGruntSwipe(e, dt);
+      // S55ad: grunt knife-swipe animation removed along with the swipe AI.
+      // Grunts now fire a pistol; no per-frame attack animation needed.
 
       // Hit flash on body mats only — emissive mats keep their permanent glow.
       // S55v: CS character materials carry a baseline self-emissive (so

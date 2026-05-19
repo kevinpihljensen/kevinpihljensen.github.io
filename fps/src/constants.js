@@ -170,6 +170,19 @@ export const SHOOTER_DIST_MIN = 8.0;
 export const SHOOTER_DIST_MAX = 40.0;   // will hold & fire from up to here before bothering to close
 export const SHOOTER_FIRE_RANGE = 25.0;
 
+// --- GRUNT PISTOL (S55ad) ---
+// Replaces the broken knife-swipe. Grunt is now a close-range pistolier:
+// closes to 6-14 m, fires a low-damage round on a brisk cadence with poor
+// aim. Lower damage per shot than the shooter (4 vs 8) so a grunt feels
+// like a chip-damage threat while shooters are real punishers.
+export const GRUNT_FIRE_RANGE = 22.0;
+export const GRUNT_DIST_MIN = 6.0;
+export const GRUNT_DIST_MAX = 14.0;
+export const GRUNT_ATTACK_COOLDOWN = 1.1;
+export const GRUNT_DAMAGE = 4;
+export const GRUNT_AIM_WOBBLE = 0.045;   // radians of per-shot aim error
+export const GRUNT_LEAD_STRENGTH = 0.55; // worse prediction than shooter (0.92)
+
 // AI stuck-detection / unstick (windows, ramp mouths, cover corners): if an
 // enemy that should be travelling moves less than MIN_MOVE over CHECK
 // seconds it slides perpendicular for UNSTICK_TIME to clear the obstacle.

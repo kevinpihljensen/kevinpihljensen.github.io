@@ -25,7 +25,10 @@ const projectileMat = new THREE.MeshStandardMaterial({
 });
 const _projStep = new THREE.Vector3();
 
-export function spawnProjectile(ox, oy, oz, dx, dy, dz) {
+// S55ad: optional `damage` arg overrides PROJECTILE_DAMAGE per shot, used
+// by the grunt's low-damage pistol so it can share the projectile path with
+// the shooter without needing a separate pool.
+export function spawnProjectile(ox, oy, oz, dx, dy, dz, damage) {
   const mesh = new THREE.Mesh(projectileGeom, projectileMat);
   mesh.position.set(ox, oy, oz);
   scene.add(mesh);
@@ -34,6 +37,7 @@ export function spawnProjectile(ox, oy, oz, dx, dy, dz) {
     position: new THREE.Vector3(ox, oy, oz),
     velocity: new THREE.Vector3(dx * PROJECTILE_SPEED, dy * PROJECTILE_SPEED, dz * PROJECTILE_SPEED),
     lifetime: PROJECTILE_LIFETIME,
+    damage: damage !== undefined ? damage : PROJECTILE_DAMAGE,
     // Origin coords retained so the damage-direction indicator can point at the
     // shooter, not at the projectile's current position (which is near the player on hit).
     originX: ox,
@@ -70,7 +74,7 @@ export function updateProjectiles(dt) {
         const eyeH = player.isCrouching ? EYE_HEIGHT_CROUCH : EYE_HEIGHT_STAND;
         const topY = player.position.y + eyeH + 0.1;
         if (p.position.y >= player.position.y - 0.1 && p.position.y <= topY) {
-          damagePlayer(PROJECTILE_DAMAGE, p.originX, p.originZ);
+          damagePlayer(p.damage, p.originX, p.originZ);
           destroyProjectileAt(i);
           continue;
         }

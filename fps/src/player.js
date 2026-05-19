@@ -311,25 +311,12 @@ export function updatePlayer(dt) {
     player.position.x = res.x;
     player.position.z = res.z;
   }
-  // Simple enemy body block (enemies keep an .aabb circle): push the player
-  // out of any live enemy's radius in XZ. Cheap and good enough; enemies are
-  // soft obstacles.
-  for (let i = 0; i < enemies.length; i++) {
-    const e = enemies[i];
-    if (!e.alive) continue;
-    const ex = e.position.x, ez = e.position.z;
-    const er = (e.def ? e.def.radius : 0.5);
-    const ddx = player.position.x - ex;
-    const ddz = player.position.z - ez;
-    const rr = PLAYER_RADIUS + er;
-    const d2 = ddx*ddx + ddz*ddz;
-    if (d2 < rr*rr && d2 > 1e-6) {
-      const d = Math.sqrt(d2);
-      const push = (rr - d);
-      player.position.x += (ddx / d) * push;
-      player.position.z += (ddz / d) * push;
-    }
-  }
+  // S55ad: enemy body push removed. The old block pushed the player out of
+  // any live enemy's radius — combined with the grunt's broken knife-swipe
+  // (every grunt walked into melee but never hit), this read as grunts
+  // "hugging" and shoving the player around. Enemies are no longer
+  // colliders against the player at all; they can occupy the same space.
+  // The grunt's new pistol gives them a real way to threaten you.
 
   // 2. Vertical.
   // Grounded state coming INTO this frame's vertical step. willJump (above)
