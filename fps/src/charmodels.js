@@ -44,7 +44,10 @@ const CHARACTERS = ['urban', 'sas', 'terror', 'leet'];
 // Slice thresholds, as fractions of TARGET_HEIGHT or body half-width.
 const HIP_Y_FRAC      = 0.48;   // anything below this Y → leg
 const SHOULDER_Y_FRAC = 0.76;   // band between hip and shoulder = torso + arms
-const ARM_X_HALF_FRAC = 0.30;   // |X| above this in the mid-band → arm
+const ARM_X_HALF_FRAC = 0.22;   // |X| above this × halfWidth → arm
+                                // (was 0.30 × 2; tuned tighter so the arm
+                                // slice captures most of the outstretched
+                                // arm geometry rather than only the tips)
 
 // Per-arm forward rotation. -55° is a "ready / low-ready" rifle pose;
 // the seam stays small while the weapon still reads as held forward.
@@ -190,11 +193,20 @@ function buildTemplate(root, charName) {
   if (!body) throw new Error('no body mesh');
 
   // --- Stage 1: detect up-axis from raw body bbox and rotate so it's Y. ---
+  // S55q: the "largest extent = up" heuristic fails for T-pose characters
+  // whose arms-outstretched span is wider than the height. Instead we use
+  // the "feet on the ground" convention: the up axis is the one whose
+  // min sits closest to 0 (feet anchored at origin) relative to its extent.
+  // The side axis is centered (min ≈ -max). The depth axis is also centered
+  // but much narrower.
   const bb0 = new THREE.Box3().setFromBufferAttribute(body.geometry.attributes.position);
   const sz0 = new THREE.Vector3().subVectors(bb0.max, bb0.min);
-  let upAxis = 'y';
-  if (sz0.x >= sz0.y && sz0.x >= sz0.z)      upAxis = 'x';
-  else if (sz0.z >= sz0.y && sz0.z >= sz0.x) upAxis = 'z';
+  const offX = Math.abs(bb0.min.x) / Math.max(0.001, sz0.x);
+  const offY = Math.abs(bb0.min.y) / Math.max(0.001, sz0.y);
+  const offZ = Math.abs(bb0.min.z) / Math.max(0.001, sz0.z);
+  let upAxis = 'y', minOff = offY;
+  if (offX < minOff) { upAxis = 'x'; minOff = offX; }
+  if (offZ < minOff) { upAxis = 'z'; minOff = offZ; }
 
   const rot1 = new THREE.Matrix4();
   // R that sends up-axis → +Y:
@@ -256,12 +268,17 @@ function buildTemplate(root, charName) {
   // --- Stage 6: compute slice thresholds in absolute meters. ---
   const bb3 = new THREE.Box3().setFromBufferAttribute(body.geometry.attributes.position);
   const halfW = Math.max(Math.abs(bb3.min.x), Math.abs(bb3.max.x));
+  // S55q: arm threshold tuned tighter. Was halfW * 0.30 * 2 = 0.60 of
+  // half-width, which is well outside the torso AND outside most of the
+  // arm — only the very tips classified as arm, leaving most arm geometry
+  // welded into the torso bucket (which is why arms stayed in T-pose
+  // visually: the arm Group rotation was applied to a near-empty mesh).
+  // 0.22 of half-width puts the threshold just outside the torso column
+  // (typical torso half-width ≈ 0.18-0.22 m at TARGET_HEIGHT=1.8).
   const params = {
     hipY:      TARGET_HEIGHT * HIP_Y_FRAC,
     shoulderY: TARGET_HEIGHT * SHOULDER_Y_FRAC,
-    armX:      halfW * ARM_X_HALF_FRAC * 2,   // 0.30 of half-width × 2 = 0.60 of half-width.
-                                              // Picked to be just OUTSIDE the torso column
-                                              // while still inside the actual arm geometry.
+    armX:      halfW * ARM_X_HALF_FRAC,
   };
 
   // --- Stage 7: slice. ---
@@ -385,11 +402,18 @@ function sliceBody(geo, p) {
 function cloneMat(src) {
   if (!src) return new THREE.MeshStandardMaterial({ color: 0x888888 });
   const c = src.clone();
-  // Three.js GLTFLoader materials default to roughness 1 with a baseColor
-  // texture; that reads flat in the dusk lighting. Nudge metalness up a hair
-  // for a bit of specular pickup off the textured surfaces.
-  if (c.metalness !== undefined) c.metalness = Math.min(0.25, (c.metalness || 0) + 0.10);
-  if (c.roughness !== undefined) c.roughness = Math.max(0.5, (c.roughness || 0.9) - 0.10);
+  // S55q: many GLTFExporter conversions (especially via Three.js's own
+  // exporter) leave `material.color` near-black, expecting the
+  // baseColorTexture to supply all color information. In glTF semantics
+  // the final shaded color is `color * map`, so color=0 produces a pitch
+  // black surface no matter what the texture contains. When a map is
+  // present, force color to white so the texture passes through clean.
+  if (c.color && c.map) c.color.setHex(0xffffff);
+  // Lift base lighting response: GLTFLoader defaults to roughness 1 /
+  // metalness 0 which renders flat under the dusk palette. Soften both a
+  // touch so textures pick up enough specular to read as fabric/skin.
+  if (c.metalness !== undefined) c.metalness = 0.08;
+  if (c.roughness !== undefined) c.roughness = 0.82;
   return c;
 }
 
