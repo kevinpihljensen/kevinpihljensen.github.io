@@ -26,6 +26,40 @@ Format: newest entries at the top. Each entry lists what was added, what was cha
 
 ## Session log
 
+### 2026-05-19 — Session 55w (per-character self-emissive — lift sas + leet off black)
+
+After S55v shipped the 35 % baseline self-emissive, user reported sas
+(shooter) and leet (jetpack) still read as too dark. Root cause: the
+self-emissive multiplies the base texture (`emissive = emissiveColor ×
+emissiveMap`), so a dark base texel × 0.35 = still dark. sas's
+balaclava and uniform average ~18 % luma; leet's elite kit ~22 %. urban
+and terror have brighter, more colourful textures (~50-55 % luma) and
+look fine at the original baseline.
+
+Per-character tuning rather than raising the global baseline (which
+would wash out urban/terror lit-side detail):
+
+  urban  → 0x59 (35 %)   unchanged
+  terror → 0x59 (35 %)   unchanged
+  sas    → 0x99 (60 %)   lifts balaclava off black
+  leet   → 0x88 (53 %)   lifts dark elite kit off black
+
+**Changed**
+- `src/charmodels.js`: new `REST_EMISSIVE_BY_CHAR` map keyed by char
+  name; `cloneMat(src, charName)` now picks the per-char baseline and
+  uses it for both `emissive` and `userData.restEmissive`. Threaded
+  `tpl.name` through every `cloneMat` call in `assembleRig` (body,
+  hands, accessories).
+
+**Verified**
+- `node --check` clean.
+- `bash dev/test-all.sh` → ALL GREEN, MAP OK, all summary counters zero.
+
+**Known issues**
+- Baseline values are eyeballed from approximate texture-luma averages;
+  if either character now over-bakes (looks fluorescent) drop sas to
+  0x80 / leet to 0x70.
+
 ### 2026-05-19 — Session 55v (brighten CS character models — baseline self-emissive)
 
 User feedback after S55u (which fixed the all-black render): "your

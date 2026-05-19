@@ -476,7 +476,25 @@ function sliceBody(geo, p) {
 // RIG ASSEMBLY — build a fresh THREE.Group hierarchy from a template.
 // ===========================================================================
 
-function cloneMat(src) {
+// S55w: per-character baseline self-emissive. sas (balaclava + dark
+// fatigues) and leet (sleek dark elite kit) have base textures that are
+// already 25-40 % grey, so a flat 35 % self-illumination of `dark ×
+// 0.35 = still dark` left them reading as black silhouettes. urban and
+// terror have brighter, more colourful texels and don't need the bump.
+// Tuned by inspecting the average luma of each char's body texture:
+//   urban  ≈ 0.55 → 0x59 (35 %)  keeps lit-side highlights crisp
+//   terror ≈ 0.50 → 0x59 (35 %)
+//   sas    ≈ 0.18 → 0x99 (60 %)  lifts the dark balaclava off black
+//   leet   ≈ 0.22 → 0x88 (53 %)
+const REST_EMISSIVE_BY_CHAR = {
+  urban:  0x595959,
+  terror: 0x595959,
+  sas:    0x999999,
+  leet:   0x888888,
+};
+const DEFAULT_REST_EMISSIVE = 0x595959;
+
+function cloneMat(src, charName) {
   // S55u: switch to MeshLambertMaterial. The CS character GLB embeds
   // textured surfaces meant for a near-fullbright GoldSrc engine; running
   // them through PBR MeshStandardMaterial under our dusk-tinted point-
@@ -517,22 +535,29 @@ function cloneMat(src) {
     map.magFilter = THREE.LinearFilter;
     map.needsUpdate = true;
   }
+  const restHex = (charName && REST_EMISSIVE_BY_CHAR[charName] !== undefined)
+    ? REST_EMISSIVE_BY_CHAR[charName]
+    : DEFAULT_REST_EMISSIVE;
   const m = new THREE.MeshLambertMaterial({
     map: map,
     color: 0xffffff,
     side: THREE.DoubleSide,
     vertexColors: false,
-    emissive: 0x595959,    // 0x59 = 89/255 ≈ 0.35 grey baseline
+    emissive: restHex,
     emissiveMap: map,
   });
   m.userData = m.userData || {};
-  m.userData.restEmissive = { r: 0x59 / 255, g: 0x59 / 255, b: 0x59 / 255 };
+  m.userData.restEmissive = {
+    r: ((restHex >> 16) & 0xff) / 255,
+    g: ((restHex >>  8) & 0xff) / 255,
+    b: ( restHex        & 0xff) / 255,
+  };
   return m;
 }
 
 function assembleRig(tpl, weaponBuilder) {
-  const bodyMat = cloneMat(tpl.bodyMat);
-  const handMat = tpl.handMat ? cloneMat(tpl.handMat) : bodyMat;
+  const bodyMat = cloneMat(tpl.bodyMat, tpl.name);
+  const handMat = tpl.handMat ? cloneMat(tpl.handMat, tpl.name) : bodyMat;
   const bodyMats = [bodyMat];
   if (handMat !== bodyMat) bodyMats.push(handMat);
 
@@ -667,7 +692,7 @@ function assembleRig(tpl, weaponBuilder) {
   //     at their original positions. ---
   for (const acc of tpl.accessories) {
     if (!acc.geometry) continue;
-    const am = new THREE.Mesh(acc.geometry, cloneMat(acc.material));
+    const am = new THREE.Mesh(acc.geometry, cloneMat(acc.material, tpl.name));
     root.add(am); meshes.push(am);
   }
 
