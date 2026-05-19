@@ -2041,15 +2041,33 @@ export function updateEnemies(dt) {
       if (e.type === 'grunt') updateGruntSwipe(e, dt);
 
       // Hit flash on body mats only — emissive mats keep their permanent glow.
+      // S55v: CS character materials carry a baseline self-emissive (so
+      // textures are readable in dim parts of the map). The hit-flash lerps
+      // toward white but settles back to that rest value instead of zero.
       if (e.hitFlashTimer > 0) {
         e.hitFlashTimer -= dt;
         const flash = Math.max(0, e.hitFlashTimer / HIT_FLASH_TIME);
         for (let j = 0; j < e.bodyMats.length; j++) {
-          e.bodyMats[j].emissive.setRGB(flash, flash, flash);
+          const m = e.bodyMats[j];
+          const rest = m.userData && m.userData.restEmissive;
+          if (rest) {
+            m.emissive.setRGB(
+              flash + (1 - flash) * rest.r,
+              flash + (1 - flash) * rest.g,
+              flash + (1 - flash) * rest.b,
+            );
+          } else {
+            m.emissive.setRGB(flash, flash, flash);
+          }
         }
         if (e.hitFlashTimer <= 0) {
           e.hitFlashTimer = 0;
-          for (let j = 0; j < e.bodyMats.length; j++) e.bodyMats[j].emissive.setRGB(0, 0, 0);
+          for (let j = 0; j < e.bodyMats.length; j++) {
+            const m = e.bodyMats[j];
+            const rest = m.userData && m.userData.restEmissive;
+            if (rest) m.emissive.setRGB(rest.r, rest.g, rest.b);
+            else m.emissive.setRGB(0, 0, 0);
+          }
         }
       }
     } else if (e.deathTimer > 0) {

@@ -26,6 +26,59 @@ Format: newest entries at the top. Each entry lists what was added, what was cha
 
 ## Session log
 
+### 2026-05-19 — Session 55v (brighten CS character models — baseline self-emissive)
+
+User feedback after S55u (which fixed the all-black render): "your
+changes have kinda worked, but the models need more light on them so I
+can see the details." The map's ambient + directional lighting is tuned
+for procedural untextured cubes; the new texture-mapped CS bodies read
+too dark against that ambient, especially in interiors and the long
+afternoon shadow side of buildings. Pure ambient bump would wash out
+the rest of the scene, so this is a per-material fix: give the CS
+character materials a baseline self-emissive that paints the base
+texture back onto itself, so the models stay legible regardless of
+where they stand.
+
+**Implementation.** `cloneMat` (body/head/limb texture material) now
+builds the `MeshLambertMaterial` with `emissive: 0x595959` (35% grey)
+plus `emissiveMap: map` — the same texture used as `map`. The Lambert
+shader adds `emissiveColor * emissiveMap` to the lit colour, so each
+texel self-illuminates at ~35% of its own base colour. Net effect: a
+fully shadowed model is still ~35% as bright as a fully lit one
+instead of 0%; lit-side detail is barely affected because the diffuse
+term still dominates. Cloth/gear accessory materials (`padMat`,
+`collarMat`, `beltMat`) get a darker baseline (`0x0a0b10`, ~4%) so
+they read as solid kit, not as glow strips.
+
+**Hit-flash kept working.** The flash code in `enemies.js` set
+`emissive = (flash, flash, flash)` and on clear set it back to
+`(0,0,0)`, which would have wiped the new self-illumination on the
+next bullet. Each character material now carries
+`userData.restEmissive = { r, g, b }` recording its baseline; the
+flash code lerps toward white using `r = flash + (1 - flash) * rest.r`
+during decay, and on clear restores to the rest value instead of zero.
+Procedural-rig enemies (no `restEmissive` set) fall through the legacy
+`(0,0,0)` clear path unchanged.
+
+**Changed**
+- `src/charmodels.js`: `cloneMat` switched to Lambert with
+  `emissive: 0x595959 + emissiveMap: map`, stores
+  `userData.restEmissive` on every clone. `padMat`/`collarMat`/`beltMat`
+  given dim baseline `0x0a0b10` plus matching `restEmissive`.
+- `src/enemies.js`: hit-flash decay + clear now read `m.userData.restEmissive`
+  when present and lerp / restore against that value instead of zero.
+
+**Verified**
+- `node --check` clean on both files.
+- `bash dev/test-all.sh` → ALL GREEN, MAP OK, geomWarns=0,
+  pickup-reach=0, doorway-drift=0 (full 283-assertion battery).
+
+**Known issues**
+- Baseline is currently a single uniform 35% across all four character
+  classes — if any one class still reads too dark or too bright in
+  practice, tune per-character by branching `cloneMat` on the parent
+  template name.
+
 ### 2026-05-19 — Session 55p (CS-style player models for enemies — load, slice, articulate, hold weapon)
 
 User wants tactical-soldier player models replacing the procedural cube

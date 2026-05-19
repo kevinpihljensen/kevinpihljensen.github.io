@@ -492,16 +492,22 @@ function cloneMat(src) {
   // So the sliced sub-meshes had no `color` attribute, yet the cloned
   // material still asked the shader for one — WebGL falls back to
   // (0,0,0), and `vertex × map × factor = 0` → pitch black surface no
-  // matter what the texture or factors contain. Same explanation for the
-  // "one color" appearance after S55t patched the worst symptoms; the
-  // texture was still being multiplied by near-zero vertex color.
-  //
-  // Two-part fix:
+  // matter what the texture or factors contain. Two-part fix:
   //   1. Slicer now preserves COLOR_0 (see sliceBody).
-  //   2. Force `vertexColors = false` here as belt-and-suspenders — the
-  //      cloned Lambert won't reach for the color attribute even if the
-  //      slicer ever fails to carry it, so the texture passes through
-  //      cleanly modulated only by scene lighting.
+  //   2. `vertexColors = false` here as belt-and-suspenders so the
+  //      cloned Lambert won't reach for the attribute even if the slicer
+  //      ever fails to carry it.
+  //
+  // S55v: baseline SELF-EMISSIVE so the model is readable everywhere on
+  // the map, not just where a floodlight happens to fall. We set
+  //   emissive = REST_EMISSIVE_GREY    (35 % grey)
+  //   emissiveMap = same texture as map
+  // The shader adds (emissive × emissiveMap) on top of the lit diffuse,
+  // so even with zero scene light the surface still shows 35 % of the
+  // texture as glow. Texture detail is preserved (it's the same map).
+  // The hit-flash code briefly drives emissive to white (full texture
+  // flash) and on clear restores to userData.restEmissive (this value),
+  // not to black — see the matching change in enemies.js.
   const fallback = new THREE.MeshLambertMaterial({ color: 0xb0a890 });
   if (!src) return fallback;
   const map = src.map || null;
@@ -511,13 +517,17 @@ function cloneMat(src) {
     map.magFilter = THREE.LinearFilter;
     map.needsUpdate = true;
   }
-  return new THREE.MeshLambertMaterial({
+  const m = new THREE.MeshLambertMaterial({
     map: map,
-    color: 0xffffff,        // pure-white factor so the texture passes through unchanged
+    color: 0xffffff,
     side: THREE.DoubleSide,
-    vertexColors: false,    // ignore any leftover COLOR_0 (see comment above)
-    emissive: 0x000000,     // no glow at rest; hit-flash code drives this
+    vertexColors: false,
+    emissive: 0x595959,    // 0x59 = 89/255 ≈ 0.35 grey baseline
+    emissiveMap: map,
   });
+  m.userData = m.userData || {};
+  m.userData.restEmissive = { r: 0x59 / 255, g: 0x59 / 255, b: 0x59 / 255 };
+  return m;
 }
 
 function assembleRig(tpl, weaponBuilder) {
@@ -552,7 +562,11 @@ function assembleRig(tpl, weaponBuilder) {
   }
   // Neck collar — short dark cylinder hiding the slice seam between head
   // and torso. Same dark slate as the shoulder pads.
-  const collarMat = new THREE.MeshLambertMaterial({ color: 0x14161c });
+  const collarMat = new THREE.MeshLambertMaterial({
+    color: 0x14161c,
+    emissive: 0x0a0b10,   // subtle self-glow so it doesn't crush to black under dusk lights
+  });
+  collarMat.userData = { restEmissive: { r: 0x0a/255, g: 0x0b/255, b: 0x10/255 } };
   bodyMats.push(collarMat);
   const collar = new THREE.Mesh(
     new THREE.CylinderGeometry(0.11, 0.13, 0.07, 12),
@@ -625,7 +639,11 @@ function assembleRig(tpl, weaponBuilder) {
   //     Sit at each arm group's origin (= shoulder pivot), so they rotate
   //     with the arm. Reads as armor / pauldron, hides the seam where the
   //     slicer tore through the welded geometry. ---
-  const padMat = new THREE.MeshLambertMaterial({ color: 0x14161c });
+  const padMat = new THREE.MeshLambertMaterial({
+    color: 0x14161c,
+    emissive: 0x0a0b10,
+  });
+  padMat.userData = { restEmissive: { r: 0x0a/255, g: 0x0b/255, b: 0x10/255 } };
   bodyMats.push(padMat);
   const padL = new THREE.Mesh(new THREE.SphereGeometry(0.13, 12, 8), padMat);
   armLGroup.add(padL); meshes.push(padL);
@@ -635,7 +653,11 @@ function assembleRig(tpl, weaponBuilder) {
   // --- HIP COVER — small dark band at the waist where the leg slice cut
   //     across. Belt-like; hides the hip seams. ---
   const beltGeo = new THREE.BoxGeometry(0.42, 0.10, 0.30);
-  const beltMat = new THREE.MeshLambertMaterial({ color: 0x14161c });
+  const beltMat = new THREE.MeshLambertMaterial({
+    color: 0x14161c,
+    emissive: 0x0a0b10,
+  });
+  beltMat.userData = { restEmissive: { r: 0x0a/255, g: 0x0b/255, b: 0x10/255 } };
   bodyMats.push(beltMat);
   const belt = new THREE.Mesh(beltGeo, beltMat);
   belt.position.y = piv.hipY;
