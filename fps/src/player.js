@@ -20,7 +20,7 @@ import { camera } from './scene.js';
 import { player, state, game, damageIndicator } from './state.js';
 import { collideCapsule, groundHeightAt, ceilingHeightAt, headroomClear } from './collision.js';
 import { enemies } from './enemies.js';
-import { SPAWN_ANCHORS } from './maplayout.js';
+import { SPAWN, SPAWN_ANCHORS } from './maplayout.js';
 import {
   GAME_STATE, MOUSE_SENSITIVITY, PITCH_LIMIT, SCOPE_SENS_MULT,
   WALK_SPEED, SPRINT_SPEED, CROUCH_SPEED, SCOPE_SPEED, KNIFE_SPEED_MULT,
@@ -530,7 +530,7 @@ export function updateArenaPlayer(dt) {
 }
 
 export function resetPlayer() {
-  player.position.set(0, 0, 0);
+  player.position.set(SPAWN.x, 0, SPAWN.z);
   player.velocityX = 0;
   player.velocityZ = 0;
   player.velocityY = 0;

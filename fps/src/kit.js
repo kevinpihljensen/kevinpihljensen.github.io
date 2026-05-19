@@ -43,15 +43,17 @@ import * as THREE from 'three';
 import { scene } from './scene.js';
 import { makeBoxSolid, makeRampSolid, shootables, clamp } from './collision.js';
 import { makeFloorTexture, makeBrickTexture, makeWoodTexture,
-         makeConcreteTexture, makeMetalTexture } from './textures.js';
+         makeConcreteTexture, makeMetalTexture,
+         makeSlateStoneTexture, makeIronPlateTexture, makeMarbleSlabTexture,
+         makeSandstoneTexture, makeRuneSlabTexture } from './textures.js';
 
 // --- MATERIALS (shared; DoubleSide on structure so a winding mistake can
 // never read as see-through — the user requires structure be opaque) ---
 // S55: textured materials instead of flat colors. Each texture's repeat is
-// tuned for the typical surface size where the material lands. Walls vary
-// in length (4–20 m, plus 160 m perimeter), so the wall texture repeat is a
-// trade-off — set so a typical 12 m building wall reads with ~4 brick rows
-// across. The perimeter walls accept the tiling pattern.
+// tuned for the typical surface size where the material lands.
+// S55g: added 5 themed materials (slate / iron / marble / sandstone / rune)
+// that LAYOUT entries can request via an optional `mat` field. Default
+// behaviour unchanged — entries without `mat` get the kind-default.
 const floorTex = makeFloorTexture();
 floorTex.repeat.set(20, 20);                  // 160m ground / 8m per tile
 const brickTex = makeBrickTexture();
@@ -66,16 +68,43 @@ const metalTex = makeMetalTexture();
 metalTex.repeat.set(2, 2);
 const overhangTex = makeConcreteTexture();
 overhangTex.repeat.set(2, 2);
+// S55g themed textures. Each repeats less aggressively than the base
+// brick so the larger block / plate pattern reads at structure scale.
+const slateTex = makeSlateStoneTexture();
+slateTex.repeat.set(1.5, 1);
+const ironTex = makeIronPlateTexture();
+ironTex.repeat.set(1.5, 1);
+const marbleTex = makeMarbleSlabTexture();
+marbleTex.repeat.set(2, 2);
+const sandstoneTex = makeSandstoneTexture();
+sandstoneTex.repeat.set(1.5, 1);
+const runeTex = makeRuneSlabTexture();
+runeTex.repeat.set(1, 1);
 
 const MAT = {
-  floor:   new THREE.MeshStandardMaterial({ map: floorTex,    roughness: 0.92, metalness: 0.05, side: THREE.DoubleSide }),
-  deck:    new THREE.MeshStandardMaterial({ map: concreteTex, color: 0xb5b8bd, roughness: 0.85, metalness: 0.12, side: THREE.DoubleSide }),
-  ramp:    new THREE.MeshStandardMaterial({ map: concreteRampTex, color: 0xa2a6ac, roughness: 0.85, metalness: 0.18, side: THREE.DoubleSide }),
-  stair:   new THREE.MeshStandardMaterial({ map: metalTex,    color: 0x9aa1ac, roughness: 0.65, metalness: 0.40, side: THREE.DoubleSide }),
-  box:     new THREE.MeshStandardMaterial({ map: woodTex,     color: 0xc7b290, roughness: 0.80, metalness: 0.05, side: THREE.DoubleSide }),
-  wall:    new THREE.MeshStandardMaterial({ map: brickTex,    color: 0xd0c8bd, roughness: 0.85, metalness: 0.08, side: THREE.DoubleSide }),
-  overhang:new THREE.MeshStandardMaterial({ map: overhangTex, color: 0xa0a4aa, roughness: 0.85, metalness: 0.18, side: THREE.DoubleSide }),
+  floor:     new THREE.MeshStandardMaterial({ map: floorTex,    roughness: 0.92, metalness: 0.05, side: THREE.DoubleSide }),
+  deck:      new THREE.MeshStandardMaterial({ map: concreteTex, color: 0xb5b8bd, roughness: 0.85, metalness: 0.12, side: THREE.DoubleSide }),
+  ramp:      new THREE.MeshStandardMaterial({ map: concreteRampTex, color: 0xa2a6ac, roughness: 0.85, metalness: 0.18, side: THREE.DoubleSide }),
+  stair:     new THREE.MeshStandardMaterial({ map: metalTex,    color: 0x9aa1ac, roughness: 0.65, metalness: 0.40, side: THREE.DoubleSide }),
+  box:       new THREE.MeshStandardMaterial({ map: woodTex,     color: 0xc7b290, roughness: 0.80, metalness: 0.05, side: THREE.DoubleSide }),
+  wall:      new THREE.MeshStandardMaterial({ map: brickTex,    color: 0xd0c8bd, roughness: 0.85, metalness: 0.08, side: THREE.DoubleSide }),
+  overhang:  new THREE.MeshStandardMaterial({ map: overhangTex, color: 0xa0a4aa, roughness: 0.85, metalness: 0.18, side: THREE.DoubleSide }),
+  // S55g themed materials.
+  slate:     new THREE.MeshStandardMaterial({ map: slateTex,     color: 0x9eaab6, roughness: 0.88, metalness: 0.10, side: THREE.DoubleSide }),
+  iron:      new THREE.MeshStandardMaterial({ map: ironTex,      color: 0xc4bfb6, roughness: 0.62, metalness: 0.55, side: THREE.DoubleSide }),
+  marble:    new THREE.MeshStandardMaterial({ map: marbleTex,    color: 0xf0e8d8, roughness: 0.32, metalness: 0.18, side: THREE.DoubleSide }),
+  sandstone: new THREE.MeshStandardMaterial({ map: sandstoneTex, color: 0xc8ad84, roughness: 0.95, metalness: 0.04, side: THREE.DoubleSide }),
+  rune:      new THREE.MeshStandardMaterial({ map: runeTex,      color: 0xffffff, roughness: 0.50, metalness: 0.25,
+                                              emissive: 0xff9a30, emissiveMap: runeTex, emissiveIntensity: 0.85,
+                                              side: THREE.DoubleSide }),
 };
+
+// Resolve an optional material key to a THREE material; falls back to the
+// fallback if `mat` is unset or unknown.
+function resolveMat(mat, fallback) {
+  if (mat && MAT[mat]) return MAT[mat];
+  return MAT[fallback] || MAT.wall;
+}
 
 function addMesh(geo, mat, castShadow) {
   const m = new THREE.Mesh(geo, mat);
@@ -113,11 +142,13 @@ export function ground(half, y) {
 
 // --- PLATFORM / DECK ------------------------------------------------------
 // Solid box deck. top = walkable Y; thick = how far it extends below top.
-export function platform({ cx, cz, top, sx, sz, thick = 0.6 }) {
+// Optional `mat` overrides the default deck material — S55g uses this to
+// theme zones (slate keep, marble HILLTOP, etc).
+export function platform({ cx, cz, top, sx, sz, thick = 0.6, mat }) {
   const x0 = cx - sx / 2, x1 = cx + sx / 2;
   const z0 = cz - sz / 2, z1 = cz + sz / 2;
   makeBoxSolid(x0, x1, top - thick, top, z0, z1);
-  const m = new THREE.Mesh(new THREE.BoxGeometry(sx, thick, sz), MAT.deck);
+  const m = new THREE.Mesh(new THREE.BoxGeometry(sx, thick, sz), resolveMat(mat, 'deck'));
   m.position.set(cx, top - thick / 2, cz);
   m.castShadow = true; m.receiveShadow = true;
   scene.add(m); shootables.push(m);
@@ -128,11 +159,13 @@ export function platform({ cx, cz, top, sx, sz, thick = 0.6 }) {
 // Solid cuboid you can stand on / hide behind. Walkable top = base + sy.
 // (You cannot walk UP onto it — a box riser body-blocks like a wall. Jump
 // onto it, or go around. Use stairs/ramp for no-jump ascent.)
-export function box({ cx, cz, base = 0, sx, sy, sz }) {
+// Optional `mat` overrides the default crate material (used for the
+// CATWALK_HE bridge — it should read as forged iron, not wood).
+export function box({ cx, cz, base = 0, sx, sy, sz, mat }) {
   const x0 = cx - sx / 2, x1 = cx + sx / 2;
   const z0 = cz - sz / 2, z1 = cz + sz / 2;
   makeBoxSolid(x0, x1, base, base + sy, z0, z1);
-  const m = new THREE.Mesh(new THREE.BoxGeometry(sx, sy, sz), MAT.box);
+  const m = new THREE.Mesh(new THREE.BoxGeometry(sx, sy, sz), resolveMat(mat, 'box'));
   m.position.set(cx, base + sy / 2, cz);
   m.castShadow = true; m.receiveShadow = true;
   scene.add(m); shootables.push(m);
@@ -179,13 +212,19 @@ export function labeledBox({ cx, cz, base = 0, sx, sy, sz, label }) {
 // matches it exactly. Used to build aperture walls (doorways/windows) as a
 // set of verified makeBoxSolid segments — what you see is what you collide
 // with and shoot, and the opening has NO mesh so bullets/vision pass.
-export function solidBox({ x0, x1, y0, y1, z0, z1 }, kind = 'wall') {
+export function solidBox({ x0, x1, y0, y1, z0, z1 }, kind = 'wall', mat) {
   if (x1 - x0 <= 1e-4 || y1 - y0 <= 1e-4 || z1 - z0 <= 1e-4) return;
   // S55: wall-style solids are not walkable (see kit.wall comment).
-  const opts = kind === 'wall' ? { noWalk: true } : undefined;
+  // S55g: `mat` (optional) overrides material independently of collision
+  // semantics. We treat slate/iron/sandstone/rune as wall-like (noWalk);
+  // marble is decorative deck-cladding (walkable). The `kind` arg keeps
+  // its existing role as the "what is this collision-wise" hint.
+  const noWalkMats = new Set(['slate', 'iron', 'sandstone', 'rune']);
+  const isWall = kind === 'wall' || noWalkMats.has(mat);
+  const opts = isWall ? { noWalk: true } : undefined;
   makeBoxSolid(x0, x1, y0, y1, z0, z1, opts);
-  const mat = MAT[kind] || MAT.wall;
-  const m = new THREE.Mesh(new THREE.BoxGeometry(x1 - x0, y1 - y0, z1 - z0), mat);
+  const material = (mat && MAT[mat]) || MAT[kind] || MAT.wall;
+  const m = new THREE.Mesh(new THREE.BoxGeometry(x1 - x0, y1 - y0, z1 - z0), material);
   m.position.set((x0 + x1) / 2, (y0 + y1) / 2, (z0 + z1) / 2);
   m.castShadow = true; m.receiveShadow = true;
   scene.add(m); shootables.push(m);
@@ -194,7 +233,7 @@ export function solidBox({ x0, x1, y0, y1, z0, z1 }, kind = 'wall') {
 // --- WALL -----------------------------------------------------------------
 // Tall thin solid obstacle. axis 'x' → spans along X (length in X); axis 'z'
 // → spans along Z. height from base up.
-export function wall({ cx, cz, base = 0, length, height, thick = 0.5, axis = 'x' }) {
+export function wall({ cx, cz, base = 0, length, height, thick = 0.5, axis = 'x', mat }) {
   let x0, x1, z0, z1;
   if (axis === 'x') { x0 = cx - length / 2; x1 = cx + length / 2; z0 = cz - thick / 2; z1 = cz + thick / 2; }
   else              { z0 = cz - length / 2; z1 = cz + length / 2; x0 = cx - thick / 2; x1 = cx + thick / 2; }
@@ -203,7 +242,7 @@ export function wall({ cx, cz, base = 0, length, height, thick = 0.5, axis = 'x'
   // (e.g. an external staircase passing the building wall) would pick up the
   // wall top as the surface and the connector-seam check would fail.
   makeBoxSolid(x0, x1, base, base + height, z0, z1, { noWalk: true });
-  const m = new THREE.Mesh(new THREE.BoxGeometry(x1 - x0, height, z1 - z0), MAT.wall);
+  const m = new THREE.Mesh(new THREE.BoxGeometry(x1 - x0, height, z1 - z0), resolveMat(mat, 'wall'));
   m.position.set((x0 + x1) / 2, base + height / 2, (z0 + z1) / 2);
   m.castShadow = true; m.receiveShadow = true;
   scene.add(m); shootables.push(m);

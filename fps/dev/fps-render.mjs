@@ -280,39 +280,51 @@ function render(camX, camY, camZ, lookX, lookY, lookZ, name) {
 }
 
 // --- CAMERA POSES --------------------------------------------------------
-// Eye height = 1.6 (matches player.js).
+// Eye height = 1.6 (matches player.js). Poses are anchored to the S55g
+// RIDGEPOINT CITADEL landmarks: CITADEL_BASE + HILLTOP centerpiece,
+// FOUNDRY (east), VAULT (north), TERRACE (south), COLONNADE (west).
 const EYE = 1.6;
-// SPAWN cardinal views.
-render(SPAWN.x, EYE, SPAWN.z,  SPAWN.x +  0, EYE - 0.2, SPAWN.z - 50, 'fps_spawn_N');
-render(SPAWN.x, EYE, SPAWN.z,  SPAWN.x + 50, EYE - 0.2, SPAWN.z +  0, 'fps_spawn_E');
-render(SPAWN.x, EYE, SPAWN.z,  SPAWN.x +  0, EYE - 0.2, SPAWN.z + 50, 'fps_spawn_S');
-render(SPAWN.x, EYE, SPAWN.z,  SPAWN.x - 50, EYE - 0.2, SPAWN.z +  0, 'fps_spawn_W');
+// SPAWN cardinal views — the spawn-eye sweep around the map.
+render(SPAWN.x, EYE, SPAWN.z,  SPAWN.x +  0, EYE - 0.2, SPAWN.z - 50, 'fps_spawn_N');   // facing CITADEL
+render(SPAWN.x, EYE, SPAWN.z,  SPAWN.x + 50, EYE - 0.2, SPAWN.z +  0, 'fps_spawn_E');   // facing FOUNDRY
+render(SPAWN.x, EYE, SPAWN.z,  SPAWN.x +  0, EYE - 0.2, SPAWN.z + 50, 'fps_spawn_S');   // facing TERRACE
+render(SPAWN.x, EYE, SPAWN.z,  SPAWN.x - 50, EYE - 0.2, SPAWN.z +  0, 'fps_spawn_W');   // facing COLONNADE
 
-// Approach views: outside each building's main entry, looking at the entry.
-// (Standing 4m short of the doorway at eye height.)
-render(-35, EYE, -19, -35, EYE, -23, 'fps_outside_HOUSE_NW');           // facing N at S entry
-render( 33 - 4, EYE, -42, 33, EYE, -42, 'fps_outside_HOUSE_NE');         // facing E at W entry
-render( 50 - 4, EYE, -18, 50, EYE, -18, 'fps_outside_TOWER_NE');         // facing E at W entry
-render( 35 - 4, EYE,  8,  35, EYE,  8,  'fps_outside_WAREHOUSE');        // facing E at W entry
-// S55f arena additions.
-render(-35, EYE,  19, -35, EYE,  23, 'fps_outside_HOUSE_SW');           // facing S at N entry
-render( 29 - 4, EYE,  30, 29, EYE,  30, 'fps_outside_HOUSE_SE');         // facing E at W entry
+// Building approach views: outside each ground-floor entry, looking inside.
+// VAULT south entry (cx=0, cz=-39) — player approaches from spawn-side.
+render(  0, EYE, -34,   0, EYE, -39, 'fps_outside_VAULT_S');
+// VAULT west flank entry (cx=-9, cz=-45) — flank route.
+render(-14, EYE, -45,  -9, EYE, -45, 'fps_outside_VAULT_W');
+// FOUNDRY south entry (cx=22, cz=-9) — primary east approach.
+render( 22, EYE,  -4,  22, EYE,  -9, 'fps_outside_FOUNDRY_S');
+// FOUNDRY west flank entry (cx=14, cz=-15) — between citadel and foundry.
+render(  9, EYE, -15,  14, EYE, -15, 'fps_outside_FOUNDRY_W');
 
-// Stair landing views: from the stair foot looking up at the deck edge.
-render( 45, EYE,  21, 45, EYE + 4,  14, 'fps_stair_up_WAREHOUSE');       // looking N + up
-render(-49, EYE, -30,-42, EYE + 4, -30, 'fps_stair_up_HOUSE_NW');        // looking E + up
-render( 54, EYE, -42, 47, EYE + 4, -42, 'fps_stair_up_HOUSE_NE');        // looking W + up
+// Citadel approach + climb.
+// From spawn, looking up the S grand ramp.
+render(SPAWN.x, EYE, SPAWN.z, 0, EYE + 3, -15, 'fps_spawn_at_citadel');
+// On the CITADEL_BASE mezzanine looking up at HILLTOP keep.
+render(  0, 4 + EYE,  -9,    0, 8 + EYE, -17, 'fps_mezzanine_at_HILLTOP');
+// On HILLTOP at the sniper, looking south over CITADEL_BASE toward spawn.
+render(  0, 8 + EYE, -17,    0, 8 + EYE - 0.3,  20, 'fps_HILLTOP_at_sniper');
+// Walking the CATWALK_HE looking east at the foundry roof drop.
+render(  6, 8 + EYE, -17,   18, 8 + EYE - 0.3, -17, 'fps_CATWALK_HE_looking_east');
 
-// On-roof views: standing on the deck near a pickup, looking around.
-render( 45, 4 + EYE,  6,  45, 4 + EYE - 0.2, 14, 'fps_roof_WAREHOUSE_at_shotgun');
-render(  0, 6 + EYE, -48,  0, 6 + EYE - 0.2, -57, 'fps_roof_HILLTOP_at_saw');
-render( 55, 4.5 + EYE, -14, 55, 4.5 + EYE - 0.2, -23, 'fps_roof_TOWER_NE_at_sniper');
-// S55f arena additions: SOUTH_BASTION perch + CENTRAL_ALTAR (sniper).
-render(  0, 5 + EYE,  47,   0, 5 + EYE - 0.2,  37, 'fps_roof_SOUTH_BASTION');
-render(  0, 2.5 + EYE, -12, 0, 2.5 + EYE - 0.2, -50, 'fps_altar_looking_HILLTOP'); // exposed shot at HILLTOP
-render(  0, EYE,  0,   0, EYE - 0.1, -12, 'fps_spawn_at_altar');         // spawn looking at altar (north)
+// Foundry roof: the drop landing zone (catwalk crashes down here).
+render( 22, 4 + EYE, -12,   16, 4 + EYE + 4,  -17, 'fps_FOUNDRY_ROOF_at_catwalk_drop');
+// Vault roof view of the map's north sector.
+render(  0, 4 + EYE, -45,    0, 4 + EYE - 0.3, -20, 'fps_VAULT_ROOF_looking_south');
+// Terrace looking north at the citadel from the south plaza.
+render(  0, 3 + EYE,  30,    0, 3 + EYE + 3,  -15, 'fps_TERRACE_at_citadel');
+// West rampart looking east through the colonnade columns.
+render(-30, 5 + EYE,   0,  -10, 5 + EYE - 0.3,   0, 'fps_RAMPART_through_colonnade');
 
-// Interior view: inside the WAREHOUSE west room, looking east at the partition.
-render( 38, EYE, 8, 55, EYE, 8, 'fps_inside_WAREHOUSE_W_room');
+// Stair foot views.
+render(  0, EYE, -34,   0, EYE + 4, -23, 'fps_stair_up_CITADEL_N');     // N stair foot looking up
+render(-15, EYE, -15,  -8, EYE + 4, -15, 'fps_stair_up_CITADEL_W');     // W stair foot looking up
+render( 39, EYE, -15,  30, EYE + 4, -15, 'fps_stair_up_FOUNDRY');       // foundry east stair foot
+
+// Interior view: inside the FOUNDRY west room (the CQC zone).
+render( 17, EYE, -15,  22, EYE, -15, 'fps_inside_FOUNDRY_W_room');
 
 console.log(`[wrote ${__DIR}/fps_*.ppm — convert with render-map.sh]`);

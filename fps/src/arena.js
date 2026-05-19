@@ -19,17 +19,17 @@ for (const e of LAYOUT) {
       perimeter(e.half, e.height, e.thick);
       break;
     case 'platform': {
-      const h = platform({ cx: e.cx, cz: e.cz, top: e.top, sx: e.sx, sz: e.sz, thick: e.thick });
+      const h = platform({ cx: e.cx, cz: e.cz, top: e.top, sx: e.sx, sz: e.sz, thick: e.thick, mat: e.mat });
       if (e.id) H[e.id] = h;
       break;
     }
     case 'box': {
-      const h = box({ cx: e.cx, cz: e.cz, base: e.base, sx: e.sx, sy: e.sy, sz: e.sz });
+      const h = box({ cx: e.cx, cz: e.cz, base: e.base, sx: e.sx, sy: e.sy, sz: e.sz, mat: e.mat });
       if (e.id) H[e.id] = h;
       break;
     }
     case 'wall':
-      for (const r of wallBoxes(e)) solidBox(r, 'wall');
+      for (const r of wallBoxes(e)) solidBox(r, 'wall', e.mat);
       break;
     case 'rampTo': {
       const target = H[e.to];

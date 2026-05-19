@@ -362,6 +362,358 @@ export function makeMetalTexture() {
   return finalize(c);
 }
 
+// =============================================================================
+// THEMED TEXTURES (S55g — RIDGEPOINT CITADEL redesign).
+//
+// Five additional procedural textures, each tied to a zone of the map:
+//   makeSlateStoneTexture  — large hewn dark slate blocks. Wraps the CITADEL.
+//   makeIronPlateTexture   — riveted iron plating with rust streaks. FOUNDRY.
+//   makeMarbleSlabTexture  — polished cream marble with veining. HILLTOP deck.
+//   makeSandstoneTexture   — warm porous sandstone. COLONNADE + WEST_RAMPART.
+//   makeRuneSlabTexture    — dark stone with glowing chiseled rune accents.
+//                            For signpost slabs at key landmarks.
+//
+// Each texture is generated at import time onto a 512×512 (or 256×256) canvas.
+// Repeat is set in kit.js depending on the surface size. All are seamless via
+// RepeatWrapping.
+// =============================================================================
+
+// --- SLATE STONE (citadel keep) -------------------------------------------
+// Large hewn dark slate blocks. Cool grey with a faint blue cast, deep mortar
+// grooves wider than the brick texture, sharp bevel highlights. Reads as
+// "fortress masonry" at any distance. 4 courses of ~128 px wide blocks with
+// horizontal-running-bond offset every other row.
+export function makeSlateStoneTexture() {
+  const N = 512;
+  const c = makeCanvas(N);
+  const ctx = c.getContext('2d');
+  // Mortar base (deep slate-shadow).
+  ctx.fillStyle = '#1c1f24';
+  ctx.fillRect(0, 0, N, N);
+  // Block layout: 4 rows × variable column. Tall blocks (128 high).
+  const ROWS = 4;
+  const ROW_H = N / ROWS;
+  const BLK_W = 132, GAP = 6;
+  for (let row = 0; row < ROWS; row++) {
+    const offset = (row % 2 === 0) ? 0 : BLK_W / 2;
+    for (let bx = -BLK_W; bx < N + BLK_W; bx += BLK_W) {
+      const x0 = bx + offset + GAP / 2;
+      const x1 = x0 + BLK_W - GAP;
+      const y0 = row * ROW_H + GAP / 2;
+      const y1 = (row + 1) * ROW_H - GAP / 2;
+      const x = Math.max(0, x0), w = Math.min(N, x1) - x;
+      if (w <= 0) continue;
+      const h = y1 - y0;
+      // Per-block tint variance (slate-grey with faint blue).
+      const tint = 0.88 + Math.random() * 0.30;
+      const r = Math.floor(74 * tint);
+      const g = Math.floor(80 * tint);
+      const b = Math.floor(92 * tint);
+      ctx.fillStyle = `rgb(${r},${g},${b})`;
+      ctx.fillRect(x, y0, w, h);
+      // Noise texture on the block face.
+      for (let py = y0; py < y1; py += 2) {
+        for (let px = x; px < x + w; px += 2) {
+          const n = fbm((px - x0) / 18, (py - y0) / 18, 4, row * 73 + bx * 11) - 0.5;
+          const a = Math.abs(n) * 0.35;
+          ctx.fillStyle = n < 0 ? `rgba(20,22,26,${a.toFixed(2)})` : `rgba(170,176,188,${a.toFixed(2)})`;
+          ctx.fillRect(px, py, 2, 2);
+        }
+      }
+      // Hewn-edge bevel highlight (top + left).
+      ctx.fillStyle = 'rgba(200,210,225,0.20)';
+      ctx.fillRect(x, y0, w, 1);
+      ctx.fillRect(x, y0, 1, h);
+      // Shadow (bottom + right).
+      ctx.fillStyle = 'rgba(8,10,14,0.55)';
+      ctx.fillRect(x, y1 - 1, w, 1);
+      ctx.fillRect(x + w - 1, y0, 1, h);
+      // Occasional deep crack streak on a block face.
+      if (Math.random() < 0.30) {
+        ctx.strokeStyle = 'rgba(10,12,16,0.55)';
+        ctx.lineWidth = 1;
+        const cx0 = x + 6 + Math.random() * (w - 12);
+        let cy0 = y0 + 4, cy1 = y1 - 4;
+        ctx.beginPath();
+        ctx.moveTo(cx0, cy0);
+        const segs = 6;
+        for (let s = 1; s <= segs; s++) {
+          const t = s / segs;
+          const cy = cy0 + (cy1 - cy0) * t;
+          const dx = (Math.random() - 0.5) * 6;
+          ctx.lineTo(cx0 + dx, cy);
+        }
+        ctx.stroke();
+      }
+    }
+  }
+  // Vertical weathering streaks running down the courses.
+  for (let s = 0; s < 5; s++) {
+    const sx = Math.random() * N;
+    const sw = 2 + Math.random() * 5;
+    ctx.fillStyle = `rgba(8,10,14,${(0.10 + Math.random() * 0.12).toFixed(2)})`;
+    ctx.fillRect(sx, 0, sw, N);
+  }
+  return finalize(c);
+}
+
+// --- IRON PLATE (foundry) -------------------------------------------------
+// Riveted iron plating with rust streaks. Two-tone — cool steel base with
+// warm rust bleeds beneath each rivet. 4×4 plate grid with bold rivet rows.
+export function makeIronPlateTexture() {
+  const N = 512;
+  const c = makeCanvas(N);
+  const ctx = c.getContext('2d');
+  // Steel base — warm-grey with noise.
+  const id = ctx.createImageData(N, N);
+  const d = id.data;
+  for (let y = 0; y < N; y++) {
+    for (let x = 0; x < N; x++) {
+      const n = fbm(x / 32, y / 32, 5, 41);
+      const fine = fbm(x / 5, y / 5, 3, 53) * 0.18;
+      const base = 96 + (n + fine) * 50;
+      const [r, g, b] = tinted(base, 1.02, 0.98, 0.94);
+      const i = (y * N + x) * 4;
+      d[i] = r; d[i + 1] = g; d[i + 2] = b; d[i + 3] = 255;
+    }
+  }
+  ctx.putImageData(id, 0, 0);
+  // Plate seams: 4×4 plate grid.
+  const PLATES = 4;
+  const PS = N / PLATES;
+  ctx.strokeStyle = 'rgba(18,20,24,0.85)';
+  ctx.lineWidth = 3;
+  for (let i = 0; i <= PLATES; i++) {
+    ctx.beginPath(); ctx.moveTo(i * PS, 0); ctx.lineTo(i * PS, N); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(0, i * PS); ctx.lineTo(N, i * PS); ctx.stroke();
+  }
+  // Highlight along the seams.
+  ctx.strokeStyle = 'rgba(190,200,210,0.18)';
+  ctx.lineWidth = 1;
+  for (let i = 1; i < PLATES; i++) {
+    ctx.beginPath(); ctx.moveTo(i * PS + 2, 0); ctx.lineTo(i * PS + 2, N); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(0, i * PS + 2); ctx.lineTo(N, i * PS + 2); ctx.stroke();
+  }
+  // Rivets along the seams (every 32 px).
+  for (let i = 0; i <= PLATES; i++) {
+    for (let p = 16; p < N; p += 32) {
+      drawBolt(ctx, i * PS, p, 4);
+      drawBolt(ctx, p, i * PS, 4);
+    }
+  }
+  // Rust streaks bleeding from random rivets.
+  for (let r = 0; r < 10; r++) {
+    const rx = Math.random() * N;
+    const ry = Math.random() * N;
+    const grad = ctx.createLinearGradient(rx, ry, rx + (Math.random() - 0.5) * 18, ry + 30 + Math.random() * 60);
+    grad.addColorStop(0, 'rgba(120,55,28,0.55)');
+    grad.addColorStop(0.5, 'rgba(90,40,20,0.30)');
+    grad.addColorStop(1, 'rgba(60,30,18,0)');
+    ctx.fillStyle = grad;
+    ctx.beginPath();
+    ctx.arc(rx, ry + 35, 12, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillRect(rx - 4, ry, 8, 60);
+  }
+  // A faint oily sheen blob or two for variety.
+  for (let s = 0; s < 2; s++) {
+    const sx = Math.random() * N, sy = Math.random() * N;
+    const sr = 50 + Math.random() * 60;
+    const g = ctx.createRadialGradient(sx, sy, 0, sx, sy, sr);
+    g.addColorStop(0, 'rgba(90,80,70,0.25)');
+    g.addColorStop(1, 'rgba(0,0,0,0)');
+    ctx.fillStyle = g;
+    ctx.fillRect(sx - sr, sy - sr, sr * 2, sr * 2);
+  }
+  return finalize(c);
+}
+
+// --- MARBLE SLAB (HILLTOP "sacred" perch) ---------------------------------
+// Polished cream marble with subtle veining and tiled seams. The most ornate
+// surface — reserved for the HILLTOP top deck where the sniper lives.
+export function makeMarbleSlabTexture() {
+  const N = 512;
+  const c = makeCanvas(N);
+  const ctx = c.getContext('2d');
+  // Cream base with smooth fbm shading.
+  const id = ctx.createImageData(N, N);
+  const d = id.data;
+  for (let y = 0; y < N; y++) {
+    for (let x = 0; x < N; x++) {
+      const n = fbm(x / 64, y / 64, 5, 19);
+      const base = 200 + n * 36;
+      const [r, g, b] = tinted(base, 1.02, 1.00, 0.94);
+      const i = (y * N + x) * 4;
+      d[i] = r; d[i + 1] = g; d[i + 2] = b; d[i + 3] = 255;
+    }
+  }
+  ctx.putImageData(id, 0, 0);
+  // Veining — thin meandering dark lines.
+  ctx.strokeStyle = 'rgba(110,100,90,0.50)';
+  ctx.lineWidth = 1.4;
+  for (let v = 0; v < 8; v++) {
+    let x = Math.random() * N, y = Math.random() * N;
+    const len = 100 + Math.random() * 220;
+    let ang = Math.random() * Math.PI * 2;
+    ctx.beginPath(); ctx.moveTo(x, y);
+    for (let s = 0; s < len; s += 6) {
+      ang += (Math.random() - 0.5) * 0.35;
+      x += Math.cos(ang) * 6;
+      y += Math.sin(ang) * 6;
+      ctx.lineTo(x, y);
+    }
+    ctx.stroke();
+  }
+  // Secondary thinner veining.
+  ctx.strokeStyle = 'rgba(150,140,128,0.30)';
+  ctx.lineWidth = 0.6;
+  for (let v = 0; v < 14; v++) {
+    let x = Math.random() * N, y = Math.random() * N;
+    const len = 40 + Math.random() * 120;
+    let ang = Math.random() * Math.PI * 2;
+    ctx.beginPath(); ctx.moveTo(x, y);
+    for (let s = 0; s < len; s += 4) {
+      ang += (Math.random() - 0.5) * 0.4;
+      x += Math.cos(ang) * 4;
+      y += Math.sin(ang) * 4;
+      ctx.lineTo(x, y);
+    }
+    ctx.stroke();
+  }
+  // Tile seams — 4×4 grid, thin lines.
+  ctx.strokeStyle = 'rgba(90,82,70,0.55)';
+  ctx.lineWidth = 2;
+  const tile = N / 4;
+  for (let i = 0; i <= 4; i++) {
+    ctx.beginPath(); ctx.moveTo(i * tile, 0); ctx.lineTo(i * tile, N); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(0, i * tile); ctx.lineTo(N, i * tile); ctx.stroke();
+  }
+  // Tile highlight just under the seam — gives a soft polished edge.
+  ctx.strokeStyle = 'rgba(255,250,240,0.20)';
+  ctx.lineWidth = 1;
+  for (let i = 1; i < 4; i++) {
+    ctx.beginPath(); ctx.moveTo(i * tile + 1.5, 0); ctx.lineTo(i * tile + 1.5, N); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(0, i * tile + 1.5); ctx.lineTo(N, i * tile + 1.5); ctx.stroke();
+  }
+  return finalize(c);
+}
+
+// --- SANDSTONE (colonnade columns + west rampart) -------------------------
+// Warm porous sandstone. Distinctly different palette from the cool slate —
+// reads as the "old / weathered" zone of the map. Subtle horizontal banding
+// from sediment layers.
+export function makeSandstoneTexture() {
+  const N = 512;
+  const c = makeCanvas(N);
+  const ctx = c.getContext('2d');
+  const id = ctx.createImageData(N, N);
+  const d = id.data;
+  for (let y = 0; y < N; y++) {
+    // Horizontal layered noise for sediment bands.
+    const bandN = fbm(0, y / 22, 4, 67);
+    for (let x = 0; x < N; x++) {
+      const n = fbm(x / 36, y / 36, 5, 67);
+      const fine = fbm(x / 4, y / 4, 3, 89) * 0.22;
+      const layer = bandN * 0.25;
+      const base = 156 + (n + fine + layer) * 40;
+      const [r, g, b] = tinted(base, 1.10, 0.94, 0.78);
+      const i = (y * N + x) * 4;
+      d[i] = r; d[i + 1] = g; d[i + 2] = b; d[i + 3] = 255;
+    }
+  }
+  ctx.putImageData(id, 0, 0);
+  // Subtle horizontal sediment-line emphasis every ~64 px.
+  for (let y = 32; y < N; y += 64) {
+    const dy = y + (Math.random() - 0.5) * 8;
+    ctx.strokeStyle = `rgba(80,55,30,${(0.10 + Math.random() * 0.10).toFixed(2)})`;
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    let cx2 = 0, cy = dy;
+    ctx.moveTo(cx2, cy);
+    for (cx2 = 0; cx2 < N; cx2 += 12) {
+      cy = dy + (Math.random() - 0.5) * 2;
+      ctx.lineTo(cx2, cy);
+    }
+    ctx.stroke();
+  }
+  // A few faint stain blobs.
+  for (let s = 0; s < 5; s++) {
+    const sx = Math.random() * N, sy = Math.random() * N;
+    const sr = 35 + Math.random() * 60;
+    const g = ctx.createRadialGradient(sx, sy, 0, sx, sy, sr);
+    g.addColorStop(0, 'rgba(70,45,20,0.30)');
+    g.addColorStop(1, 'rgba(0,0,0,0)');
+    ctx.fillStyle = g;
+    ctx.fillRect(sx - sr, sy - sr, sr * 2, sr * 2);
+  }
+  // Pock marks (carved-out spots that read as weathering).
+  for (let p = 0; p < 16; p++) {
+    const px = Math.random() * N, py = Math.random() * N;
+    const pr = 2 + Math.random() * 4;
+    ctx.fillStyle = 'rgba(40,28,12,0.45)';
+    ctx.beginPath(); ctx.arc(px, py, pr, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = 'rgba(220,200,170,0.18)';
+    ctx.beginPath(); ctx.arc(px - 0.5, py - 0.5, pr * 0.5, 0, Math.PI * 2); ctx.fill();
+  }
+  return finalize(c);
+}
+
+// --- RUNE SLAB (signpost accent) ------------------------------------------
+// Dark stone with glowing chiseled rune markings. The "emissive accent"
+// surface — used at landmark approaches (citadel doorways, sniper perch).
+// Built atop the slate base with a bright amber rune pattern carved into
+// it. The MeshStandardMaterial that uses this should ALSO set emissiveMap.
+export function makeRuneSlabTexture() {
+  const N = 512;
+  const c = makeCanvas(N);
+  const ctx = c.getContext('2d');
+  // Slate base.
+  ctx.fillStyle = '#22252b';
+  ctx.fillRect(0, 0, N, N);
+  // Noise overlay.
+  const id = ctx.getImageData(0, 0, N, N);
+  const d = id.data;
+  for (let y = 0; y < N; y++) {
+    for (let x = 0; x < N; x++) {
+      const n = fbm(x / 26, y / 26, 4, 113);
+      const v = 32 + n * 40;
+      const i = (y * N + x) * 4;
+      d[i]     = d[i]     + v * 0.6;
+      d[i + 1] = d[i + 1] + v * 0.6;
+      d[i + 2] = d[i + 2] + v * 0.7;
+    }
+  }
+  ctx.putImageData(id, 0, 0);
+  // Rune marks — Norse-runic-inspired straight-stroke glyphs in a vertical
+  // column down the middle of the tile. Each rune is built from 2-4 strokes.
+  const cx = N / 2;
+  const runeXJitter = 18;
+  const glyphCount = 4;
+  const glyphH = N / (glyphCount + 1);
+  for (let g = 0; g < glyphCount; g++) {
+    const gy = (g + 0.5) * glyphH + glyphH * 0.5;
+    const sx = cx + (Math.random() - 0.5) * runeXJitter;
+    const strokes = 2 + Math.floor(Math.random() * 3);
+    for (let st = 0; st < strokes; st++) {
+      const a0 = Math.random() * Math.PI * 2;
+      const a1 = a0 + (Math.random() > 0.5 ? Math.PI : Math.PI * 0.6);
+      const len = 22 + Math.random() * 18;
+      const x0 = sx + Math.cos(a0) * len;
+      const y0 = gy + Math.sin(a0) * len;
+      const x1 = sx + Math.cos(a1) * len;
+      const y1 = gy + Math.sin(a1) * len;
+      ctx.strokeStyle = '#ffb944';
+      ctx.lineWidth = 4;
+      ctx.lineCap = 'round';
+      ctx.beginPath(); ctx.moveTo(x0, y0); ctx.lineTo(x1, y1); ctx.stroke();
+      ctx.strokeStyle = '#fff2c0';
+      ctx.lineWidth = 1.5;
+      ctx.beginPath(); ctx.moveTo(x0, y0); ctx.lineTo(x1, y1); ctx.stroke();
+    }
+  }
+  return finalize(c);
+}
+
 // --- LEGACY ENTRY POINTS (kept so any external import still works) --------
 
 export function makeWallTexture() {
