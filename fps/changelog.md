@@ -26,6 +26,61 @@ Format: newest entries at the top. Each entry lists what was added, what was cha
 
 ## Session log
 
+### 2026-05-19 — Session 55y (head brightness floor — flat emissive on the head mesh)
+
+User after S55x: "Nah the heads are still fully black."
+
+Cause is in the source textures, not the rig. Dumped all 14 GLB
+textures (`/tmp/glb_img_*.png`) and looked at them directly. Every
+character's head region of its texture atlas is dark by design:
+
+- urban → dark helmet shell, small face peeking through
+- sas   → uniformly black balaclava
+- terror → dark cap + dark beard / balaclava
+- leet  → dark face / dark hair (small face region)
+
+The body material's emissive contribution is `emissive × emissiveMap`
+— literally a multiplication by the texture. So a near-black face
+texel × even 60 % emissive = ~0.02, reads as fully black on screen.
+The body looks fine because clothing texels are mid-tone (0.3-0.6);
+the head fails because face/helmet texels are 0.0-0.1.
+
+**Fix.** Give the head slice its OWN material with `emissiveMap`
+omitted, so emissive is a flat color added everywhere on the head
+regardless of texture darkness. Diffuse `map × NdotL` still paints
+the face / eyes / helmet detail on top, but there's now a true
+brightness floor. Per-character because the right floor depends on
+how dark the head texture is:
+
+  urban  → 0x40 (~25 %) helmet has reflective trim, doesn't need much
+  terror → 0x40 (~25 %)
+  sas    → 0x66 (~40 %) uniformly black balaclava — needs the most lift
+  leet   → 0x55 (~33 %)
+
+The body keeps its existing `emissive × emissiveMap` setup (tuned in
+S55v/w and accepted by the user) — only the head slice gets the flat
+treatment.
+
+**Changed**
+- `src/charmodels.js`: new `cloneHeadMat(src, charName)` returns a
+  `MeshLambertMaterial` with flat emissive (no emissiveMap),
+  per-character via `HEAD_EMISSIVE_BY_CHAR`. `assembleRig` uses it for
+  the head mesh and pushes it onto `bodyMats` so the hit-flash + decay
+  logic still hits the head correctly.
+
+**Verified**
+- `node --check` clean.
+- `bash dev/test-all.sh` → ALL GREEN, MAP OK.
+
+**Known issues**
+- The flat-emissive head means lighting on the head doesn't shade
+  with the scene — at the brightness floor the head reads as
+  uniformly lit even when standing in shadow. Trade-off: shadow
+  realism on the head for legibility against dark textures. If shadow
+  loss reads worse than the original blackness, swap back to
+  `emissiveMap = map` and drop the per-char baselines to ~0x88-0xaa
+  (head will be darker in shade but more "shaped").
+
 ### 2026-05-19 — Session 55x (heads no longer look generic — slice + collar fix)
 
 User: "Why don't their heads look like their heads from the models I
