@@ -693,35 +693,10 @@ export const LAYOUT = [
   // Awning over the shrine.
   { t: 'overhang', axis: 'z', loPos: 15, hiPos: 21, loY: 2.4, hiY: 2.8, c0: 9, c1: 15, thick: 0.3 },
 
-  // =====================================================================
-  // GLOWPANES — emissive panels in the building window slits. Suggests
-  // "lit interior" so the player sees a warm rectangle through every
-  // window rather than a black void. ~12 panes at the most visible
-  // window slits, faces oriented to match each wall's outward normal.
-  // y values match each window's sill (the bottom of the aperture).
-  // =====================================================================
-  // VAULT — N/S parapet windows + W ground-floor.
-  { t: 'glowpane', x: 0,    y: 4.5,  z: -51.27, w: 8, h: 0.7, face: 'north' },
-  { t: 'glowpane', x: 0,    y: 4.5,  z: -38.73, w: 8, h: 0.7, face: 'south' },
-  { t: 'glowpane', x: -9.27,y: 4.5,  z: -45,    w: 5, h: 0.7, face: 'west' },
-  // FOUNDRY — east window slit (stair side) + roof N parapet.
-  { t: 'glowpane', x: 30.27,y: 1.3,  z: -15,    w: 3.5, h: 0.9, face: 'east' },
-  { t: 'glowpane', x: 0,    y: 4.5,  z: -21.27, w: 6, h: 0.7, color: 0x80b0ff, face: 'north' },
-  // BARRACKS — W flank window + roof N parapet.
-  { t: 'glowpane', x: 34.73,y: 1.4,  z: -36,    w: 3.5, h: 0.9, color: 0x80b0ff, face: 'west' },
-  { t: 'glowpane', x: 42,   y: 4.5,  z: -41.27, w: 6, h: 0.7, color: 0x80b0ff, face: 'north' },
-  // WATCHTOWER — multiple slit windows.
-  { t: 'glowpane', x: -42,  y: 1.7,  z: -36.27, w: 2.5, h: 0.8, face: 'north' },
-  { t: 'glowpane', x: -46.27,y: 1.7, z: -32,    w: 2.5, h: 0.8, face: 'west' },
-  { t: 'glowpane', x: -37.73,y: 1.7, z: -32,    w: 2.5, h: 0.8, face: 'east' },
-  // SOUTH_KEEP — N parapet slit + E flank.
-  { t: 'glowpane', x: 0,    y: 4.5,  z: 49.73,  w: 14, h: 0.8, face: 'north' },
-  { t: 'glowpane', x: 12.27,y: 1.4,  z: 55,     w: 3.5, h: 0.9, face: 'east' },
-  // EAST_TOWER — multiple sill windows.
-  { t: 'glowpane', x: 55,   y: 2.2,  z: -4.27,  w: 2.5, h: 0.8, face: 'north' },
-  { t: 'glowpane', x: 55,   y: 2.2,  z:  4.27,  w: 2.5, h: 0.8, face: 'south' },
-  { t: 'glowpane', x: 59.27,y: 2.2,  z:  0,     w: 2.5, h: 0.8, face: 'east' },
-
+  // S55ab: GLOWPANES removed — the beige emissive rectangles in the window
+  // slits read as floating boxes from outside instead of suggesting lit
+  // interiors. Window apertures stay open; the wall punch-outs remain
+  // (sill / lintel are part of the wall geometry, not the glowpane).
   // =====================================================================
   // BANNERS — hanging fabric flourish on every faction's front face.
   // Three tones: gold (citadel keep), crimson (slate strongholds: vault,

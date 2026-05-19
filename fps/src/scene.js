@@ -30,26 +30,77 @@ renderer.outputColorSpace = THREE.SRGBColorSpace;
 document.body.appendChild(renderer.domElement);
 
 // --- SKY ---
-// S55i: stormy-dusk gradient. Deep indigo zenith bleeds into a violent
-// orange band at the horizon, with a dark ground line below. The amber
-// horizon picks up the torches + rune-sentinel lights in the same hue
-// family, so the warm lights read as belonging to the world rather than
-// floating on it. Cheap, no shader, no asset — a 4×256 vertical strip
-// upscaled by THREE's wrapping at draw time.
+// S55ab: full daylight sky — bright dome, real sun disc with glow, soft
+// drifting cloud streaks. Higher-resolution canvas (512×1024) so the gradient
+// is smooth and the sun/clouds read crisply when stretched across the whole
+// background. Replaces the previous dusk strip.
 function makeSkyTexture() {
-  const W = 4, H = 256;
+  const W = 512, H = 1024;
   const c = document.createElement('canvas');
   c.width = W; c.height = H;
   const ctx = c.getContext('2d');
+
+  // --- Base sky gradient: deep blue zenith down to warm horizon ---
   const grad = ctx.createLinearGradient(0, 0, 0, H);
-  grad.addColorStop(0.00, '#0a0a1c');  // deep indigo zenith
-  grad.addColorStop(0.40, '#2a1832');  // bruised violet
-  grad.addColorStop(0.70, '#5a2a28');  // dim ember
-  grad.addColorStop(0.86, '#a85020');  // orange ember
-  grad.addColorStop(0.93, '#cc6628');  // peak horizon glow
-  grad.addColorStop(1.00, '#2a1a18');  // dark ground line
+  grad.addColorStop(0.00, '#1a4a8c');   // mid-blue zenith
+  grad.addColorStop(0.35, '#4a8ccc');   // bright daylight blue
+  grad.addColorStop(0.65, '#9ec8e8');   // pale upper haze
+  grad.addColorStop(0.85, '#e8c89a');   // warm horizon haze
+  grad.addColorStop(1.00, '#b8825a');   // ground line
   ctx.fillStyle = grad;
   ctx.fillRect(0, 0, W, H);
+
+  // --- Sun disc + glow ---
+  // Positioned high-right (UVs map u=0.72, v=0.22 → upper-right of the dome).
+  const sunX = W * 0.72, sunY = H * 0.22, sunR = 22;
+  const halo = ctx.createRadialGradient(sunX, sunY, sunR, sunX, sunY, sunR * 9);
+  halo.addColorStop(0.00, 'rgba(255, 248, 200, 0.85)');
+  halo.addColorStop(0.30, 'rgba(255, 220, 150, 0.30)');
+  halo.addColorStop(1.00, 'rgba(255, 220, 150, 0.00)');
+  ctx.fillStyle = halo;
+  ctx.fillRect(0, 0, W, H);
+  const disc = ctx.createRadialGradient(sunX, sunY, 0, sunX, sunY, sunR);
+  disc.addColorStop(0.00, '#fffce0');
+  disc.addColorStop(0.65, '#fff5b0');
+  disc.addColorStop(1.00, '#ffd060');
+  ctx.fillStyle = disc;
+  ctx.beginPath();
+  ctx.arc(sunX, sunY, sunR, 0, Math.PI * 2);
+  ctx.fill();
+
+  // --- Cloud streaks ---
+  // Lump several soft-alpha ellipses into horizontal layers at varying heights.
+  // Deterministic noise so the sky is identical across reloads (no per-session
+  // visual churn) and the harness battery isn't seeded with randomness.
+  ctx.globalAlpha = 0.55;
+  const cloudY = [120, 170, 220, 280, 340, 410, 480, 555];
+  let seed = 1337;
+  const rnd = () => { seed = (seed * 1664525 + 1013904223) >>> 0; return (seed >>> 8) / 0x01000000; };
+  for (let row = 0; row < cloudY.length; row++) {
+    const y = cloudY[row];
+    const numClumps = 6 + (row % 3);
+    for (let k = 0; k < numClumps; k++) {
+      const cx = rnd() * W;
+      const cyOff = (rnd() - 0.5) * 24;
+      const rx = 36 + rnd() * 70;
+      const ry = 10 + rnd() * 14;
+      const alpha = 0.25 + rnd() * 0.4;
+      const cg = ctx.createRadialGradient(cx, y + cyOff, 0, cx, y + cyOff, rx);
+      cg.addColorStop(0.00, `rgba(255,255,255,${alpha.toFixed(3)})`);
+      cg.addColorStop(0.65, `rgba(255,255,255,${(alpha * 0.5).toFixed(3)})`);
+      cg.addColorStop(1.00, 'rgba(255,255,255,0)');
+      ctx.fillStyle = cg;
+      ctx.save();
+      ctx.translate(cx, y + cyOff);
+      ctx.scale(1, ry / rx);
+      ctx.beginPath();
+      ctx.arc(0, 0, rx, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.restore();
+    }
+  }
+  ctx.globalAlpha = 1.0;
+
   const tex = new THREE.CanvasTexture(c);
   tex.colorSpace = THREE.SRGBColorSpace;
   return tex;
@@ -58,10 +109,8 @@ function makeSkyTexture() {
 // --- SCENE ---
 export const scene = new THREE.Scene();
 scene.background = makeSkyTexture();
-// S55i: dusty-orange fog matched to the dusk sky's horizon. Denser
-// (28→85, was 30→95) so distant geometry hazes earlier, intensifying
-// the citadel's "looming" silhouette from spawn.
-scene.fog = new THREE.Fog(0x4a2a28, 28, 85);
+// S55ab: fog removed entirely. The user wants everything fully visible at
+// any distance — no atmospheric haze fading distant geometry / enemies.
 
 // --- CAMERA ---
 export const camera = new THREE.PerspectiveCamera(
@@ -93,20 +142,18 @@ export const clock = new THREE.Clock();
 //                  black when you face away from the sun (the view model is
 //                  lit by world lights like everything else, so without this
 //                  its shadowed side is whatever faces the camera).
-// S55i: dusk-mood lighting. Hemisphere palette shifts warmer (violet sky
-// + warm dim ground); sun direction lowered to a long oblique angle from
-// the horizon so shadows stretch dramatically across the plaza; sun color
-// warmed toward orange-red. Ambient nudged down so the torches and rune
-// sentinels actually MATTER as light sources.
-const hemi = new THREE.HemisphereLight(0x6a4878, 0x4a3024, 0.95);
+// S55ab: daylight palette to match the new bright sky. Cool blue sky tint +
+// warm ground bounce; neutral-warm sun; brighter ambient so shadowed faces
+// stay readable at long range now that fog is gone.
+const hemi = new THREE.HemisphereLight(0x9ec8e8, 0xb8a080, 1.10);
 hemi.position.set(0, 50, 0);
 scene.add(hemi);
 
-const ambient = new THREE.AmbientLight(0xffe0c4, 0.45);
+const ambient = new THREE.AmbientLight(0xffffff, 0.55);
 scene.add(ambient);
 
-const sun = new THREE.DirectionalLight(0xffae64, 1.20);
-sun.position.set(45, 22, 35);
+const sun = new THREE.DirectionalLight(0xfff2d8, 1.40);
+sun.position.set(45, 60, 35);
 sun.castShadow = true;
 sun.shadow.mapSize.set(2048, 2048);
 // Shadow camera sized for the 80x80 arena. Bigger = softer / lower res; we
