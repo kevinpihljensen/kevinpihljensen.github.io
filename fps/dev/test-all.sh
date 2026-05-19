@@ -16,7 +16,7 @@ echo "== regression battery =="
 for h in harness_ai harness_arena harness_weapons harness_doors \
          harness_raisedfloor harness_duckjump harness_kit \
          harness_combat harness_crouch2 harness_pickups \
-         harness_teleporters; do
+         harness_teleporters harness_arena_spawn; do
   out=$(node "$h.mjs" 2>&1)
   res=$(echo "$out" | grep -oE "[0-9]+/[0-9]+ PASS" | tail -1)
   if echo "$out" | grep -q "PASS"  && ! echo "$out" | grep -q "FAIL"; then

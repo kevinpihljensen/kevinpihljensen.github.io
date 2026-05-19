@@ -145,6 +145,41 @@ export const DOORWAYS = [
   { x:  22, z:  -9, axis: 'x' },   // S front door
   { x:  14, z: -15, axis: 'z' },   // W flank door (faces citadel)
   { x:  22, z: -15, axis: 'z' },   // interior partition
+  // BARRACKS (NE industrial hall, S55j).
+  { x:  42, z: -31, axis: 'x' },   // S front door
+  { x:  42, z: -36, axis: 'z' },   // interior partition
+  // WATCHTOWER (NW sentinel tower, S55j).
+  { x: -42, z: -28, axis: 'x' },   // S front door
+];
+
+// S55j: Arena-mode enemy spawn points scattered across the WHOLE MAP so
+// new enemies pop up from every corner — not just on a ring around the
+// player (the wave-mode pickSpawnPoint() behaviour). Each point is on
+// open ground (groundHeightAt = 0), spaced ≥ 18 m apart, well clear of
+// every building footprint. enemies.js's pickArenaSpawnPoint() picks
+// from this list with player-distance + view-cone + recent-spawn
+// avoidance, ensuring distribution + good combat pacing.
+//
+// Distribution covers all 8 compass directions (4 cardinals + 4
+// diagonals) plus 4 mid-distance points, for 12 total. Open-area
+// fallbacks every quadrant means even when 3 are gated out by the
+// avoidance heuristics, at least 1 is always usable.
+export const ENEMY_SPAWN_POINTS = [
+  // Cardinals at the perimeter.
+  { x:   0, z: -55 },                                                   // far N (behind VAULT)
+  { x:  55, z:   0 },                                                   // far E (east of FOUNDRY)
+  { x:   0, z:  55 },                                                   // far S (south of TERRACE)
+  { x: -55, z:   0 },                                                   // far W (west of COLONNADE)
+  // Diagonal corners.
+  { x:  52, z: -52 },                                                   // NE corner (past BARRACKS)
+  { x: -52, z: -52 },                                                   // NW corner (past WATCHTOWER)
+  { x:  52, z:  52 },                                                   // SE corner (past MARKET)
+  { x: -52, z:  52 },                                                   // SW corner (past RUINS)
+  // Mid-distance points filling gaps.
+  { x:  20, z: -32 },                                                   // between FOUNDRY + BARRACKS
+  { x: -25, z: -18 },                                                   // between CITADEL + WATCHTOWER
+  { x:  25, z:  18 },                                                   // between FOUNDRY + MARKET
+  { x: -22, z:  22 },                                                   // between TERRACE + RUINS
 ];
 
 export const LAYOUT = [
@@ -454,6 +489,98 @@ export const LAYOUT = [
   // =====================================================================
   { t: 'wall', axis: 'x', cx: -5, cz: 4, length: 1.4, height: 2.5, thick: 1.4, mat: 'rune' },
   { t: 'wall', axis: 'x', cx:  5, cz: 4, length: 1.4, height: 2.5, thick: 1.4, mat: 'rune' },
+
+  // =====================================================================
+  // THE BARRACKS — NE quadrant industrial 2-room hall, iron-clad, walkable
+  // roof at y=4. Mirrors the FOUNDRY's industrial silhouette but at a
+  // different scale and placed where the map was previously empty.
+  // External stair on east face to the roof.
+  // =====================================================================
+  { t: 'platform', id: 'BARRACKS_ROOF', cx: 42, cz: -36, top: 4, sx: 14, sz: 10, mat: 'iron' },
+  // Ground floor walls.
+  { t: 'wall', axis: 'x', cx: 42, cz: -41, length: 14, height: 3.4, thick: 0.5, mat: 'iron' },               // N back
+  { t: 'wall', axis: 'x', cx: 42, cz: -31, length: 14, height: 3.4, thick: 0.5, mat: 'iron',
+    door: { width: 2.6, height: 2.8 } },                                                     // S front door
+  { t: 'wall', axis: 'z', cx: 35, cz: -36, length: 10, height: 3.4, thick: 0.5, mat: 'iron',
+    window: { width: 4.0, height: 1.0, sill: 1.2 } },                                        // W flank slit
+  { t: 'wall', axis: 'z', cx: 49, cz: -36, length: 10, height: 3.4, thick: 0.5, mat: 'iron',
+    window: { width: 4.0, height: 1.0, sill: 1.2 } },                                        // E flank slit (stair side)
+  { t: 'wall', axis: 'z', cx: 42, cz: -36, length: 10, height: 3.4, thick: 0.4, mat: 'iron',
+    door: { width: 2.2, height: 2.6 } },                                                     // interior partition
+  // External stair to roof — east face.
+  { t: 'stairsTo', to: 'BARRACKS_ROOF', side: '+x', run: 7, width: 5, fromY: 0, steps: 7 },
+  // Roof parapets.
+  { t: 'wall', axis: 'x', cx: 42, cz: -41, base: 4, length: 14, height: 1.6, thick: 0.4, mat: 'iron',
+    window: { width: 8, height: 0.8, sill: 0.6 } },
+  { t: 'wall', axis: 'x', cx: 42, cz: -31, base: 4, length: 14, height: 1.6, thick: 0.4, mat: 'iron',
+    window: { width: 8, height: 0.8, sill: 0.6 } },
+  { t: 'wall', axis: 'z', cx: 35, cz: -36, base: 4, length: 10, height: 1.6, thick: 0.4, mat: 'iron',
+    window: { width: 6, height: 0.8, sill: 0.6 } },
+  { t: 'wall', axis: 'z', cx: 49, cz: -36, base: 4, length: 10, height: 1.6, thick: 0.4, mat: 'iron',
+    door: { width: 5.2, height: 1.6 } },                                                     // E parapet (stair landing)
+
+  // =====================================================================
+  // THE WATCHTOWER — NW quadrant slate sentinel tower. 8×8 single-room
+  // building, walkable roof at y=4. Three slit-window walls + a front
+  // door. East-facing external stair. Roof has slit parapets for
+  // sniping over the colonnade and into the citadel ramp area.
+  // =====================================================================
+  { t: 'platform', id: 'WATCHTOWER_ROOF', cx: -42, cz: -32, top: 4, sx: 8, sz: 8, mat: 'slate' },
+  // Ground floor walls.
+  { t: 'wall', axis: 'x', cx: -42, cz: -36, length: 8, height: 3.4, thick: 0.5, mat: 'slate',
+    window: { width: 3.0, height: 0.9, sill: 1.5 } },                                        // N slit
+  { t: 'wall', axis: 'x', cx: -42, cz: -28, length: 8, height: 3.4, thick: 0.5, mat: 'slate',
+    door: { width: 2.4, height: 2.8 } },                                                     // S front door
+  { t: 'wall', axis: 'z', cx: -46, cz: -32, length: 8, height: 3.4, thick: 0.5, mat: 'slate',
+    window: { width: 3.0, height: 0.9, sill: 1.5 } },                                        // W slit
+  { t: 'wall', axis: 'z', cx: -38, cz: -32, length: 8, height: 3.4, thick: 0.5, mat: 'slate',
+    window: { width: 3.0, height: 0.9, sill: 1.5 } },                                        // E slit (stair side)
+  // External stair to roof — east face.
+  { t: 'stairsTo', to: 'WATCHTOWER_ROOF', side: '+x', run: 7, width: 5, fromY: 0, steps: 7 },
+  // Roof parapets — slit walls on all 4 sides (defensive lookout).
+  { t: 'wall', axis: 'x', cx: -42, cz: -36, base: 4, length: 8, height: 1.6, thick: 0.4, mat: 'slate',
+    window: { width: 5, height: 0.9, sill: 0.5 } },
+  { t: 'wall', axis: 'x', cx: -42, cz: -28, base: 4, length: 8, height: 1.6, thick: 0.4, mat: 'slate',
+    window: { width: 5, height: 0.9, sill: 0.5 } },
+  { t: 'wall', axis: 'z', cx: -46, cz: -32, base: 4, length: 8, height: 1.6, thick: 0.4, mat: 'slate',
+    window: { width: 5, height: 0.9, sill: 0.5 } },
+  { t: 'wall', axis: 'z', cx: -38, cz: -32, base: 4, length: 8, height: 1.6, thick: 0.4, mat: 'slate',
+    door: { width: 5.2, height: 1.6 } },                                                     // E parapet (stair landing)
+
+  // =====================================================================
+  // THE RUINS — SW quadrant collection of broken sandstone walls + a
+  // partially-collapsed overhang slab. No roof, no platform — pure cover
+  // geometry. Walls are reduced height (1.8 m, like broken arches) so the
+  // player crouches behind / vaults over them. Reads as a once-grand
+  // structure now reclaimed by time, in contrast to the freshly-built
+  // BARRACKS and WATCHTOWER.
+  // =====================================================================
+  { t: 'wall', axis: 'x', cx: -32, cz: 27, length: 12, height: 1.8, thick: 0.6, mat: 'sandstone' },          // N arc (broken)
+  { t: 'wall', axis: 'z', cx: -38, cz: 32, length: 10, height: 1.8, thick: 0.6, mat: 'sandstone',
+    window: { width: 3, height: 0.5, sill: 1.0 } },                                                          // W broken wall w/ opening
+  { t: 'wall', axis: 'x', cx: -32, cz: 37, length: 8, height: 1.4, thick: 0.6, mat: 'sandstone' },           // S low remnant
+  { t: 'wall', axis: 'z', cx: -26, cz: 30, length: 6, height: 1.6, thick: 0.6, mat: 'sandstone' },           // partial E wall
+  // Half-collapsed roof slab cantilevering inward.
+  { t: 'overhang', axis: 'z', loPos: 30, hiPos: 27, loY: 2.4, hiY: 3.4, c0: -36, c1: -28, thick: 0.4 },
+  // Rubble — small ground crates as collapsed debris.
+  { t: 'box', cx: -34, cz: 33, base: 0, sx: 1.6, sy: 1.0, sz: 1.6 },
+  { t: 'box', cx: -28, cz: 35, base: 0, sx: 1.4, sy: 0.8, sz: 1.4 },
+
+  // =====================================================================
+  // THE MARKET — SE quadrant open-air covered stalls. Two L-shaped
+  // sandstone walls plus an awning overhang create a covered courtyard
+  // the player can fight through. No walkable roof. Designed as a CQC
+  // cover zone for the SE plaza — balances the SW RUINS without being
+  // visually identical.
+  // =====================================================================
+  { t: 'wall', axis: 'x', cx: 35, cz: 37, length: 12, height: 2.6, thick: 0.5, mat: 'sandstone' },           // N back wall (taller)
+  { t: 'wall', axis: 'z', cx: 41, cz: 33, length: 10, height: 2.6, thick: 0.5, mat: 'sandstone' },           // E side wall
+  { t: 'wall', axis: 'x', cx: 33, cz: 27, length: 6, height: 1.8, thick: 0.5, mat: 'sandstone' },            // partial S counter wall
+  // Awning slab covering the stall interior.
+  { t: 'overhang', axis: 'z', loPos: 30, hiPos: 36, loY: 2.4, hiY: 2.6, c0: 30, c1: 40, thick: 0.4 },
+  // Market crate stalls.
+  { t: 'box', cx: 36, cz: 32, base: 0, sx: 1.6, sy: 0.9, sz: 1.6 },
+  { t: 'box', cx: 32, cz: 34, base: 0, sx: 1.4, sy: 0.7, sz: 2.6 },
 
   // =====================================================================
   // PLAZA COVER — scattered low boxes around spawn anchors and the open

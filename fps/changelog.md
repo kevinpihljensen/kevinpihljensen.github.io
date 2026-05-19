@@ -26,6 +26,85 @@ Format: newest entries at the top. Each entry lists what was added, what was cha
 
 ## Session log
 
+### 2026-05-19 — Session 55j (4 new buildings filling every quadrant + arena spawn-distribution)
+
+User: "focus more on adding more buildings... for arena, we need these
+guys to spawn in randomly all over the place, not just from one
+location." Both addressed.
+
+**FOUR NEW STRUCTURES, one per previously-empty corner of the map.**
+Each picks a distinct silhouette + material so the map's quadrants
+read as four different places, not as a single repeated motif.
+
+- **THE BARRACKS** (NE, cx=42, cz=-36, sx=14, sz=10): iron-clad
+  industrial 2-room hall, walkable roof at y=4. S front door + E
+  flank slit + interior partition door. External stair on east face
+  to the roof. Mirrors the FOUNDRY's industrial vocabulary but at a
+  different scale and placed in the previously-empty NE quadrant.
+
+- **THE WATCHTOWER** (NW, cx=-42, cz=-32, sx=8, sz=8): slate sentinel
+  tower, single ground-floor room, walkable roof at y=4. Slit windows
+  on N, W, E (high-sill defensive lookouts); S front door. East-face
+  external stair to the roof. Roof has slit parapets on all 4 sides
+  for sniping into the citadel ramp area.
+
+- **THE RUINS** (SW, cx≈-32, cz≈32): broken sandstone walls — N arc,
+  partial W wall with viewing aperture, S low remnant, partial E
+  wall. No roof, no walkable platform — pure ground cover geometry.
+  Half-collapsed overhang slab cantilevering inward (cz 27→30, y 3.4
+  → 2.4). Rubble = small ground crates as collapsed debris. Reads as
+  a once-grand structure now reclaimed by time.
+
+- **THE MARKET** (SE, cx≈35, cz≈32): two L-shaped sandstone walls + a
+  low awning overhang creating a covered courtyard. No walkable roof.
+  Two market-stall crates inside. Designed as a CQC cover zone for
+  the SE plaza — balances the RUINS' visual mass on the other side
+  without copying it.
+
+**DOORWAYS REGISTRY UPDATED.** 3 new ground-floor doors: BARRACKS S
+front + partition + WATCHTOWER S front. AI router can now path through
+all 4 new buildings.
+
+**ARENA SPAWN DISTRIBUTION (`src/maplayout.js`, `src/enemies.js`,
+`src/wave.js`).** Previously wave + arena both used the same
+`pickSpawnPoint()` which picks a candidate on a RING AROUND THE
+PLAYER (wave-shooter style) — enemies always came from a band 22–40 m
+from the player's current position. Result: over a long arena round
+the spawns "follow" the player around the map instead of distributing.
+Fixed:
+
+- New `ENEMY_SPAWN_POINTS` export in maplayout: 12 scatter points
+  (4 cardinals at the perimeter + 4 diagonals + 4 mid-distance gap
+  fillers), every quadrant covered.
+- New `pickArenaSpawnPoint()` in enemies.js. Tiered selection: prefer
+  points ≥ SPAWN_MIN_DIST from player AND outside the player's
+  forward view cone AND not blocked by cover. Falls back through 4
+  acceptability tiers so it always returns SOMETHING valid. Among
+  qualifying candidates, picks by isolation score (farthest from
+  recent spawns) with random tie-break.
+- `startArena()` and the `updateArena()` respawn queue in wave.js
+  now call `pickArenaSpawnPoint()` instead of `pickSpawnPoint()` when
+  in arena mode. Wave mode unchanged — that game mode genuinely wants
+  the ring-around-player behaviour.
+
+**Verified.** Battery: 244/244 ALL GREEN (was 229/229; +5 from new
+BARRACKS/WATCHTOWER connector seam tests in harness_arena + 10 from
+new harness_arena_spawn). MAP OK; loop=yes; geomWarns=0; doorway
+drift=0; unreachable pickups=0; stranded surfaces=0. 5 dead-end spurs
+(was 3): the 2 new buildings are by design accessible only by their
+single external stair each.
+
+**Changed.**
+- `src/maplayout.js`: +84 lines (BARRACKS + WATCHTOWER + RUINS +
+  MARKET + 3 DOORWAYS entries + ENEMY_SPAWN_POINTS export).
+- `src/enemies.js`: +52 lines (`pickArenaSpawnPoint()` + import).
+- `src/wave.js`: 2 spawn-call sites switched from pickSpawnPoint to
+  pickArenaSpawnPoint.
+- `dev/harness_arena_spawn.mjs`: NEW (10 assertions: presence,
+  on-ground, in-bounds, quadrant coverage, pairwise spacing, distance
+  from player SPAWN).
+- `dev/test-all.sh`: harness_arena_spawn added.
+
 ### 2026-05-19 — Session 55i (TELEPORTERS + THE SPIRE + dusk atmosphere + flickering torches)
 
 User asked for revolutionary changes after the incremental S55h. This

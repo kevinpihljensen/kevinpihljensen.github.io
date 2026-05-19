@@ -15,7 +15,7 @@ import * as THREE from 'three';
 import { scene } from './scene.js';
 import { shootables, staticAABBs, collideCapsule, groundHeightAt, lineOfSight, rampLinks } from './collision.js';
 import { player } from './state.js';
-import { DOORWAYS } from './maplayout.js';
+import { DOORWAYS, ENEMY_SPAWN_POINTS } from './maplayout.js';
 import {
   HIT_FLASH_TIME, DEATH_ANIM_TIME,
   MELEE_ATTACK_COOLDOWN, SHOOTER_ATTACK_COOLDOWN,
@@ -2172,6 +2172,65 @@ export function pickSpawnPoint() {
   if (_recentSpawns.length > SPAWN_SPREAD_MEMORY) _recentSpawns.shift();
 
   return chosen;
+}
+
+// S55j: ARENA-MODE spawn picker. Unlike pickSpawnPoint() (which spawns on
+// a ring around the player — wave-shooter feel), this picks from the
+// fixed ENEMY_SPAWN_POINTS scatter across the WHOLE map. Result: arena
+// enemies pop up from every direction over a run, not just one zone.
+//
+// Selection algorithm:
+//   1. Filter to points ≥ SPAWN_MIN_DIST from the player (hard gate).
+//   2. Filter to points NOT in the player's forward view cone (so a
+//      spawn doesn't blink into being right in front of them).
+//   3. Among survivors, pick the one with the best isolation score
+//      (farthest from recent spawns). Tie-break randomly.
+//   4. If gates filter everything out, relax (any point ≥ MIN_DIST,
+//      then any point at all). Always returns a valid {x,z}.
+export function pickArenaSpawnPoint() {
+  const pyaw = player.yaw;
+  const fx = -Math.sin(pyaw);
+  const fz = -Math.cos(pyaw);
+  const px = player.position.x;
+  const pz = player.position.z;
+
+  const pts = ENEMY_SPAWN_POINTS;
+  if (!pts || pts.length === 0) return pickSpawnPoint();      // safety fallback
+
+  // Tier candidates by acceptability.
+  const tier1 = [];  // far enough + behind/side + not blocked by cover
+  const tier2 = [];  // far enough + not blocked by cover (any direction)
+  const tier3 = [];  // not blocked by cover (any distance, any direction)
+  const tier4 = [];  // anything at all
+
+  for (let i = 0; i < pts.length; i++) {
+    const p = pts[i];
+    if (spawnBlockedByCover(p.x, p.z)) { tier4.push(p); continue; }
+    const ddx = p.x - px, ddz = p.z - pz;
+    const len = Math.sqrt(ddx * ddx + ddz * ddz);
+    const farEnough = len >= SPAWN_MIN_DIST;
+    if (!farEnough) { tier3.push(p); continue; }
+    const dot = len > 0.001 ? (fx * ddx + fz * ddz) / len : 1;
+    const inView = dot > SPAWN_VIEW_CONE_DOT;
+    if (inView) tier2.push(p); else tier1.push(p);
+  }
+
+  const pool = tier1.length ? tier1 : tier2.length ? tier2 : tier3.length ? tier3 : tier4;
+
+  // Score by isolation from recent spawns (so consecutive spawns fan out
+  // across the map rather than reusing the same point each respawn).
+  let best = pool[0], bestScore = -Infinity;
+  for (let i = 0; i < pool.length; i++) {
+    // Add a small jitter so equal-score candidates don't always pick the
+    // same one (cheap variety without per-frame Math.random() in a hot
+    // path — this only runs on spawn events).
+    const s = isolationScore(pool[i].x, pool[i].z) + Math.random() * 2;
+    if (s > bestScore) { bestScore = s; best = pool[i]; }
+  }
+
+  _recentSpawns.push({ x: best.x, z: best.z });
+  if (_recentSpawns.length > SPAWN_SPREAD_MEMORY) _recentSpawns.shift();
+  return { x: best.x, z: best.z };
 }
 
 // Wave system calls this at the start of each wave so spacing is per-wave,

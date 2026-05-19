@@ -9,7 +9,7 @@ import {
   GAME_STATE, WAVE_TABLE, MAX_WAVE, BREAK_DURATION,
   ARENA_ENEMY_POPULATION, ARENA_ENEMY_MIX, ARENA_ENEMY_RESPAWN_DELAY,
 } from './constants.js';
-import { enemies, makeEnemy, pickSpawnPoint, clearEnemies, resetSpawnMemory } from './enemies.js';
+import { enemies, makeEnemy, pickSpawnPoint, pickArenaSpawnPoint, clearEnemies, resetSpawnMemory } from './enemies.js';
 import { projectiles, clearProjectiles } from './projectiles.js';
 import { decals, clearDecals, clearBlood } from './decals.js';
 import { resetWeapons } from './weapons.js';
@@ -134,15 +134,17 @@ export function startArena() {
   game.arenaEnemyRespawnTimers = [];
   resetSpawnMemory();
   // Seed the initial population using ARENA_ENEMY_MIX as the round-robin
-  // weighting. Spawn each at a regular pickSpawnPoint() — they're far enough
-  // from the spawned player that engagements develop on approach.
+  // weighting. S55j: spawn from the SCATTERED ENEMY_SPAWN_POINTS pool
+  // (pickArenaSpawnPoint) instead of the wave-mode ring-around-player
+  // pickSpawnPoint, so the round opens with enemies popping up from every
+  // direction on the map rather than all from one zone.
   const types = [];
   for (const t in ARENA_ENEMY_MIX) {
     for (let k = 0; k < ARENA_ENEMY_MIX[t]; k++) types.push(t);
   }
   for (let i = 0; i < ARENA_ENEMY_POPULATION; i++) {
     const type = types[i % types.length];
-    const pt = pickSpawnPoint();
+    const pt = pickArenaSpawnPoint();
     makeEnemy(type, pt.x, pt.z);
     game.enemiesAlive += 1;
   }
@@ -168,7 +170,10 @@ export function updateArena(dt) {
     if (q[i].t <= 0) {
       const type = q[i].type;
       q.splice(i, 1);
-      const pt = pickSpawnPoint();
+      // S55j: arena respawns use the map-spread point list, so over a
+      // long round the player sees enemies arrive from every direction
+      // instead of being funneled in from one zone.
+      const pt = pickArenaSpawnPoint();
       makeEnemy(type, pt.x, pt.z);
       game.enemiesAlive += 1;
     }
