@@ -822,8 +822,12 @@ export function makeEnemy(type, x, z) {
     built.meshes[i].userData.enemy = enemy;
     shootables.push(built.meshes[i]);
   }
-  for (let i = 0; i < built.headMeshes.length; i++) {
-    built.headMeshes[i].userData.isHead = true;
+  // S55q: guard against builders that don't expose headMeshes — the CS-rig
+  // path returns []; older callers might omit the field entirely.
+  if (built.headMeshes) {
+    for (let i = 0; i < built.headMeshes.length; i++) {
+      built.headMeshes[i].userData.isHead = true;
+    }
   }
 
   // S55: jetpacks spawn IN THE AIR with a random hover altitude. Pick from

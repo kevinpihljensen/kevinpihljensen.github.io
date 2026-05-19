@@ -539,6 +539,12 @@ function assembleRig(tpl, weaponBuilder) {
     armR: armRGroup,
     bodyMats,
     emissiveMats: [],
+    // S55q: enemies.js iterates `built.headMeshes` to tag isHead for the
+    // headshot multiplier. We don't separate head geometry from torsoHead
+    // here (head is welded), so this stays empty — headshots on CS-rig
+    // enemies are not distinguished from body shots. Acceptable trade-off
+    // until we tag the top-band torso vertices as head later.
+    headMeshes: [],
     weaponPivot,
   };
 }
