@@ -143,6 +143,20 @@ const skyFill = new THREE.HemisphereLight(0xdfe8ff, 0x4a4640, 0.55);
 skyFill.position.set(0, 60, 0);
 scene.add(skyFill);
 
+// S55g: amber atmospheric glow from the two RUNE SENTINEL monoliths
+// flanking the citadel grand-ramp foot (maplayout.js puts the rune walls
+// at (-5, 4) and (5, 4) with emissive 0xff9a30). Small radius (12 m) so
+// the glow stays local to the citadel approach — sells the "you are
+// entering the keep" beat without washing the whole plaza.
+const runeSentinelL = new THREE.PointLight(0xff9a30, 1.8, 12, 1.6);
+runeSentinelL.position.set(-5, 2.4, 4);
+runeSentinelL.castShadow = false;
+scene.add(runeSentinelL);
+const runeSentinelR = new THREE.PointLight(0xff9a30, 1.8, 12, 1.6);
+runeSentinelR.position.set( 5, 2.4, 4);
+runeSentinelR.castShadow = false;
+scene.add(runeSentinelR);
+
 // The view model renders in a separate, depth-cleared pass on
 // LAYER_VIEWMODEL. A light only contributes to a pass whose camera layer it
 // shares, so every light that should illuminate the held weapon must also be

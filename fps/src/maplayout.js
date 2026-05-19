@@ -180,8 +180,8 @@ export const LAYOUT = [
     door: { width: 5.2, height: 1.6 } },                                                    // N parapet (N stair landing)
   { t: 'wall', axis: 'x', cx:  0, cz:  -7, base: 4, length: 16, height: 1.6, thick: 0.4, mat: 'slate',
     door: { width: 8.0, height: 1.6 } },                                                    // S parapet (S ramp landing)
-  { t: 'wall', axis: 'z', cx: -8, cz: -15, base: 4, length: 16, height: 1.6, thick: 0.4, mat: 'slate',
-    door: { width: 5.2, height: 1.6 } },                                                    // W parapet (W stair landing)
+  { t: 'wall', axis: 'z', cx: -8, cz: -17.5, base: 4, length: 11, height: 1.6, thick: 0.4, mat: 'slate',
+    door: { width: 5.2, height: 1.6, offset: 2.5 } },                                       // W parapet (W stair landing) — shortened to z=[-23,-12] to leave the BRIDGE_W gap at z=[-12,-7]
   { t: 'wall', axis: 'z', cx:  8, cz: -15, base: 4, length: 16, height: 1.6, thick: 0.4, mat: 'slate',
     door: { width: 5.2, height: 1.6 } },                                                    // E parapet (CATWALK_HE access)
 
@@ -283,6 +283,32 @@ export const LAYOUT = [
     window: { width: 6, height: 0.8, sill: 0.5 } },                                          // W parapet
   { t: 'wall', axis: 'z', cx:  9, cz: -45, base: 4, length: 12, height: 1.6, thick: 0.4, mat: 'slate',
     door: { width: 5.2, height: 1.6 } },                                                     // E parapet (ramp landing)
+
+  // =====================================================================
+  // FOUNDRY interior — small wood cover crates so the two-room CQC fight
+  // has angles. Diagonally placed in each room (NW + SE of room center),
+  // clear of every doorway aperture so AI routing doesn't catch on them.
+  // sy=0.9 → jump-mountable from the ground (within JUMP_MOUNT=0.95).
+  // =====================================================================
+  { t: 'box', cx: 17, cz: -11, base: 0, sx: 1.4, sy: 0.9, sz: 1.4 },   // W room NW
+  { t: 'box', cx: 19, cz: -19, base: 0, sx: 1.4, sy: 0.9, sz: 1.4 },   // W room SE
+  { t: 'box', cx: 25, cz: -11, base: 0, sx: 1.4, sy: 0.9, sz: 1.4 },   // E room NW
+  { t: 'box', cx: 27, cz: -19, base: 0, sx: 1.4, sy: 0.9, sz: 1.4 },   // E room SE
+
+  // =====================================================================
+  // BRIDGE_W — west loop closer. An iron-plate elevated bridge spanning
+  // the gap between WEST_RAMPART east edge (x=-26, top=5) and the
+  // CITADEL_BASE west edge (x=-8, top=4). Bridge top y=4.5 is exactly
+  // halfway: 0.5 m below the rampart, 0.5 m above the citadel — both
+  // within STEP_UP (0.55 m) so the BFS counts both ends as walkable
+  // routes, closing the WEST flow loop:
+  //   GROUND → WEST_RAMPART (E ramp) → BRIDGE_W (step down) → CITADEL_BASE
+  //   (step down) → GROUND (any citadel ramp/stair) → repeat.
+  // The bridge attaches at the citadel's NW area (z=-11 to -7) where
+  // the W parapet was shortened to leave an open gap. No new doorway
+  // required.
+  // =====================================================================
+  { t: 'box', id: 'BRIDGE_W', cx: -17, cz: -9, base: 3.9, sx: 18, sy: 0.6, sz: 4, mat: 'iron' },
   // Roof cover crates.
   { t: 'box', cx: -4, cz: -47, base: 4, sx: 1.8, sy: 1.0, sz: 1.6 },
   { t: 'box', cx:  4, cz: -43, base: 4, sx: 1.8, sy: 1.0, sz: 1.6 },

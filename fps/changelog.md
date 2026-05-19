@@ -26,6 +26,52 @@ Format: newest entries at the top. Each entry lists what was added, what was cha
 
 ## Session log
 
+### 2026-05-19 — Session 55h (BRIDGE_W west loop closer + foundry interior cover + rune sentinel lights)
+
+User asked for more map improvements after S55g shipped. Three additions:
+
+**BRIDGE_W — west flow loop closer (`src/maplayout.js`).** An iron-plate
+elevated bridge spanning the 18 m gap between WEST_RAMPART east edge
+(x=-26, top=5) and CITADEL_BASE west edge (x=-8, top=4). Bridge top at
+y=4.5 is exactly halfway: 0.5 m step down from rampart, 0.5 m step
+down to citadel — both within STEP_UP (0.55 m) so the flow-graph BFS
+counts BOTH ends as walkable routes. Closes a second loop:
+  GROUND → WEST_RAMPART (E ramp) → BRIDGE_W → CITADEL_BASE (any ramp)
+  → GROUND
+Required splitting the CITADEL_BASE W parapet: the original 16 m wall
+(cz=-15) was shortened to 11 m (cz=-17.5) so the bridge attachment area
+at z=[-12,-7] is open. The W stair landing zone (z=[-17.5,-12.5]) still
+has a door — door `offset: 2.5` keeps the aperture aligned with the
+stair landing despite the wall's new center.
+
+After: route graph has 10 connector edges across 9 nodes; **2 loops
+present**; only 2 dead-end spurs remain (VAULT_ROOF, TERRACE — both
+intentional design choices).
+
+**FOUNDRY interior cover (`src/maplayout.js`).** Four small wood crates
+(1.4×0.9×1.4) inside the foundry's two rooms: NW + SE corner of each.
+sy=0.9 keeps them within JUMP_MOUNT (0.95 m) so they're reachable
+(not stranded) AND give CQC fighters peeking angles. Placed clear of
+every doorway aperture so the AI router doesn't catch on them.
+
+**Rune sentinel atmospheric lights (`src/scene.js`).** Two amber
+PointLights (`0xff9a30`, intensity 1.8, range 12 m, decay 1.6) at the
+two RUNE SENTINEL monolith positions (-5, 2.4, 4) and (5, 2.4, 4).
+Sells the "you are entering the keep" beat — the citadel grand ramp
+foot now has a localized warm glow that contrasts with the cool slate
+fortress walls. Small radius (12 m) keeps the glow citadel-local
+without washing the plaza.
+
+**Verified.** Battery: 219/219 ALL GREEN; MAP OK; loop=yes; geomWarns=0;
+unreachable pickups=0; doorway drift=0; stranded surfaces=0.
+fps-standalone.html rebuilds clean (853 KB).
+
+**Changed.**
+- `src/maplayout.js`: CITADEL_BASE W parapet split (cz -15→-17.5,
+  length 16→11, door offset 0→2.5). Added 4 foundry interior cover
+  crates. Added BRIDGE_W named box with iron material.
+- `src/scene.js`: 2 new PointLights at rune sentinel positions.
+
 ### 2026-05-19 — Session 55g (RIDGEPOINT CITADEL — cohesive map redesign + themed materials)
 
 User asked for a big architectural rework of the arena map drawing on the
