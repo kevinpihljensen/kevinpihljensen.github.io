@@ -26,6 +26,42 @@ Format: newest entries at the top. Each entry lists what was added, what was cha
 
 ## Session log
 
+### 2026-05-19 — Session 55aa (head facing — bake 180° Y rotation into head geometry)
+
+User: "Heads need to be twisted 180° — heads are facing backwards."
+S55z made heads render visibly (unlit MeshBasic), which exposed the
+real orientation bug: in the source GLB the head mesh is authored
+facing the opposite direction from the body's chest. Most likely
+explanation — the original MDL had the head as a separate bodypart
+that the engine rotated at runtime for head-tracking; the GLB
+converter froze the model in its default backward-facing pose. Body
+chest faces +Z post-normalization, head face faces -Z, so the outer
+rig wrapper (rotation.y = π that aims the chest at the player) puts
+the head's face at +Z = AWAY from the player.
+
+**Fix.** Bake a 180° Y rotation into the head geometry, pivoting
+around the head's own X-Z centroid so the head rotates *in place*
+rather than translating across the origin. Done in `buildTemplate`
+right after the arm-rotation bake; uses the existing `bakeRotAround`
+helper.
+
+Critically, the rotation is baked into the geometry, NOT applied to
+`headGroup`. `headGroup.rotation.x` is the AI's head-pitch tracking,
+which composes with `rotation.y`. Putting the 180° on the group
+would invert the local X axis and flip the visible pitch direction
+(enemy looking up when player looks up). Geometry-baked rotation
+leaves the group's local frame the same orientation as before, so
+pitch still works.
+
+**Changed**
+- `src/charmodels.js`: new bake block after the arm rotations. Calls
+  `bakeRotAround(parts.head, 'y', Math.PI, hcx, 0, hcz)` with the
+  head's X-Z bbox centroid as pivot.
+
+**Verified**
+- `node --check` clean.
+- `bash dev/test-all.sh` → ALL GREEN, MAP OK.
+
 ### 2026-05-19 — Session 55z (heads unlit — MeshBasicMaterial)
 
 User after S55y: "still pure black. Looking at the textures you sent

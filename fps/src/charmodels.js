@@ -347,6 +347,22 @@ function buildTemplate(root, charName) {
   if (handR) bakeRotAround(handR.geometry, 'y',  Math.PI / 2, shXR, shY, 0);
   if (handL) bakeRotAround(handL.geometry, 'y', -Math.PI / 2, shXL, shY, 0);
 
+  // S55aa: bake a 180° Y rotation into the head geometry so the face
+  // points the same direction as the body's chest. In the source GLB
+  // the head mesh is authored facing the opposite direction from the
+  // body (probably an MDL bodypart that was rotated by the engine at
+  // runtime for head-tracking — the converter froze the static
+  // backward-facing pose). Pivoting around the head's own X-Z
+  // centroid rotates it IN PLACE rather than swapping it across the
+  // origin. headGroup.rotation.x = pitch is unaffected because the
+  // bake happens in the geometry, not the group.
+  if (parts.head) {
+    const hb = new THREE.Box3().setFromBufferAttribute(parts.head.attributes.position);
+    const hcx = (hb.min.x + hb.max.x) / 2;
+    const hcz = (hb.min.z + hb.max.z) / 2;
+    bakeRotAround(parts.head, 'y', Math.PI, hcx, 0, hcz);
+  }
+
   // --- Stage 8: pivots (hand centroids AFTER rotation; used by assembleRig
   //              to place the weapon at the hand tip in local space). ---
   function meshCentroid(g) {
