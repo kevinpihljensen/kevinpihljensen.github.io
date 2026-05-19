@@ -44,6 +44,7 @@ const CHARACTERS = ['urban', 'sas', 'terror', 'leet'];
 // Slice thresholds, as fractions of TARGET_HEIGHT or body half-width.
 const HIP_Y_FRAC      = 0.48;   // anything below this Y → leg
 const SHOULDER_Y_FRAC = 0.76;   // band between hip and shoulder = torso + arms
+const NECK_Y_FRAC     = 0.85;   // S55t: above this Y → head bucket (separate slice for head tracking)
 const ARM_X_HALF_FRAC = 0.22;   // |X| above this × halfWidth → arm
                                 // (was 0.30 × 2; tuned tighter so the arm
                                 // slice captures most of the outstretched
@@ -300,6 +301,7 @@ function buildTemplate(root, charName) {
   const params = {
     hipY:      TARGET_HEIGHT * HIP_Y_FRAC,
     shoulderY: TARGET_HEIGHT * SHOULDER_Y_FRAC,
+    neckY:     TARGET_HEIGHT * NECK_Y_FRAC,
     armX:      halfW * ARM_X_HALF_FRAC,
   };
 
@@ -361,6 +363,7 @@ function buildTemplate(root, charName) {
     pivots: {
       hipY: params.hipY,
       shoulderY: params.shoulderY,
+      neckY: params.neckY,
       shoulderXL: -params.armX,
       shoulderXR:  params.armX,
       handLCentroid,
@@ -382,8 +385,11 @@ function sliceBody(geo, p) {
   const idx = geo.index;
   const triCount = idx ? (idx.count / 3) : (pos.count / 3);
 
+  // S55t: split torsoHead → torso + head so the head can rotate as a
+  // separate Group for player-tracking.
   const buckets = {
-    torsoHead: { pos: [], norm: [], uv: [] },
+    torso:     { pos: [], norm: [], uv: [] },
+    head:      { pos: [], norm: [], uv: [] },
     legL:      { pos: [], norm: [], uv: [] },
     legR:      { pos: [], norm: [], uv: [] },
     armL:      { pos: [], norm: [], uv: [] },
@@ -406,14 +412,21 @@ function sliceBody(geo, p) {
     if (cy < p.hipY) {
       target = cx < 0 ? buckets.legL : buckets.legR;
     } else if (cy < p.shoulderY) {
+      // Mid band: torso or arm.
       if      (cx < -p.armX) target = buckets.armL;
       else if (cx >  p.armX) target = buckets.armR;
-      else                   target = buckets.torsoHead;
+      else                   target = buckets.torso;
+    } else if (cy < p.neckY) {
+      // Shoulder band: torso/shoulders or arm.
+      if      (cx < -p.armX) target = buckets.armL;
+      else if (cx >  p.armX) target = buckets.armR;
+      else                   target = buckets.torso;
     } else {
-      // Above shoulder line: still classify arms outboard, head inboard.
+      // Above the neck = head. Arm tips above the neck (unusual T-pose
+      // raise) still go to arm so they animate with the arm group.
       if      (cx < -p.armX) target = buckets.armL;
       else if (cx >  p.armX) target = buckets.armR;
-      else                   target = buckets.torsoHead;
+      else                   target = buckets.head;
     }
 
     target.pos.push(x0, y0, z0,  x1, y1, z1,  x2, y2, z2);
@@ -454,31 +467,25 @@ function sliceBody(geo, p) {
 function cloneMat(src) {
   if (!src) return new THREE.MeshStandardMaterial({ color: 0xb0a890 });
   const c = src.clone();
-  // S55s: aggressive defensiveness against GLTFExporter-produced
-  // materials that render black:
-  //   - Force baseColor texture to SRGB color space (some converters
-  //     leave it as Linear, which gamma-encodes the texture twice and
-  //     produces a near-black surface).
-  //   - Force factor `color` to white when a map is present (factor × map
-  //     = 0 × any texture = pitch black, a common conversion artifact).
-  //   - Null out auxiliary maps (normal / metallic-roughness / emissive
-  //     / ao). These are frequently set to incorrect or broken textures
-  //     by the conversion pipeline and either tint the surface black
-  //     or make it look matte-dark.
-  //   - Set neutral metalness / roughness (0 / 0.8) so the shaded
-  //     response is plain diffuse with a small specular highlight.
-  //   - Slight emissive grey so the surface never goes pitch black even
-  //     in low-light pockets of the map.
+  // S55t: minimum-touch policy. GLTFLoader's standard material is mostly
+  // correct; the two conversion artifacts that actually break rendering
+  // are wrong color-space on the base map (texture appears black because
+  // sRGB values are interpreted as already in linear space) and a
+  // baseColorFactor of (0,0,0) intending the texture to provide all color
+  // (factor × map = 0). Plus some converters set metalness near 1, which
+  // makes the surface render as a dark mirror under the scene's dusk
+  // lights. Touch only those.
   if (c.map) c.map.colorSpace = THREE.SRGBColorSpace;
-  if (c.color && c.map) c.color.setHex(0xffffff);
-  c.normalMap = null;
-  c.metalnessMap = null;
-  c.roughnessMap = null;
-  c.emissiveMap = null;
-  c.aoMap = null;
-  if (c.metalness !== undefined) c.metalness = 0.0;
-  if (c.roughness !== undefined) c.roughness = 0.80;
-  if (c.emissive)                c.emissive.setRGB(0.06, 0.06, 0.06);
+  if (c.color && c.map) {
+    const lum = c.color.r * 0.30 + c.color.g * 0.59 + c.color.b * 0.11;
+    if (lum < 0.15) c.color.setHex(0xffffff);
+  }
+  // Aux maps left alone (normalMap adds surface detail; metalness/
+  // roughness maps are honored multiplicatively against the factors).
+  // Just override the factors so over-metallic / over-shiny conversions
+  // soften to a fabric/skin appearance under the scene lights.
+  if (c.metalness !== undefined && c.metalness > 0.4) c.metalness = 0.05;
+  if (c.roughness !== undefined && c.roughness < 0.4) c.roughness = 0.78;
   c.needsUpdate = true;
   return c;
 }
@@ -493,20 +500,38 @@ function assembleRig(tpl, weaponBuilder) {
   const meshes = [];
   const piv = tpl.pivots;
 
-  // --- TORSO + HEAD: directly attached to root, no counter-translate
-  //                   needed because root is at world (0,0,0). ---
-  if (tpl.parts.torsoHead) {
-    const m = new THREE.Mesh(tpl.parts.torsoHead, bodyMat);
+  // --- TORSO — directly attached to root, no counter-translate needed
+  //              because root is at world (0,0,0). The torso bucket no
+  //              longer includes the head (S55t separated them). ---
+  if (tpl.parts.torso) {
+    const m = new THREE.Mesh(tpl.parts.torso, bodyMat);
     root.add(m); meshes.push(m);
   }
 
-  // --- HEAD pivot — synthetic Group at neck height, used by enemy AI for
-  //     "head bob" animations. No geometry attached (head is welded into
-  //     torsoHead); the bob translates an empty Object3D which the engine
-  //     treats as "head moved" but visually nothing happens. Cheap. ---
+  // --- HEAD — slice attached to a pivot Group at neck height. The Group
+  //     can be rotated by the AI to track the player; the mesh inside is
+  //     counter-translated so its geometry stays anchored at its world
+  //     position before the rotation. ---
   const headGroup = new THREE.Group();
-  headGroup.position.y = piv.shoulderY + 0.18;
+  headGroup.position.set(0, piv.neckY, 0);
   root.add(headGroup);
+  if (tpl.parts.head) {
+    const m = new THREE.Mesh(tpl.parts.head, bodyMat);
+    m.position.set(0, -piv.neckY, 0);
+    headGroup.add(m); meshes.push(m);
+  }
+  // Neck collar — short dark cylinder hiding the slice seam between head
+  // and torso. Same dark slate as the shoulder pads.
+  const collarMat = new THREE.MeshStandardMaterial({
+    color: 0x14161c, roughness: 0.85, metalness: 0.20,
+  });
+  bodyMats.push(collarMat);
+  const collar = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.11, 0.13, 0.07, 12),
+    collarMat,
+  );
+  collar.position.y = piv.neckY - 0.01;
+  root.add(collar); meshes.push(collar);
 
   // --- LEGS — each leg gets a Group whose pivot is at the hip joint.
   //     The mesh inside is counter-translated so its geometry stays put;

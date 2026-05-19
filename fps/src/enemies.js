@@ -723,6 +723,10 @@ export function makeEnemy(type, x, z) {
     legR: built.legR || null,
     headRestY: built.head ? built.head.position.y : 0,
     animPhase: Math.random() * Math.PI * 2,
+    // S55t: separate leg-cycle phase that advances much faster than the
+    // general animPhase so the walk reads as a brisk CS-style step rate
+    // rather than the slow torso-bob rate.
+    legPhase: Math.random() * Math.PI * 2,
     // M12: minigun refs (heavy only; undefined for others — guarded at use)
     barrelGrp: built.barrelGrp || null,
     muzzleMat: built.muzzleMat || null,
@@ -2001,18 +2005,36 @@ export function updateEnemies(dt) {
       // forward-tilted aim posture; sway is layered on top.
       e.animPhase += dt * 4.5;
       const headBob = Math.sin(e.animPhase) * 0.012;
-      const armSway = Math.sin(e.animPhase) * 0.08;
+      // S55t: arm sway knocked WAY down (0.08 → 0.015). It's a hold-
+      // a-rifle pose now, not a free-swinging arm — should look mostly
+      // steady with a faint breathing motion.
+      const armSway = Math.sin(e.animPhase) * 0.015;
       if (e.head) e.head.position.y = e.headRestY + headBob;
       if (e.armL) e.armL.rotation.x = e.armLRestX + armSway;
       if (e.armR) e.armR.rotation.x = e.armRRestX - armSway;
-      // S55r: leg walk cycle for CS-rig enemies (procedural rigs have no
-      // legL/legR pivots, so this is a no-op for them). Each leg pivots
-      // alternately around X at the hip; sin(animPhase)*amplitude gives
-      // a ±20° swing in counter-phase between L and R.
+      // S55t: leg cycle on its own faster phase. dt*11 ≈ 0.57 s per
+      // cycle, close to a CS sprint stride. Amplitude 0.55 rad ≈ 31°
+      // gives a confident step rather than a wobble.
       if (e.legL || e.legR) {
-        const legSwing = Math.sin(e.animPhase) * 0.35;
+        e.legPhase = (e.legPhase || 0) + dt * 11;
+        const legSwing = Math.sin(e.legPhase) * 0.55;
         if (e.legL) e.legL.rotation.x = legSwing;
         if (e.legR) e.legR.rotation.x = -legSwing;
+      }
+      // S55t: head tracking — pitch the head to look toward the player.
+      // The body's group.rotation.y already faces the player (the AI
+      // sets it every frame); we layer pitch (X-axis rotation) on the
+      // head Group so the head additionally tips up/down for tall or
+      // crouched players. Clamped to ±35° so the neck doesn't break.
+      if (e.head) {
+        const hdx = player.position.x - e.position.x;
+        const hdz = player.position.z - e.position.z;
+        const hd  = Math.hypot(hdx, hdz);
+        const headWorldY = e.position.y + (e.headRestY || 0);
+        const dy  = (player.position.y + 1.0) - headWorldY;
+        const pitch = Math.atan2(-dy, Math.max(0.5, hd));
+        const clamped = Math.max(-0.6, Math.min(0.6, pitch));
+        e.head.rotation.x = clamped;
       }
 
       // M13: grunt knife-swipe animation overrides arm sway while attacking.
