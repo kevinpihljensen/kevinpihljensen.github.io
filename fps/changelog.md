@@ -26,6 +26,64 @@ Format: newest entries at the top. Each entry lists what was added, what was cha
 
 ## Session log
 
+### 2026-05-19 — Session 55z (heads unlit — MeshBasicMaterial)
+
+User after S55y: "still pure black. Looking at the textures you sent
+I can see skin should be showing through the balaclavas — it's not
+coming through."
+
+S55y added a per-character flat `emissive` of 25-40 % grey on the head
+material with `emissiveMap` omitted, which should have produced AT
+LEAST that grey level regardless of texture darkness. User reports no
+change. Possible reasons it failed in practice:
+
+- Three.js's emissive in `MeshLambertMaterial` interacts with the
+  renderer's tone-mapping + colour-space pipeline; the 0x40 grey may
+  be tone-mapped down to near-zero in dim scene exposure.
+- The hit-flash code in `enemies.js` writes to `m.emissive` and on
+  clear restores `userData.restEmissive`. If anything in the spawn
+  path or the sweep nukes the rest value, the head goes to (0,0,0).
+- The map sample itself for the face UVs might have `alpha = 0` (CS
+  textures originally used colour-key transparency that the PNG
+  converter may have rendered as alpha=0 with RGB=0 if premultiplied).
+
+Rather than chase the actual root cause through the shader stack,
+switched to `MeshBasicMaterial` — the unlit material. It writes
+`map_color × material_color` directly to the output with no lighting,
+no emissive math, no tone-mapping influence on shaded components.
+Whatever the atlas shows at the head UVs is what appears on screen.
+GoldSrc-era CS 1.6 rendered player models near-fullbright anyway, so
+this is closer to the original look.
+
+**Trade-offs noted in code**:
+- Head doesn't shade with scene lighting (always at full texel
+  brightness). Acceptable — character heads in CS reads as flat
+  panels in-engine too.
+- Head doesn't pulse on hit-flash. `MeshBasicMaterial` has no
+  `emissive` property; the existing flash code in `enemies.js` reads
+  `m.emissive.setRGB(...)` and would throw if the head material were
+  in `bodyMats`. So the head material is intentionally omitted from
+  `bodyMats`. Body still flashes.
+
+**Changed**
+- `src/charmodels.js`: `cloneHeadMat` now returns `MeshBasicMaterial`
+  (was `MeshLambertMaterial` with flat emissive). Drops the
+  per-character `HEAD_EMISSIVE_BY_CHAR` table — irrelevant for an
+  unlit material. `assembleRig` no longer pushes the head material
+  onto `bodyMats`.
+
+**Verified**
+- `node --check` clean.
+- `bash dev/test-all.sh` → ALL GREEN, MAP OK.
+
+**Known issues**
+- If the head STILL renders pure black after this, the issue is
+  upstream of lighting entirely — the head mesh isn't being placed
+  in the scene, isn't using the right texture, or its UVs don't point
+  at the face region of the atlas. Next debug step in that case
+  would be to dump a render of just the head mesh's UV coverage
+  against the texture image.
+
 ### 2026-05-19 — Session 55y (head brightness floor — flat emissive on the head mesh)
 
 User after S55x: "Nah the heads are still fully black."

@@ -563,31 +563,19 @@ function cloneMat(src, charName) {
   return m;
 }
 
-// S55y: dedicated material for the HEAD slice. The body materials use
-// `emissive × emissiveMap`, which multiplies by the texture — fine on
-// the body (mostly mid-tone clothing) but disastrous on the head,
-// because every character's head texture is dark by design (balaclavas,
-// helmet shells, dark hair). A texture texel of (0.05) × even 60 %
-// emissive = 0.03 → reads as fully black on screen. Solution: drop
-// `emissiveMap` for the head and use a flat emissive color. That
-// gives a true brightness floor (constant grey added everywhere on
-// the head) independent of how dark the texture is, while diffuse
-// lighting × texture still paints the actual face / eyes / mouth on
-// top. Per-character because some heads (sas) are pitch black where
-// others (leet) have visible skin tones already.
-//   urban  → 0x40 (~25 %) helmet has lighter trim, light shines off it
-//   terror → 0x40 (~25 %)
-//   sas    → 0x66 (~40 %) uniformly black balaclava — needs the most lift
-//   leet   → 0x55 (~33 %)
-const HEAD_EMISSIVE_BY_CHAR = {
-  urban:  0x404040,
-  terror: 0x404040,
-  sas:    0x666666,
-  leet:   0x555555,
-};
-const DEFAULT_HEAD_EMISSIVE = 0x404040;
-
-function cloneHeadMat(src, charName) {
+// S55z: heads use MeshBasicMaterial (UNLIT). The Lambert + emissive
+// stack in S55y left the heads still rendering as pure black per
+// user, and the textures I dumped clearly contain skin tones around
+// balaclava eye holes / under helmet brims that should be visible.
+// MeshBasicMaterial pumps the texture color directly to output with
+// no lighting math, so whatever's in the atlas at the head UVs is
+// what shows on screen. This sacrifices scene shading on the head
+// for guaranteed legibility — closest to how CS 1.6 itself drew
+// these characters anyway (GoldSrc was effectively fullbright on
+// player models). Head won't pulse on hit-flash; the flash code
+// dereferences `m.emissive` and MeshBasicMaterial has no such field,
+// so the headMat is intentionally NOT pushed to `bodyMats`.
+function cloneHeadMat(src) {
   const map = src && src.map ? src.map : null;
   if (map) {
     map.colorSpace = THREE.SRGBColorSpace;
@@ -595,25 +583,12 @@ function cloneHeadMat(src, charName) {
     map.magFilter = THREE.LinearFilter;
     map.needsUpdate = true;
   }
-  const restHex = (charName && HEAD_EMISSIVE_BY_CHAR[charName] !== undefined)
-    ? HEAD_EMISSIVE_BY_CHAR[charName]
-    : DEFAULT_HEAD_EMISSIVE;
-  const m = new THREE.MeshLambertMaterial({
+  return new THREE.MeshBasicMaterial({
     map: map,
     color: 0xffffff,
     side: THREE.DoubleSide,
     vertexColors: false,
-    emissive: restHex,
-    // emissiveMap intentionally omitted — flat brightness floor.
   });
-  m.userData = {
-    restEmissive: {
-      r: ((restHex >> 16) & 0xff) / 255,
-      g: ((restHex >>  8) & 0xff) / 255,
-      b: ( restHex        & 0xff) / 255,
-    },
-  };
-  return m;
 }
 
 function assembleRig(tpl, weaponBuilder) {
@@ -642,12 +617,11 @@ function assembleRig(tpl, weaponBuilder) {
   headGroup.position.set(0, piv.neckY, 0);
   root.add(headGroup);
   if (tpl.parts.head) {
-    // S55y: dedicated headMat — flat emissive (no emissiveMap) gives
-    // a true brightness floor so the head reads as a head against the
-    // very dark face / balaclava / helmet textures, instead of going
-    // pitch-black where the texture is near-zero.
-    const headMat = cloneHeadMat(tpl.bodyMat, tpl.name);
-    bodyMats.push(headMat);
+    // S55z: unlit MeshBasicMaterial for the head — see cloneHeadMat.
+    // NOT pushed to bodyMats because the hit-flash code reads
+    // `m.emissive` which MeshBasicMaterial lacks; head simply doesn't
+    // pulse on hit. Body still does.
+    const headMat = cloneHeadMat(tpl.bodyMat);
     const m = new THREE.Mesh(tpl.parts.head, headMat);
     m.position.set(0, -piv.neckY, 0);
     headGroup.add(m); meshes.push(m);
