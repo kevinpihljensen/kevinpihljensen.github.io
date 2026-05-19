@@ -717,6 +717,10 @@ export function makeEnemy(type, x, z) {
     armR: built.armR,
     armLRestX: built.armL ? built.armL.rotation.x : 0,
     armRRestX: built.armR ? built.armR.rotation.x : 0,
+    // S55r: CS-rig legs (procedural builders leave these undefined).
+    // Animated by legSwing in the update tick when present.
+    legL: built.legL || null,
+    legR: built.legR || null,
     headRestY: built.head ? built.head.position.y : 0,
     animPhase: Math.random() * Math.PI * 2,
     // M12: minigun refs (heavy only; undefined for others — guarded at use)
@@ -2001,6 +2005,15 @@ export function updateEnemies(dt) {
       if (e.head) e.head.position.y = e.headRestY + headBob;
       if (e.armL) e.armL.rotation.x = e.armLRestX + armSway;
       if (e.armR) e.armR.rotation.x = e.armRRestX - armSway;
+      // S55r: leg walk cycle for CS-rig enemies (procedural rigs have no
+      // legL/legR pivots, so this is a no-op for them). Each leg pivots
+      // alternately around X at the hip; sin(animPhase)*amplitude gives
+      // a ±20° swing in counter-phase between L and R.
+      if (e.legL || e.legR) {
+        const legSwing = Math.sin(e.animPhase) * 0.35;
+        if (e.legL) e.legL.rotation.x = legSwing;
+        if (e.legR) e.legR.rotation.x = -legSwing;
+      }
 
       // M13: grunt knife-swipe animation overrides arm sway while attacking.
       if (e.type === 'grunt') updateGruntSwipe(e, dt);

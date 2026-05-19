@@ -49,11 +49,14 @@ const ARM_X_HALF_FRAC = 0.22;   // |X| above this × halfWidth → arm
                                 // slice captures most of the outstretched
                                 // arm geometry rather than only the tips)
 
-// Per-arm forward rotation. -55° is a "ready / low-ready" rifle pose;
-// the seam stays small while the weapon still reads as held forward.
-// (Three's coords: positive Z is out of the screen toward camera at default,
-// so rotating an arm group around X by a NEGATIVE angle brings it forward.)
-const ARM_FORWARD_X = -0.95;
+// S55r: arm geometries are now pre-baked to extend -Z (forward) from the
+// shoulder pivot. The arm-group X rotation is therefore JUST a tilt — small
+// positive angle pitches the arm down for a low-ready pose. Animation
+// (armSway) layers on top: armRotX = ARM_FORWARD_X + sway.
+const ARM_FORWARD_X = 0.25;
+// Leg swing amplitude (radians). Animated alternately for L/R at the
+// existing animPhase rate (dt*4.5) so legs cycle in sync with arm sway.
+const LEG_SWING_AMP = 0.35;
 
 // Per-character template, populated when the GLB resolves.
 //   { name, bodyMat, handMat, parts:{torsoHead,legL,legR,armL,armR},
@@ -119,6 +122,26 @@ function processGltf(gltf) {
   }
   const got = Object.keys(templates);
   console.log('charmodels: loaded ' + got.length + '/' + CHARACTERS.length + ' (' + got.join(', ') + ')');
+  // S55r: per-character diagnostic. If a character looks wrong in-engine
+  // (lying down, huge, missing limbs) the stats below tell us which slice
+  // bucket got which fraction of the vertex count + the detected up-axis.
+  for (const name of got) {
+    const tpl = templates[name];
+    const counts = {};
+    for (const k of Object.keys(tpl.parts)) {
+      counts[k] = tpl.parts[k] ? tpl.parts[k].attributes.position.count : 0;
+    }
+    console.log('  ' + name + ':',
+      'parts=', JSON.stringify(counts),
+      'handL=' + (tpl.handL ? tpl.handL.attributes.position.count : 0),
+      'handR=' + (tpl.handR ? tpl.handR.attributes.position.count : 0),
+      'pivots=', JSON.stringify({
+        hipY:       Number(tpl.pivots.hipY.toFixed(3)),
+        shoulderY:  Number(tpl.pivots.shoulderY.toFixed(3)),
+        shoulderXL: Number(tpl.pivots.shoulderXL.toFixed(3)),
+        shoulderXR: Number(tpl.pivots.shoulderXR.toFixed(3)),
+      }));
+  }
 }
 
 function findCharRoot(sceneRoot, charName) {
@@ -284,9 +307,39 @@ function buildTemplate(root, charName) {
   // --- Stage 7: slice. ---
   const parts = sliceBody(body.geometry, params);
 
-  // --- Stage 8: pivots (hand position relative to shoulder, in template/
-  //              local space — used by assembleRig to place hand meshes
-  //              + the weapon mount inside the arm group). ---
+  // --- Stage 7b: bake a Y-axis rotation into the arm + hand geometries so
+  //              each arm's natural axis becomes -Z (forward) instead of
+  //              ±X (T-pose side). Without this, the engine's X-axis
+  //              rotation on the arm Group is a no-op — the rotation
+  //              axis is parallel to the arm's length, so the arm doesn't
+  //              swing. After this bake, X-rotation pivots the arm
+  //              up/down FROM the forward direction, which is exactly
+  //              what the existing AI animation expects.
+  // armR (was at +X) → R_y(+π/2) around shoulder pivot makes it -Z.
+  // armL (was at -X) → R_y(-π/2) around shoulder pivot makes it -Z.
+  function bakeRotAround(geo, axis, angle, pivotX, pivotY, pivotZ) {
+    if (!geo) return;
+    const m = new THREE.Matrix4()
+      .makeTranslation(pivotX, pivotY, pivotZ);
+    const r = new THREE.Matrix4();
+    if (axis === 'y')      r.makeRotationY(angle);
+    else if (axis === 'x') r.makeRotationX(angle);
+    else                   r.makeRotationZ(angle);
+    m.multiply(r);
+    m.multiply(new THREE.Matrix4().makeTranslation(-pivotX, -pivotY, -pivotZ));
+    geo.applyMatrix4(m);
+  }
+  const shXL = -params.armX;          // shoulder pivot positions (in normalized coords)
+  const shXR =  params.armX;
+  const shY  =  params.shoulderY;
+  bakeRotAround(parts.armR, 'y',  Math.PI / 2, shXR, shY, 0);
+  bakeRotAround(parts.armL, 'y', -Math.PI / 2, shXL, shY, 0);
+  // Hands rotate with their arm. Use each arm's shoulder pivot.
+  if (handR) bakeRotAround(handR.geometry, 'y',  Math.PI / 2, shXR, shY, 0);
+  if (handL) bakeRotAround(handL.geometry, 'y', -Math.PI / 2, shXL, shY, 0);
+
+  // --- Stage 8: pivots (hand centroids AFTER rotation; used by assembleRig
+  //              to place the weapon at the hand tip in local space). ---
   function meshCentroid(g) {
     const bb = new THREE.Box3().setFromBufferAttribute(g.attributes.position);
     return new THREE.Vector3(
@@ -561,13 +614,13 @@ function assembleRig(tpl, weaponBuilder) {
     head: headGroup,
     armL: armLGroup,
     armR: armRGroup,
+    // S55r: expose leg pivot groups for the walk animation. enemies.js
+    // animates these like the arm sway. legL/legR carry the sliced leg
+    // geometry; rotating around X swings each leg forward/back.
+    legL: legLGroup,
+    legR: legRGroup,
     bodyMats,
     emissiveMats: [],
-    // S55q: enemies.js iterates `built.headMeshes` to tag isHead for the
-    // headshot multiplier. We don't separate head geometry from torsoHead
-    // here (head is welded), so this stays empty — headshots on CS-rig
-    // enemies are not distinguished from body shots. Acceptable trade-off
-    // until we tag the top-band torso vertices as head later.
     headMeshes: [],
     weaponPivot,
   };
