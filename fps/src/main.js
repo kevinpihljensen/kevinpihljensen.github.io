@@ -21,6 +21,13 @@ import { applyTeleport, updateTeleporters } from './teleporters.js';
 import { applyJumpPad, updateJumpPads } from './jumppads.js';
 import { updateTorchFlicker } from './torches.js';
 import { updateSpawnFX } from './spawnfx.js';
+import { initCharModels } from './charmodels.js';
+
+// S55p: kick off the player-model GLB load at boot. enemies.js checks
+// hasCharacter() at spawn time and falls back to the procedural rig if
+// the GLB hasn't resolved yet. Typically it will have loaded long before
+// the player presses Start.
+initCharModels();
 
 // Initial UI state: title overlay shown, no HUD, no canvas focus.
 setGameState(GAME_STATE.TITLE);

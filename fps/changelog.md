@@ -26,6 +26,113 @@ Format: newest entries at the top. Each entry lists what was added, what was cha
 
 ## Session log
 
+### 2026-05-19 — Session 55p (CS-style player models for enemies — load, slice, articulate, hold weapon)
+
+User wants tactical-soldier player models replacing the procedural cube
+rigs. Input GLB has 8 characters but **no skin, no animations** — every
+character is one or more rigid welded meshes in T-pose-adjacent stance.
+
+The 4 chosen characters (one per enemy class):
+
+  grunt   → terror   (insurgent look — common cannon-fodder unit)
+  shooter → sas      (balaclava precision-shooter aesthetic)
+  heavy   → urban    (SWAT helmet + heavy vest — visibly armored)
+  jetpack → leet     (sleek elite, has the glasses submesh)
+
+The other 4 characters (gsg9, guerilla, artic, gign) stay in the GLB
+but no enemy class instantiates them — gsg9 + guerilla are reserves;
+artic + gign were dropped because their hand meshes aren't separated
+from the body and the weapon would float wrong.
+
+**NEW MODULE — `src/charmodels.js` (≈ 420 lines).** Loads the GLB once
+at boot via GLTFLoader, then for each chosen character:
+
+1. **Classify meshes** by material name (`hand_*` → hand; `*_skin` /
+   matching char name → body; everything else → accessory).
+2. **Normalize**. The 8 chars use mixed axis conventions (X-up vs Y-up
+   vs Z-up) and mixed scales (CS game units vs meters). Detects up-axis
+   from raw bbox, rotates so up is +Y; if side comes out as Z, rotates
+   another 90° around Y so side is +X. Then scales body to 1.8 m tall
+   and centers feet on Y=0, centroid on X=Z=0.
+3. **Slice the body mesh** by per-triangle centroid into 5 buckets:
+     legL / legR  (y < hipY,            x sign for L/R)
+     armL / armR  (hipY ≤ y < shoulderY AND |x| > armXThreshold)
+     torsoHead    (everything else)
+   Thresholds: hipY = 0.48 × height, shoulderY = 0.76 × height,
+   armXThreshold = 0.30 × body half-width.
+4. **Build a template** holding the 5 sliced sub-geometries + the
+   already-separate hand meshes + accessories + pivot positions.
+
+At runtime, `buildCharacterRig(name, weaponBuilder)` returns a fresh
+rig instance compatible with the existing MODEL_BUILDERS contract:
+`{ group, meshes, head, armL, armR, bodyMats, emissiveMats, weaponPivot }`.
+
+The rig hierarchy:
+   root
+     ├─ torsoHead mesh           (rigid)
+     ├─ head Group               (synthetic pivot at neck for AI bob)
+     ├─ legL Group  → legL mesh  (rotates around hip for walk)
+     ├─ legR Group  → legR mesh
+     ├─ armL Group  → armL mesh + handL mesh + shoulder pad
+     │              (rotated -0.95 rad around X for low-ready pose)
+     ├─ armR Group  → armR mesh + handR mesh + shoulder pad + WEAPON
+     │              (same forward rotation, with weapon parented at hand)
+     ├─ belt        (dark band hiding hip slice seam)
+     └─ accessories (backpack, glasses, chrome — original positions)
+
+**SEAM MITIGATION — three stacked techniques per discussed plan:**
+
+1. Partial rotation (≈ 55°) instead of full 90° chest-forward, keeps
+   the shoulder cut small.
+2. Dark sphere "shoulder pad" parented to each arm group, hides the cut.
+3. Dark belt-box at the hip line, hides leg cuts.
+
+No triangle-fan caps — they'd add per-character geometry-walking
+complexity for limited gain over the pad+belt cover. Tradeoff: if you
+clip the camera through the chest you'll see the inside of the model.
+
+**WEAPONS** (`buildSimpleRifle` + `buildHeavyWeapon`). Procedural
+receiver + barrel + stock + magazine box geometry, parented to the
+right arm group at the hand centroid. The heavy variant gets a
+double-barrel + bigger stock. Both materials added to `bodyMats` so
+the hit-flash whites them out with the rest of the model.
+
+**WIRING — `src/enemies.js`.** `makeEnemy(type, x, z)` now tries
+`buildCharacterRig` first via the per-type `CHAR_FOR_TYPE` map; on null
+(GLB not loaded yet OR template build failed) falls through to the
+existing procedural `MODEL_BUILDERS[type](def)`. All existing AI,
+animation, hit-detection, and arena code remains untouched because the
+new rig honors the same return shape.
+
+**ASSET** — `fps/assets/models/players.glb` (3.9 MB). Pages payload
+goes from ≈ 4.5 MB → ≈ 8.5 MB. Standalone single-file bundle is
+unchanged (build-singlefile.mjs only embeds audio + JS, not GLBs);
+the standalone runs with procedural-rig fallback.
+
+**Verified.** Battery: 283/283 ALL GREEN. MAP OK; loop=yes;
+geomWarns=0; unreachable pickups=0; doorway drift=0; stranded
+surfaces=0. fps-standalone.html rebuilds clean (900 KB).
+
+**Known issues / things that will probably need tuning after a
+browser playtest:**
+
+- Slice thresholds (0.48 / 0.76 / 0.30) are educated guesses. Some
+  characters may need per-character override values if the seam ends
+  up in a visible spot.
+- Arm-forward rotation (-0.95 rad) might be too far or not far enough
+  for a natural rifle pose. Tunable in one constant in charmodels.js.
+- Character facing direction is currently un-flipped. If a character
+  faces backwards relative to the engine's enemy-faces-player rotation,
+  a 180° Y flip per character is needed (look-up table).
+- Shoulder pad position is the arm group's origin (= shoulder pivot).
+  If the cut ends up offset from that, the pad won't fully cover it.
+  Easy to nudge.
+- Accessories (backpack on artic/gign — both dropped from rotation —
+  glasses on leet, chrome on sas) are attached to the root, NOT to the
+  head group, so they don't bob with the head. Visually fine since the
+  head bob is small.
+- Bundle size flagged: 3.9 MB added to Pages payload. Acceptable.
+
 ### 2026-05-19 — Session 55o (perf cleanup — kill storm flash, drop spawn-FX point light, cull torches/braziers/floodlights)
 
 User report: "Now the game lags every now and then. I really don't

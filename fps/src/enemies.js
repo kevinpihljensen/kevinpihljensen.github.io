@@ -16,6 +16,7 @@ import { scene } from './scene.js';
 import { shootables, staticAABBs, collideCapsule, groundHeightAt, lineOfSight, rampLinks } from './collision.js';
 import { player } from './state.js';
 import { DOORWAYS, ENEMY_SPAWN_POINTS } from './maplayout.js';
+import { buildCharacterRig, hasCharacter, buildSimpleRifle, buildHeavyWeapon } from './charmodels.js';
 import {
   HIT_FLASH_TIME, DEATH_ANIM_TIME,
   MELEE_ATTACK_COOLDOWN, SHOOTER_ATTACK_COOLDOWN,
@@ -641,9 +642,35 @@ const MODEL_BUILDERS = {
   jetpack: buildJetpackModel,
 };
 
+// S55p: per-enemy-class character mapping into the loaded player models.
+// When the GLB has loaded and the named character template is ready,
+// makeEnemy() builds a CS-style rig instead of the procedural model. If
+// the GLB hasn't loaded yet (race at game start, or load failure), the
+// per-class procedural builder above is the fallback.
+const CHAR_FOR_TYPE = {
+  grunt:   'terror',
+  shooter: 'sas',
+  heavy:   'urban',
+  jetpack: 'leet',
+};
+const WEAPON_FOR_TYPE = {
+  grunt:   buildSimpleRifle,
+  shooter: buildSimpleRifle,
+  heavy:   buildHeavyWeapon,
+  jetpack: buildSimpleRifle,
+};
+
 export function makeEnemy(type, x, z) {
   const def = ENEMY_DEFS[type];
-  const built = MODEL_BUILDERS[type](def);
+  // S55p: prefer the CS-style player rig (loaded async from players.glb).
+  // Falls back to the procedural model if the GLB isn't loaded yet or the
+  // character template failed to build.
+  let built = null;
+  const csChar = CHAR_FOR_TYPE[type];
+  if (csChar && hasCharacter(csChar)) {
+    built = buildCharacterRig(csChar, WEAPON_FOR_TYPE[type] || null);
+  }
+  if (!built) built = MODEL_BUILDERS[type](def);
 
   built.group.position.set(x, 0, z);
 
