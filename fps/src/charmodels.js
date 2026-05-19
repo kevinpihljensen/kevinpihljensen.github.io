@@ -379,22 +379,36 @@ function buildTemplate(root, charName) {
 // ===========================================================================
 
 function sliceBody(geo, p) {
-  const pos = geo.attributes.position;
+  const pos  = geo.attributes.position;
   const norm = geo.attributes.normal;
-  const uv = geo.attributes.uv;
+  const uv   = geo.attributes.uv;
+  // S55u: preserve COLOR_0 (Three.js name: `color`) per vertex. Dropping
+  // it in earlier slicer revisions left the cloned material's vertex-
+  // colors expectation reaching for a missing attribute → WebGL filled
+  // with (0,0,0) → texture × 0 = pitch black. This is the real reason
+  // the models rendered dark/monochrome no matter how I tweaked the
+  // material factors. We carry the attribute through the slice and the
+  // material side disables vertexColors as a belt-and-suspenders.
+  const col  = geo.attributes.color;
+  const colSize = col ? col.itemSize : 0;
   const idx = geo.index;
   const triCount = idx ? (idx.count / 3) : (pos.count / 3);
 
-  // S55t: split torsoHead → torso + head so the head can rotate as a
-  // separate Group for player-tracking.
+  const mkBucket = () => ({ pos: [], norm: [], uv: [], col: [] });
   const buckets = {
-    torso:     { pos: [], norm: [], uv: [] },
-    head:      { pos: [], norm: [], uv: [] },
-    legL:      { pos: [], norm: [], uv: [] },
-    legR:      { pos: [], norm: [], uv: [] },
-    armL:      { pos: [], norm: [], uv: [] },
-    armR:      { pos: [], norm: [], uv: [] },
+    torso: mkBucket(),
+    head:  mkBucket(),
+    legL:  mkBucket(),
+    legR:  mkBucket(),
+    armL:  mkBucket(),
+    armR:  mkBucket(),
   };
+
+  function pushCol(bucket, vi) {
+    if (!col) return;
+    bucket.col.push(col.getX(vi), col.getY(vi), col.getZ(vi));
+    if (colSize === 4) bucket.col.push(col.getW(vi));
+  }
 
   for (let t = 0; t < triCount; t++) {
     const i0 = idx ? idx.getX(t * 3)     : t * 3;
@@ -412,18 +426,14 @@ function sliceBody(geo, p) {
     if (cy < p.hipY) {
       target = cx < 0 ? buckets.legL : buckets.legR;
     } else if (cy < p.shoulderY) {
-      // Mid band: torso or arm.
       if      (cx < -p.armX) target = buckets.armL;
       else if (cx >  p.armX) target = buckets.armR;
       else                   target = buckets.torso;
     } else if (cy < p.neckY) {
-      // Shoulder band: torso/shoulders or arm.
       if      (cx < -p.armX) target = buckets.armL;
       else if (cx >  p.armX) target = buckets.armR;
       else                   target = buckets.torso;
     } else {
-      // Above the neck = head. Arm tips above the neck (unusual T-pose
-      // raise) still go to arm so they animate with the arm group.
       if      (cx < -p.armX) target = buckets.armL;
       else if (cx >  p.armX) target = buckets.armR;
       else                   target = buckets.head;
@@ -444,6 +454,7 @@ function sliceBody(geo, p) {
         uv.getX(i2), uv.getY(i2),
       );
     }
+    pushCol(target, i0); pushCol(target, i1); pushCol(target, i2);
   }
 
   const out = {};
@@ -454,7 +465,8 @@ function sliceBody(geo, p) {
     g.setAttribute('position', new THREE.Float32BufferAttribute(b.pos, 3));
     if (b.norm.length) g.setAttribute('normal', new THREE.Float32BufferAttribute(b.norm, 3));
     else               g.computeVertexNormals();
-    if (b.uv.length)   g.setAttribute('uv',     new THREE.Float32BufferAttribute(b.uv, 2));
+    if (b.uv.length)   g.setAttribute('uv', new THREE.Float32BufferAttribute(b.uv, 2));
+    if (b.col.length)  g.setAttribute('color', new THREE.Float32BufferAttribute(b.col, colSize));
     out[key] = g;
   }
   return out;
@@ -465,29 +477,47 @@ function sliceBody(geo, p) {
 // ===========================================================================
 
 function cloneMat(src) {
-  if (!src) return new THREE.MeshStandardMaterial({ color: 0xb0a890 });
-  const c = src.clone();
-  // S55t: minimum-touch policy. GLTFLoader's standard material is mostly
-  // correct; the two conversion artifacts that actually break rendering
-  // are wrong color-space on the base map (texture appears black because
-  // sRGB values are interpreted as already in linear space) and a
-  // baseColorFactor of (0,0,0) intending the texture to provide all color
-  // (factor × map = 0). Plus some converters set metalness near 1, which
-  // makes the surface render as a dark mirror under the scene's dusk
-  // lights. Touch only those.
-  if (c.map) c.map.colorSpace = THREE.SRGBColorSpace;
-  if (c.color && c.map) {
-    const lum = c.color.r * 0.30 + c.color.g * 0.59 + c.color.b * 0.11;
-    if (lum < 0.15) c.color.setHex(0xffffff);
+  // S55u: switch to MeshLambertMaterial. The CS character GLB embeds
+  // textured surfaces meant for a near-fullbright GoldSrc engine; running
+  // them through PBR MeshStandardMaterial under our dusk-tinted point-
+  // light scene produces a muddy, single-tone result. Lambert is vertex-
+  // shaded but supports every light type, has an `emissive` slot that the
+  // hit-flash code already drives, and matches the look the textures
+  // were authored for (flat diffuse, no PBR specular nonsense).
+  //
+  // CRITICAL CAUSE OF THE BLACK MODELS: every mesh primitive in this GLB
+  // exposes a COLOR_0 vertex color attribute. GLTFLoader detects this and
+  // sets `vertexColors = true` on the loaded MeshStandardMaterial. Our
+  // sliceBody copies position/normal/uv but historically DROPPED COLOR_0.
+  // So the sliced sub-meshes had no `color` attribute, yet the cloned
+  // material still asked the shader for one — WebGL falls back to
+  // (0,0,0), and `vertex × map × factor = 0` → pitch black surface no
+  // matter what the texture or factors contain. Same explanation for the
+  // "one color" appearance after S55t patched the worst symptoms; the
+  // texture was still being multiplied by near-zero vertex color.
+  //
+  // Two-part fix:
+  //   1. Slicer now preserves COLOR_0 (see sliceBody).
+  //   2. Force `vertexColors = false` here as belt-and-suspenders — the
+  //      cloned Lambert won't reach for the color attribute even if the
+  //      slicer ever fails to carry it, so the texture passes through
+  //      cleanly modulated only by scene lighting.
+  const fallback = new THREE.MeshLambertMaterial({ color: 0xb0a890 });
+  if (!src) return fallback;
+  const map = src.map || null;
+  if (map) {
+    map.colorSpace = THREE.SRGBColorSpace;
+    map.minFilter = THREE.LinearMipmapLinearFilter;
+    map.magFilter = THREE.LinearFilter;
+    map.needsUpdate = true;
   }
-  // Aux maps left alone (normalMap adds surface detail; metalness/
-  // roughness maps are honored multiplicatively against the factors).
-  // Just override the factors so over-metallic / over-shiny conversions
-  // soften to a fabric/skin appearance under the scene lights.
-  if (c.metalness !== undefined && c.metalness > 0.4) c.metalness = 0.05;
-  if (c.roughness !== undefined && c.roughness < 0.4) c.roughness = 0.78;
-  c.needsUpdate = true;
-  return c;
+  return new THREE.MeshLambertMaterial({
+    map: map,
+    color: 0xffffff,        // pure-white factor so the texture passes through unchanged
+    side: THREE.DoubleSide,
+    vertexColors: false,    // ignore any leftover COLOR_0 (see comment above)
+    emissive: 0x000000,     // no glow at rest; hit-flash code drives this
+  });
 }
 
 function assembleRig(tpl, weaponBuilder) {
@@ -522,9 +552,7 @@ function assembleRig(tpl, weaponBuilder) {
   }
   // Neck collar — short dark cylinder hiding the slice seam between head
   // and torso. Same dark slate as the shoulder pads.
-  const collarMat = new THREE.MeshStandardMaterial({
-    color: 0x14161c, roughness: 0.85, metalness: 0.20,
-  });
+  const collarMat = new THREE.MeshLambertMaterial({ color: 0x14161c });
   bodyMats.push(collarMat);
   const collar = new THREE.Mesh(
     new THREE.CylinderGeometry(0.11, 0.13, 0.07, 12),
@@ -597,9 +625,7 @@ function assembleRig(tpl, weaponBuilder) {
   //     Sit at each arm group's origin (= shoulder pivot), so they rotate
   //     with the arm. Reads as armor / pauldron, hides the seam where the
   //     slicer tore through the welded geometry. ---
-  const padMat = new THREE.MeshStandardMaterial({
-    color: 0x14161c, roughness: 0.85, metalness: 0.20,
-  });
+  const padMat = new THREE.MeshLambertMaterial({ color: 0x14161c });
   bodyMats.push(padMat);
   const padL = new THREE.Mesh(new THREE.SphereGeometry(0.13, 12, 8), padMat);
   armLGroup.add(padL); meshes.push(padL);
@@ -609,7 +635,7 @@ function assembleRig(tpl, weaponBuilder) {
   // --- HIP COVER — small dark band at the waist where the leg slice cut
   //     across. Belt-like; hides the hip seams. ---
   const beltGeo = new THREE.BoxGeometry(0.42, 0.10, 0.30);
-  const beltMat = new THREE.MeshStandardMaterial({ color: 0x14161c, roughness: 0.85, metalness: 0.20 });
+  const beltMat = new THREE.MeshLambertMaterial({ color: 0x14161c });
   bodyMats.push(beltMat);
   const belt = new THREE.Mesh(beltGeo, beltMat);
   belt.position.y = piv.hipY;
