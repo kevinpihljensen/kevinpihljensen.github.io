@@ -44,7 +44,15 @@ const CHARACTERS = ['urban', 'sas', 'terror', 'leet'];
 // Slice thresholds, as fractions of TARGET_HEIGHT or body half-width.
 const HIP_Y_FRAC      = 0.48;   // anything below this Y → leg
 const SHOULDER_Y_FRAC = 0.76;   // band between hip and shoulder = torso + arms
-const NECK_Y_FRAC     = 0.85;   // S55t: above this Y → head bucket (separate slice for head tracking)
+const NECK_Y_FRAC     = 0.78;   // S55x: dropped from 0.85. The CS models'
+                                // chin sits at ~0.81 of total body height
+                                // (eyes/glasses at ~0.90, top of head at
+                                // 1.00). A 0.85 cut sliced THROUGH the face
+                                // — chin and lower jaw ended up in the
+                                // torso bucket, only eyes+forehead made it
+                                // into the head bucket. 0.78 cuts at the
+                                // upper-neck/chest line so the entire
+                                // head (chin to top) is one slice.
 const ARM_X_HALF_FRAC = 0.22;   // |X| above this × halfWidth → arm
                                 // (was 0.30 × 2; tuned tighter so the arm
                                 // slice captures most of the outstretched
@@ -585,20 +593,14 @@ function assembleRig(tpl, weaponBuilder) {
     m.position.set(0, -piv.neckY, 0);
     headGroup.add(m); meshes.push(m);
   }
-  // Neck collar — short dark cylinder hiding the slice seam between head
-  // and torso. Same dark slate as the shoulder pads.
-  const collarMat = new THREE.MeshLambertMaterial({
-    color: 0x14161c,
-    emissive: 0x0a0b10,   // subtle self-glow so it doesn't crush to black under dusk lights
-  });
-  collarMat.userData = { restEmissive: { r: 0x0a/255, g: 0x0b/255, b: 0x10/255 } };
-  bodyMats.push(collarMat);
-  const collar = new THREE.Mesh(
-    new THREE.CylinderGeometry(0.11, 0.13, 0.07, 12),
-    collarMat,
-  );
-  collar.position.y = piv.neckY - 0.01;
-  root.add(collar); meshes.push(collar);
+  // S55x: collar removed. It was a 0.11 m radius cylinder sitting from
+  // y=neckY-0.045 to y=neckY+0.025, intended to hide the head/torso
+  // slice seam. In practice the cylinder was WIDER than the head it
+  // was decorating (CS character heads are ~0.13 m wide in normalized
+  // space; the collar reached x=±0.11 in front of the face), so it
+  // covered the lower jaw / chin / mouth on every character and was
+  // the main reason heads didn't "look like the source". The slice at
+  // neckY is a clean centroid-Y cut anyway — no gap to hide.
 
   // --- LEGS — each leg gets a Group whose pivot is at the hip joint.
   //     The mesh inside is counter-translated so its geometry stays put;

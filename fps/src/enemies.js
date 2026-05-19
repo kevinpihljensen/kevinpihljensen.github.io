@@ -2033,7 +2033,12 @@ export function updateEnemies(dt) {
         const headWorldY = e.position.y + (e.headRestY || 0);
         const dy  = (player.position.y + 1.0) - headWorldY;
         const pitch = Math.atan2(-dy, Math.max(0.5, hd));
-        const clamped = Math.max(-0.6, Math.min(0.6, pitch));
+        // S55x: clamp tightened from ±0.6 to ±0.35 rad. The head slice
+        // now anchors at upper-neck/chest height (NECK_Y_FRAC 0.85→0.78
+        // so the chin makes it into the head bucket); ±0.6 there visibly
+        // detaches the head from the shoulders. ±0.35 ≈ 20° reads as a
+        // person looking up/down without snapping the silhouette.
+        const clamped = Math.max(-0.35, Math.min(0.35, pitch));
         e.head.rotation.x = clamped;
       }
 

@@ -26,6 +26,66 @@ Format: newest entries at the top. Each entry lists what was added, what was cha
 
 ## Session log
 
+### 2026-05-19 — Session 55x (heads no longer look generic — slice + collar fix)
+
+User: "Why don't their heads look like their heads from the models I
+provided?" Inspected the GLB directly (`/tmp/inspect-glb*.mjs`) to find
+the cause. Two real bugs were stacking up:
+
+**Bug 1: the up-axis in the source GLB is Z, not Y.** Each character's
+body mesh has `Z=[0..69]` (feet at 0, head at 69), `Y=[27..42]` (depth,
+~15 units), `X=[±30]` (sides, ~60 units). The normalize pipeline already
+handles this — its "feet on the ground" heuristic correctly picks Z as
+the up-axis and rotates so Z becomes Y. So the standing pose is right.
+But the slicer's `NECK_Y_FRAC = 0.85` was set assuming "neck at 85 % of
+total height", which is correct for a real human but wrong for the CS
+models specifically. Reading the glasses-accessory position
+(`Z=61.5..62.9`) shows the EYES sit at ~0.90 of body height in this
+GLB; the CHIN is at ~0.81. A 0.85 cut sliced *through the face*: chin
+and lower jaw went into the torso bucket, only eyes + forehead made
+it into the head bucket. Looking at an enemy from the front the
+chin looked sheared off and welded onto the neck.
+
+**Bug 2: the collar cylinder was wider than the face.** Added in S55q
+to hide the head/torso slice seam, a `CylinderGeometry(0.11, 0.13,
+0.07)` sat from `y = neckY - 0.045` to `y = neckY + 0.025`. The CS
+character heads are only ~0.13 m wide in normalized space, so the
+0.11 m radius collar reached `x = ±0.11` *in front of the face*,
+covering the lower jaw / mouth / chin on every model. With the
+emissive baseline lit it was visible as a dark band where the chin
+should have been.
+
+**Fix.**
+- `NECK_Y_FRAC`: 0.85 → 0.78 — cuts at the upper-neck/chest line so
+  the entire head (chin to top of head, including any helmet/cap/
+  balaclava) ends up in the head bucket as one continuous slice.
+- Collar removed entirely. The slice is a clean centroid-Y cut, no
+  visible gap to hide — and the seam now falls at the chest line
+  hidden by the shoulders + hands, not under the chin.
+- Head-pitch clamp in `enemies.js` tightened from ±0.6 rad (≈ 34°) to
+  ±0.35 rad (≈ 20°). With the slice anchor moved down to the chest,
+  larger pitch angles would visibly detach the head from the
+  shoulders; 20° still reads as a person looking up/down at the player.
+
+**Changed**
+- `src/charmodels.js`: `NECK_Y_FRAC` 0.85 → 0.78; collar Mesh /
+  CylinderGeometry / collarMat block deleted from `assembleRig` (the
+  `bodyMats.push(collarMat)` and the mesh-add are both gone).
+- `src/enemies.js`: head pitch clamp ±0.6 → ±0.35.
+
+**Verified**
+- `node --check` clean.
+- `bash dev/test-all.sh` → ALL GREEN, MAP OK, all summary counters zero.
+
+**Known issues**
+- The `sas_chrome` and `leet glasses` accessory submeshes correctly
+  ride along the head at rest (they get the same normalization
+  transform as the body), but they're attached to root — they DON'T
+  follow the head's pitch rotation. If the chin tilt becomes
+  noticeable in play, the next step is to detect accessories whose
+  Y-centroid is above neckY and reparent them under `headGroup` with
+  matching counter-translation.
+
 ### 2026-05-19 — Session 55w (per-character self-emissive — lift sas + leet off black)
 
 After S55v shipped the 35 % baseline self-emissive, user reported sas
