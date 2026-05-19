@@ -78,26 +78,30 @@ const teles = LAYOUT.filter(e => e.t === 'teleporter');
 // ---- 1. presence: at least one teleporter ----
 ok('at least one teleporter present', teles.length > 0, `count=${teles.length}`);
 
-// ---- 2. trigger Y: each `from.y` sits at-or-just-above ground level
-//        ([0, 0.5]). A player standing on any walkable floor (open ground
-//        OR a building interior at y=0) will then overlap the trigger AABB
-//        and fire the portal. We can't groundHeightAt-check directly
-//        because a trigger INSIDE a roofed building (e.g. VAULT interior)
-//        returns the roof height — yet the player at y=0 inside still
-//        triggers it. ----
+// ---- 2. trigger Y: each `from.y` corresponds to a walkable level the
+//        player can stand on at (cx, cz). Uses a CAPPED groundHeightAt
+//        (maxY = from.y + 1.0) so it picks up the floor the player is
+//        actually standing on, not a higher roof above. Tolerance 0.5 m
+//        — enough slack for trigger AABBs anchored at ground level
+//        OR on a building rooftop OR atop the SPIRE.
 for (const e of teles) {
   const f0 = e.from;
-  ok(`teleporter ${e.id} from y=${f(f0.y)} is within ground-stand band [0, 0.5]`,
-     f0.y >= 0 && f0.y <= 0.5);
+  const g = groundHeightAt(f0.cx, f0.cz, f0.y + 1.0, R);
+  ok(`teleporter ${e.id} from y=${f(f0.y)} is on a walkable level at (${f(f0.cx)},${f(f0.cz)})`,
+     g !== null && Math.abs(g - f0.y) < 0.5,
+     `groundHeightAt(capped)=${g === null ? 'null' : f(g)}`);
 }
 
-// ---- 3. destination: each `to` lands on a real walkable surface ----
+// ---- 3. destination: each `to` lands on a real walkable surface. Uses
+//        a CAPPED groundHeightAt (maxY = to.y + 0.5) so a destination
+//        INSIDE a roofed building reads the indoor floor (y=0) rather
+//        than the rooftop above. Tolerance 0.15 m.
 for (const e of teles) {
   const t = e.to;
-  const g = groundHeightAt(t.x, t.z, BIG, R);
+  const g = groundHeightAt(t.x, t.z, t.y + 0.5, R);
   ok(`teleporter ${e.id} to (${f(t.x)},${f(t.z)},${f(t.y)}) lands on a surface`,
      g !== null && Math.abs(g - t.y) < 0.15,
-     `groundHeightAt=${g === null ? 'null' : f(g)}`);
+     `groundHeightAt(capped)=${g === null ? 'null' : f(g)}`);
 }
 
 // ---- 4. ids unique ----

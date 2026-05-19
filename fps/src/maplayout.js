@@ -470,6 +470,20 @@ export const LAYOUT = [
   { t: 'teleporter', id: 'TELE_EAST_TO_RAMPART',
     from: { cx: 55, cz: 22, y: 0, sx: 2, sy: 3, sz: 2 },
     to:   { x: -30, z:  0, y:  5, yaw: -Math.PI / 2 } },                           // EAST_TOWER approach → WEST_RAMPART top, facing west
+  // S55n: SPIRE return portal — solves the "stuck up top" problem. The
+  // TELE_SPIRE drops the player at (0,14,-17); this return portal sits
+  // at the SPIRE deck's NW corner (-1.5, 14, -18.5) which is OUTSIDE
+  // the TELE_SPIRE destination AABB, so it doesn't fire on arrival.
+  // Returns the player to the south plaza, slightly east of TELE_SPIRE's
+  // source so the loop reads as a circuit.
+  { t: 'teleporter', id: 'TELE_SPIRE_RETURN',
+    from: { cx: -1.5, cz: -18.5, y: 14, sx: 1.5, sy: 1.8, sz: 1.5 },
+    to:   { x: 10, z:   16, y:   0, yaw: 0 } },                                    // back to south plaza, facing north
+  // S55n: FOUNDRY → SOUTH_KEEP cross-map shortcut so the eastern and
+  // southern flanks share a fast lane.
+  { t: 'teleporter', id: 'TELE_FOUNDRY_TO_SOUTH',
+    from: { cx: 30, cz:  -3, y: 0, sx: 2, sy: 3, sz: 2 },
+    to:   { x: -8, z:  53, y:   0, yaw: 0 } },                                     // outside FOUNDRY SE corner → SOUTH_KEEP west flank approach
 
   // =====================================================================
   // TORCHES — wall-mounted flickering flames at every building entry.

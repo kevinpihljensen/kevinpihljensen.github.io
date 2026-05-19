@@ -26,6 +26,45 @@ Format: newest entries at the top. Each entry lists what was added, what was cha
 
 ## Session log
 
+### 2026-05-19 — Session 55n (SPIRE return portal + foundry→south shortcut + capped-groundHeightAt harness fixes)
+
+Two more teleporters + harness improvements that the new portals
+forced.
+
+**1. TELE_SPIRE_RETURN.** Solves the "stuck on top" problem of the
+TELE_SPIRE one-way leap. Trigger at the SPIRE deck's NW corner
+(-1.5, 14, -18.5) — OUTSIDE the TELE_SPIRE landing AABB so it doesn't
+fire on arrival. Destination back to the south plaza at (5, 0, 12),
+making the SPIRE round-trip a true circuit.
+
+**2. TELE_FOUNDRY_TO_SOUTH.** A second cross-map shortcut, this time
+linking the east and south flanks. Trigger outside the FOUNDRY's SE
+corner (30, 0, -3); destination at (0, 0, 47) just north of the
+SOUTH_KEEP front door. Lets a player on the east side fast-pivot all
+the way south.
+
+**3. HARNESS UPGRADE — capped groundHeightAt.** The two new portals
+exposed an over-strict pair of assertions in `harness_teleporters`:
+the trigger-Y check assumed ground level (TELE_SPIRE_RETURN is at
+y=14 on top of SPIRE — legitimate), and the destination check used an
+unbounded groundHeightAt which returns the highest walkable surface
+ABOVE the destination (so a destination INSIDE a roofed building
+returned the rooftop height, failing). Both checks now use a
+**capped** `groundHeightAt(maxY = target_y + 0.5/1.0)` so they
+correctly read the floor the player is actually standing on at that
+y level — works for ground-floor outdoor, ground-floor indoor, AND
+elevated rooftop triggers.
+
+**Verified.** Battery: 283/283 ALL GREEN (was 275/275; +8 new
+teleporter assertions for the 2 new portals). MAP OK; loop=yes;
+geomWarns=0; unreachable pickups=0; doorway drift=0; stranded
+surfaces=0.
+
+**Changed.**
+- `src/maplayout.js`: +14 lines (2 new teleporters).
+- `dev/harness_teleporters.mjs`: capped-groundHeightAt assertions
+  in checks #2 (trigger-Y) and #3 (destination on surface).
+
 ### 2026-05-19 — Session 55m (emissive window panes + 10 plaza cover crates + 4 roof health pickups)
 
 Continued polish/content batch.
