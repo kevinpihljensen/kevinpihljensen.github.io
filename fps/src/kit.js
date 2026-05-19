@@ -501,6 +501,36 @@ export function jumppad({ id, cx, cz, sx = 3, sz = 3, launchVy = 14 }) {
   registerJumpPad({ id, trigger, launchVy, mesh, texture: tex });
 }
 
+// --- GLOWPANE (emissive window panel) -------------------------------------
+// A thin flat emissive plane mesh placed in front of a wall's window
+// aperture. Suggests "lit interior" — when the player approaches a
+// building at night they see a warm rectangle of light through the slit
+// rather than black void. Pure decoration; non-collider.
+//
+// Schema for a LAYOUT entry:
+//   { t: 'glowpane', x, y, z, w, h, color?, face? }
+// (face: 'north' | 'south' | 'east' | 'west', controls plane rotation)
+export function glowpane({ x, y, z, w = 1.0, h = 0.6, color = 0xffb060, face = 'south' }) {
+  const mat = new THREE.MeshStandardMaterial({
+    color: 0x404040,
+    emissive: color,
+    emissiveIntensity: 1.8,
+    roughness: 0.6,
+    metalness: 0.0,
+    side: THREE.DoubleSide,
+  });
+  const geo = new THREE.PlaneGeometry(w, h);
+  const mesh = new THREE.Mesh(geo, mat);
+  mesh.position.set(x, y + h / 2, z);
+  if (face === 'north')      mesh.rotation.y = Math.PI;
+  else if (face === 'east')  mesh.rotation.y = -Math.PI / 2;
+  else if (face === 'west')  mesh.rotation.y = Math.PI / 2;
+  mesh.castShadow = false;
+  mesh.receiveShadow = false;
+  scene.add(mesh);
+  return mesh;
+}
+
 // --- BANNER (hanging fabric flourish) -------------------------------------
 // A flat fabric mesh hanging vertically from (or against) a structure.
 // Pure decoration — non-collider. Default size 1.4 m wide × 3.0 m tall.

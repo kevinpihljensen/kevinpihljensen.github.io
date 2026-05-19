@@ -5,7 +5,7 @@
 
 import {
   ground, platform, connectRamp, connectStairs, box, wall, overhang, perimeter, solidBox,
-  portal, jumppad, banner,
+  portal, jumppad, banner, glowpane,
 } from './kit.js';
 import { makeTorch, makeBrazier } from './torches.js';
 import { LAYOUT, wallBoxes } from './maplayout.js';
@@ -62,6 +62,9 @@ for (const e of LAYOUT) {
       break;
     case 'brazier':
       makeBrazier(e.x, e.y || 0, e.z, e.opts);
+      break;
+    case 'glowpane':
+      glowpane({ x: e.x, y: e.y || 0, z: e.z, w: e.w, h: e.h, color: e.color, face: e.face });
       break;
     default:
       console.warn('arena: unknown layout entry', e.t);

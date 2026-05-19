@@ -26,6 +26,40 @@ Format: newest entries at the top. Each entry lists what was added, what was cha
 
 ## Session log
 
+### 2026-05-19 — Session 55m (emissive window panes + 10 plaza cover crates + 4 roof health pickups)
+
+Continued polish/content batch.
+
+**1. GLOWPANES (NEW `kit.glowpane()`).** Thin emissive PlaneGeometry
+panels placed in front of building window slits. Each suggests a "lit
+interior" — when the player approaches a building at dusk they see a
+warm rectangle of light through the slit rather than a black void.
+15 panes across VAULT, FOUNDRY, BARRACKS, WATCHTOWER, SOUTH_KEEP,
+EAST_TOWER. Three color variants: warm amber (slate strongholds),
+cool blue (iron foundry/barracks), default warm (citadel-adjacent).
+
+**2. 10 PLAZA COVER CRATES** added in the gaps that opened up after
+the corner buildings went in — NE plaza (between FOUNDRY and BARRACKS,
+2), NW plaza (between citadel and WATCHTOWER, 2), SE plaza (between
+TERRACE/MARKET and EAST_TOWER, 2), SW plaza (1), far-south plaza
+(between TERRACE and SOUTH_KEEP, 2), NE far corner (1). Breaks long
+open-line-of-sight corridors that arena enemies were sprinting through
+unobstructed.
+
+**3. 4 NEW ROOF HEALTH PICKUPS** — one per new corner building's roof
+(BARRACKS, WATCHTOWER, EAST_TOWER, SOUTH_KEEP). Rewards climbing.
+
+**Verified.** Battery: 275/275 ALL GREEN (was 271/271; +4 new pickup
+ground-check assertions from harness_pickups). MAP OK; loop=yes;
+geomWarns=0; unreachable pickups=0; doorway drift=0; stranded
+surfaces=0. fps-standalone.html rebuilds clean (898 KB).
+
+**Changed.**
+- `src/maplayout.js`: +44 lines (15 glowpane entries, 10 plaza cover
+  crates, 4 health pickups).
+- `src/kit.js`: +23 lines `glowpane()`.
+- `src/arena.js`: `glowpane` entry type handled.
+
 ### 2026-05-19 — Session 55l (banners + braziers + arena spawn FX + arena population bump)
 
 Continuing the "go nuts" push.
