@@ -169,39 +169,38 @@ function collectMeshes(root) {
   return out;
 }
 
-// Classify the collected meshes by material name. Each character has:
-//   - 1 body mesh (material '<char>_skin' or similar)
-//   - 0-2 hand meshes (material 'hand_<char>' or '<char>_hands')
-//   - 0-N accessories (glasses, backpack, chrome trim, etc.)
+// Classify the collected meshes for `charName`. Each character has:
+//   - 1 body mesh (the largest non-hand mesh)
+//   - 0-2 hand meshes (material name starts with 'hand' or contains '_hand')
+//   - 0-N accessories (glasses, backpack, chrome trim, sas_chrome etc.)
+//
+// S55s: previously classified body by material-name match (`*_skin` or
+// name containing `charName`). That failed for sas, whose body material
+// is just `mat#6` and whose accessory is `sas_chrome` — the chrome
+// (which DOES contain "sas") won the body slot, and the actual body got
+// classified as accessory. Normalization then scaled the whole character
+// based on chrome's 2-unit "height" → 0.9 scale factor → giant hands.
+// Robust fix: classify hands by material name (clear pattern), then pick
+// the largest remaining mesh as body, everything else as accessory.
 function classifyMeshes(meshes, charName) {
-  const lc = charName.toLowerCase();
-  let body = null;
   const hands = [];
-  const accessories = [];
-
+  const nonHands = [];
   for (const m of meshes) {
     const mname = ((m.material && m.material.name) || '').toLowerCase();
     if (mname.startsWith('hand') || mname.endsWith('_hands') || mname.includes('_hand')) {
       hands.push(m);
-    } else if (mname.includes('skin') || mname.includes(lc)) {
-      // First skin-tagged mesh wins as the body. Subsequent skin matches
-      // (rare) go into accessories.
-      if (!body) body = m;
-      else accessories.push(m);
     } else {
-      accessories.push(m);
+      nonHands.push(m);
     }
   }
-  // Fallback: if no body identified, pick the largest mesh (most vertices).
-  if (!body && meshes.length) {
-    body = meshes.reduce((a, b) =>
-      (a.geometry.attributes.position.count >= b.geometry.attributes.position.count ? a : b));
-    // Don't double-count.
-    const i = accessories.indexOf(body);
-    if (i >= 0) accessories.splice(i, 1);
-    const j = hands.indexOf(body);
-    if (j >= 0) hands.splice(j, 1);
+  if (nonHands.length === 0) return { body: null, hands, accessories: [] };
+  let body = nonHands[0];
+  for (const m of nonHands) {
+    if (m.geometry.attributes.position.count > body.geometry.attributes.position.count) {
+      body = m;
+    }
   }
+  const accessories = nonHands.filter(m => m !== body);
   return { body, hands, accessories };
 }
 
@@ -453,20 +452,34 @@ function sliceBody(geo, p) {
 // ===========================================================================
 
 function cloneMat(src) {
-  if (!src) return new THREE.MeshStandardMaterial({ color: 0x888888 });
+  if (!src) return new THREE.MeshStandardMaterial({ color: 0xb0a890 });
   const c = src.clone();
-  // S55q: many GLTFExporter conversions (especially via Three.js's own
-  // exporter) leave `material.color` near-black, expecting the
-  // baseColorTexture to supply all color information. In glTF semantics
-  // the final shaded color is `color * map`, so color=0 produces a pitch
-  // black surface no matter what the texture contains. When a map is
-  // present, force color to white so the texture passes through clean.
+  // S55s: aggressive defensiveness against GLTFExporter-produced
+  // materials that render black:
+  //   - Force baseColor texture to SRGB color space (some converters
+  //     leave it as Linear, which gamma-encodes the texture twice and
+  //     produces a near-black surface).
+  //   - Force factor `color` to white when a map is present (factor × map
+  //     = 0 × any texture = pitch black, a common conversion artifact).
+  //   - Null out auxiliary maps (normal / metallic-roughness / emissive
+  //     / ao). These are frequently set to incorrect or broken textures
+  //     by the conversion pipeline and either tint the surface black
+  //     or make it look matte-dark.
+  //   - Set neutral metalness / roughness (0 / 0.8) so the shaded
+  //     response is plain diffuse with a small specular highlight.
+  //   - Slight emissive grey so the surface never goes pitch black even
+  //     in low-light pockets of the map.
+  if (c.map) c.map.colorSpace = THREE.SRGBColorSpace;
   if (c.color && c.map) c.color.setHex(0xffffff);
-  // Lift base lighting response: GLTFLoader defaults to roughness 1 /
-  // metalness 0 which renders flat under the dusk palette. Soften both a
-  // touch so textures pick up enough specular to read as fabric/skin.
-  if (c.metalness !== undefined) c.metalness = 0.08;
-  if (c.roughness !== undefined) c.roughness = 0.82;
+  c.normalMap = null;
+  c.metalnessMap = null;
+  c.roughnessMap = null;
+  c.emissiveMap = null;
+  c.aoMap = null;
+  if (c.metalness !== undefined) c.metalness = 0.0;
+  if (c.roughness !== undefined) c.roughness = 0.80;
+  if (c.emissive)                c.emissive.setRGB(0.06, 0.06, 0.06);
+  c.needsUpdate = true;
   return c;
 }
 
@@ -608,15 +621,31 @@ function assembleRig(tpl, weaponBuilder) {
     weaponBuilder({ parent: weaponPivot, meshes, bodyMats });
   }
 
+  // S55s: outer wrapper carrying a 180° Y rotation. The character's
+  // natural model-space forward (post-normalization) is +Z because raw
+  // low-Y (the front face) maps to new high-Z through our rotation
+  // chain. The engine's AI assumes the Three.js convention — that the
+  // model's forward is -Z — and sets `e.group.rotation.y = atan2(-dx,
+  // -dz)` to make group-local -Z point toward the player. Without
+  // accounting for this, the BACK of the model faces the player and
+  // every player-position change makes the AI rotate the model
+  // chasing-its-tail style ("spinny").
+  //
+  // Wrapping the rig (root) inside an outer Group with rotation.y = π
+  // composes the transforms correctly: AI sets outer.rotation.y; outer
+  // applies that PLUS its baked +π via the matrix chain. The inner
+  // rig's +Z (character front) ends up at outer-local -Z = world
+  // direction toward the player.
+  const outer = new THREE.Group();
+  outer.rotation.y = Math.PI;
+  outer.add(root);
+
   return {
-    group: root,
+    group: outer,
     meshes,
     head: headGroup,
     armL: armLGroup,
     armR: armRGroup,
-    // S55r: expose leg pivot groups for the walk animation. enemies.js
-    // animates these like the arm sway. legL/legR carry the sliced leg
-    // geometry; rotating around X swings each leg forward/back.
     legL: legLGroup,
     legR: legRGroup,
     bodyMats,
