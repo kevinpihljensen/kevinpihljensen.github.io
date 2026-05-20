@@ -169,7 +169,7 @@ export const RELOAD_COVER_OPEN = 0.9;    // rad: SAW top cover hinges up
 // existing CS-rig path. Flip to false to revert to the S55p CS-rig (terror).
 // The grunt operator rig is `assets/models/operator.glb`, a Claude-Design
 // export with bundled skeletal animations.
-export const USE_OPERATOR_FOR_GRUNT = true;
+export const USE_OPERATOR_FOR_GRUNT = false;
 
 // --- ENEMIES ---
 export const HIT_FLASH_TIME = 0.12;
