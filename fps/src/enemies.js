@@ -48,6 +48,8 @@ import {
   GRUNT_ATTACK_COOLDOWN, GRUNT_DAMAGE, GRUNT_AIM_WOBBLE, GRUNT_LEAD_STRENGTH,
 } from './constants.js';
 import { sfxEnemyDeath, sfxShooterFire } from './audio.js';
+import { applyEnemyTeleport } from './teleporters.js';
+import { applyEnemyJumpPad } from './jumppads.js';
 import { spawnProjectile } from './projectiles.js';
 import { damagePlayer } from './player.js';
 import { state, game } from './state.js';
@@ -1920,6 +1922,14 @@ export function updateEnemies(dt) {
         // ticks below still run (head pitch tracking, arm sway, leg cycle).
         syncEnemy(e);
       } else {
+        // S55ag: enemies use teleporters + jump pads to close on the player.
+        // Teleport snap only fires if the destination is meaningfully closer
+        // to the player (the gate inside applyEnemyTeleport). Jump-pad
+        // launch sets velocityY; gravity in stepMove integrates the arc.
+        // Both run BEFORE the AI tick so a triggered enemy uses the new
+        // position/velocity in the same frame.
+        applyEnemyTeleport(e);
+        applyEnemyJumpPad(e);
         if      (e.type === 'grunt')   gruntAI(e, dt);
         else if (e.type === 'shooter') shooterAI(e, dt);
         else if (e.type === 'heavy')   heavyAI(e, dt);

@@ -62,3 +62,26 @@ export function applyJumpPad(dt) {
   }
   return false;
 }
+
+// S55ag: enemy version. Launches the enemy upward if they walk onto a pad
+// AND they have vertical motion capability (canJump). Enemies without
+// canJump (heavy, jetpack) skip — heavy is too massive to be lobbed by the
+// pad, jetpack already controls its own altitude.
+export function applyEnemyJumpPad(enemy) {
+  if (!enemy.alive) return false;
+  if (!enemy.canJump) return false;
+  if (state.gameState !== GAME_STATE.PLAYING) return false;
+  const ex = enemy.position.x, ey = enemy.position.y, ez = enemy.position.z;
+  for (const p of pads) {
+    if (p.cooldown > 0) continue;
+    const t = p.trigger;
+    if (ex >= t.x0 && ex <= t.x1 &&
+        ey >= t.y0 && ey <= t.y1 &&
+        ez >= t.z0 && ez <= t.z1) {
+      if (enemy.velocityY < p.launchVy) enemy.velocityY = p.launchVy;
+      p.cooldown = 0.40;
+      return true;
+    }
+  }
+  return false;
+}

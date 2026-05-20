@@ -75,3 +75,42 @@ export function applyTeleport(dt) {
   }
   return false;
 }
+
+// S55ag: enemy version. Snaps the enemy to the portal destination IF the
+// destination is meaningfully closer to the player than where the enemy is
+// now. Without that gate enemies would warp themselves AWAY from the player
+// (the player could end up alone on one side of the map while every grunt
+// portals to the other). Per-portal cooldown is shared with the player —
+// enemies can't piggyback off the player's just-used portal in the same
+// 0.3 s window.
+export function applyEnemyTeleport(enemy) {
+  if (!enemy.alive) return false;
+  if (state.gameState !== GAME_STATE.PLAYING) return false;
+  const ex = enemy.position.x, ey = enemy.position.y, ez = enemy.position.z;
+  for (const p of portals) {
+    if (p.cooldown > 0) continue;
+    const t = p.trigger;
+    if (ex >= t.x0 && ex <= t.x1 &&
+        ey >= t.y0 && ey <= t.y1 &&
+        ez >= t.z0 && ez <= t.z1) {
+      const pdxNow = player.position.x - ex;
+      const pdzNow = player.position.z - ez;
+      const distNow = Math.hypot(pdxNow, pdzNow);
+      const pdxDest = player.position.x - p.to.x;
+      const pdzDest = player.position.z - p.to.z;
+      const distDest = Math.hypot(pdxDest, pdzDest);
+      // Only teleport if it's a real shortcut (≥ 6 m closer to player).
+      if (distNow - distDest < 6.0) continue;
+      enemy.position.set(p.to.x, p.to.y, p.to.z);
+      enemy.velocityY = 0;
+      // Drop any cross-floor nav latch so the enemy re-plans from the new
+      // location next tick.
+      enemy.navRamp = -1;
+      enemy.navActive = false;
+      enemy.doorwayIdx = -1;
+      p.cooldown = 0.30;
+      return true;
+    }
+  }
+  return false;
+}
