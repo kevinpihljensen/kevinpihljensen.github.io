@@ -26,6 +26,66 @@ Format: newest entries at the top. Each entry lists what was added, what was cha
 
 ## Session log
 
+### 2026-05-20 — Session 55ai (new enemy class: rocketeer)
+
+User requested a new opponent type with a rocket launcher, using one of
+the two reserve CS skins. Chose **guerilla** (gsg9 left unused for now)
+— RPG-7-toting insurgent reads natural.
+
+**Rocketeer design**
+- HP 90, speed 2.4 (slower than shooter, faster than heavy), radius
+  0.40, score 350, contactDmg 0 (ranged-only).
+- Range band 18–45 m; max engage 55 m; long 3.2 s cooldown between
+  shots (single-load RPG feel).
+- Fires a slow 28 m/s rocket (vs the rifle bullet's 52 m/s) that
+  EXPLODES on any hit (player / AABB / ramp surface): 50 direct + 35
+  peak AoE damage with linear falloff inside ROCKET_EXPLODE_RADIUS
+  (4.5 m). Lead strength 0.65, wobble 0.025 rad; aim biased 0.45 m
+  below the visible target so the rocket lands at the feet for
+  splash even when the direct hit misses.
+- Counterplay: keep moving. A stationary rocketeer at 40 m is a
+  threat; a moving player at 40 m can dodge.
+
+**Files touched**
+- `src/constants.js` — `ENEMY_DEFS.rocketeer` def implied via comment
+  (def lives in enemies.js), `ROCKETEER_*` block, `ROCKET_*` block,
+  `ARENA_ENEMY_MIX.rocketeer = 1`, every `WAVE_TABLE` entry gains
+  `rocketeers` count (waves 4–10 get 1–3).
+- `src/projectiles.js` — `spawnRocket(ox,oy,oz,dx,dy,dz)` adds a
+  capsule mesh oriented along velocity; projectile struct now carries
+  a `kind` and a per-shot `damage` + radius. New `rocketExplode()`
+  + `_flashes` pool for the expanding emissive sphere visual.
+  `updateProjectiles` checks kind on every hit type (player / AABB /
+  surface / lifetime expiry) — rockets airburst even on overshoot.
+  `clearProjectiles` also wipes any active flash so a mode-switch
+  doesn't leave a half-faded fireball in the new scene.
+- `src/enemies.js` — `ENEMY_DEFS.rocketeer` + MODEL_BUILDERS fallback
+  + CHAR_FOR_TYPE='guerilla' + WEAPON_FOR_TYPE=buildRocketLauncher.
+  New `rocketeerAI` / `rocketeerCombatTick` / `rocketeerFire`
+  (mirrors the shooter pattern but with the wider range band and the
+  feet-bias aim). Dispatch added to `updateEnemies`.
+- `src/charmodels.js` — `'guerilla'` added to CHARACTERS so the
+  template loads alongside the four existing characters at boot. New
+  `buildRocketLauncher()` (olive tube + warhead cone + rear bell +
+  sight + grip) — the visible weapon model.
+- `src/wave.js` — `startWave` spec includes `rocketeer`; Map Test
+  lineup widened from 4 enemies to 5 (spacing bumped to 3 m so the
+  new character fits in the row).
+
+**Verified**: `node --check` clean across every modified module;
+`dev/test-all.sh` ALL GREEN (existing harnesses don't cover enemy
+classes specifically; the AI / projectile / pickup paths the rocketeer
+shares are still fully exercised).
+
+**Known issues**
+- Rocketeers fire even at very close range. Self-AoE on direct hit at
+  3 m means a rocketeer cornered by the player can suicide-detonate.
+  Acceptable for now — gives close approach a real reward.
+- No dedicated harness for rocketeer fire / explode behaviour. AoE
+  damage is symmetric with the grenade's, which IS covered by
+  observation rather than a harness; if behaviour drifts the user
+  will see it.
+
 ### 2026-05-20 — Session 55ah (operator grunt skin — opt-in alternate GLB)
 
 User uploaded a rigged operator model authored in Claude Design and asked

@@ -16,7 +16,7 @@ import { scene } from './scene.js';
 import { shootables, staticAABBs, collideCapsule, groundHeightAt, lineOfSight, rampLinks } from './collision.js';
 import { player } from './state.js';
 import { DOORWAYS, ENEMY_SPAWN_POINTS } from './maplayout.js';
-import { buildCharacterRig, hasCharacter, buildSimpleRifle, buildHeavyWeapon } from './charmodels.js';
+import { buildCharacterRig, hasCharacter, buildSimpleRifle, buildHeavyWeapon, buildRocketLauncher } from './charmodels.js';
 import { buildOperatorRig, hasOperator } from './operatorskin.js';
 import {
   HIT_FLASH_TIME, DEATH_ANIM_TIME,
@@ -48,11 +48,14 @@ import {
   GRUNT_FIRE_RANGE, GRUNT_DIST_MIN, GRUNT_DIST_MAX,
   GRUNT_ATTACK_COOLDOWN, GRUNT_DAMAGE, GRUNT_AIM_WOBBLE, GRUNT_LEAD_STRENGTH,
   USE_OPERATOR_FOR_GRUNT,
+  ROCKETEER_FIRE_RANGE, ROCKETEER_DIST_MIN, ROCKETEER_DIST_MAX,
+  ROCKETEER_ATTACK_COOLDOWN, ROCKETEER_AIM_WOBBLE, ROCKETEER_LEAD_STRENGTH,
+  ROCKETEER_AIM_Y_OFFSET,
 } from './constants.js';
 import { sfxEnemyDeath, sfxShooterFire } from './audio.js';
 import { applyEnemyTeleport } from './teleporters.js';
 import { applyEnemyJumpPad } from './jumppads.js';
-import { spawnProjectile } from './projectiles.js';
+import { spawnProjectile, spawnRocket } from './projectiles.js';
 import { damagePlayer } from './player.js';
 import { state, game } from './state.js';
 import { GAME_STATE } from './constants.js';
@@ -92,6 +95,13 @@ export const ENEMY_DEFS = {
   jetpack: {
     hp: 35, speed: 4.2, radius: 0.42, score: 220, contactDmg: 0,
     fatigue: 0x2c4a6b, gear: 0x14181f, accent: 0x3a5a82, skin: 0xc99a73,
+  },
+  // S55ai: long-range RPG-toting threat. Stays back, single-shot fires
+  // a slow but high-damage rocket with AoE on impact. HP between shooter
+  // and heavy — fragile-ish but patient. contactDmg=0 (ranged only).
+  rocketeer: {
+    hp: 90, speed: 2.4, radius: 0.40, score: 350, contactDmg: 0,
+    fatigue: 0x3a3022, gear: 0x1a140a, accent: 0x4a3a18, skin: 0xc99a73,
   },
 };
 
@@ -649,6 +659,9 @@ const MODEL_BUILDERS = {
   shooter: buildShooterModel,
   heavy: buildHeavyModel,
   jetpack: buildJetpackModel,
+  // S55ai: rocketeer falls back to the shooter procedural model when the
+  // GLB hasn't loaded. The CS-rig path (guerilla skin) is the real visual.
+  rocketeer: buildShooterModel,
 };
 
 // S55p: per-enemy-class character mapping into the loaded player models.
@@ -657,16 +670,18 @@ const MODEL_BUILDERS = {
 // the GLB hasn't loaded yet (race at game start, or load failure), the
 // per-class procedural builder above is the fallback.
 const CHAR_FOR_TYPE = {
-  grunt:   'terror',
-  shooter: 'sas',
-  heavy:   'urban',
-  jetpack: 'leet',
+  grunt:     'terror',
+  shooter:   'sas',
+  heavy:     'urban',
+  jetpack:   'leet',
+  rocketeer: 'guerilla',
 };
 const WEAPON_FOR_TYPE = {
-  grunt:   buildSimpleRifle,
-  shooter: buildSimpleRifle,
-  heavy:   buildHeavyWeapon,
-  jetpack: buildSimpleRifle,
+  grunt:     buildSimpleRifle,
+  shooter:   buildSimpleRifle,
+  heavy:     buildHeavyWeapon,
+  jetpack:   buildSimpleRifle,
+  rocketeer: buildRocketLauncher,
 };
 
 export function makeEnemy(type, x, z) {
@@ -1595,6 +1610,100 @@ function shooterFire(enemy) {
   sfxShooterFire(ox, oy, oz);   // S55: positional fire at the muzzle
 }
 
+// --- ROCKETEER (S55ai) -------------------------------------------------
+// Long-range RPG threat. Hangs back in the ROCKETEER_DIST band; if too
+// close, retreats. If too far, closes. Fires a slow rocket on a long
+// cooldown — counterplay is mobility (the rocket flies at 28 m/s vs the
+// rifle bullet's 52, so a moving target can dodge). Aim biased slightly
+// LOW so the rocket lands at the player's feet for splash damage even
+// if direct hit misses.
+function rocketeerAI(enemy, dt) {
+  const dist = toPlayer(enemy);
+  faceAndCool(enemy, dt);
+  const sees = canSeePlayer(enemy);
+  updateLastSeen(enemy, sees, dt);
+  updateDoorwayLatch(enemy, sees, dist);
+  const spd = enemy.def.speed;
+
+  tick(enemy, 'aiTimer', dt);
+  maybeFlipStrafe(enemy, dt);
+
+  if (enemy.backoffTimer > 0) {
+    enemy.backoffTimer -= dt;
+    const s = enemy.unstickSign;
+    stepMove(enemy, (-_vec.x * 0.7 + (-_vec.z) * s * 0.6) * spd,
+                     (-_vec.z * 0.7 + ( _vec.x) * s * 0.6) * spd, dt);
+    enemy.hadLOS = false;
+    return;
+  }
+  if (enemy.unstickTimer > 0) {
+    enemy.unstickTimer -= dt;
+    const s = enemy.unstickSign;
+    stepMove(enemy, (-_vec.z * s * 0.9 + _vec.x * 0.35) * spd,
+                     ( _vec.x * s * 0.9 + _vec.z * 0.35) * spd, dt);
+    enemy.hadLOS = false;
+    return;
+  }
+  if (enemy.navActive) {
+    stepMove(enemy, _vec.x * spd, _vec.z * spd, dt);
+    if (sees) rocketeerCombatTick(enemy, dist);
+    else      enemy.hadLOS = false;
+    return;
+  }
+  if (!sees) {
+    const s = enemy.flankSign;
+    const vx = (_vec.x * 0.55 + (-_vec.z) * s * 0.75) * spd;
+    const vz = (_vec.z * 0.55 + ( _vec.x) * s * 0.75) * spd;
+    stepMove(enemy, vx, vz, dt);
+    enemy.hadLOS = false;
+    return;
+  }
+
+  // LOS: hold the rocketeer range band — wider than shooter, biased far.
+  // Strafe gently while reloading. If too close, retreat; if too far, close.
+  let approach = 0;
+  if      (dist > ROCKETEER_DIST_MAX) approach =  1;
+  else if (dist < ROCKETEER_DIST_MIN) approach = -1;
+  const sv = strafeVelocity(enemy, spd * 0.5);
+  const vx = sv.x + _vec.x * spd * 0.6 * approach;
+  const vz = sv.z + _vec.z * spd * 0.6 * approach;
+  stepMove(enemy, vx, vz, dt);
+
+  rocketeerCombatTick(enemy, dist);
+}
+
+function rocketeerCombatTick(enemy, dist) {
+  enemy.hadLOS = true;
+  if (dist > ROCKETEER_FIRE_RANGE) return;
+  if (enemy.attackCooldown > 0 || !player.alive) return;
+  rocketeerFire(enemy);
+  enemy.attackCooldown = ROCKETEER_ATTACK_COOLDOWN;
+}
+
+function rocketeerFire(enemy) {
+  const ox = enemy.position.x;
+  const oy = enemy.position.y + SHOOTER_MUZZLE_Y;
+  const oz = enemy.position.z;
+  // Bias aim downward by ROCKETEER_AIM_Y_OFFSET so the rocket lands at
+  // the player's feet instead of arrowing through the chest and
+  // exploding far behind them — feet-splash is the real threat model.
+  const losY = enemy._losAimY != null ? enemy._losAimY : (player.isCrouching ? 0.8 : 1.0);
+  const aimY = losY + ROCKETEER_AIM_Y_OFFSET;
+  const dir = leadAim(ox, oy, oz, aimY, ROCKETEER_LEAD_STRENGTH);
+  // Per-shot wobble — small because the AoE compensates.
+  const wob = ROCKETEER_AIM_WOBBLE;
+  const yawErr   = (Math.random() - 0.5) * 2 * wob;
+  const pitchErr = (Math.random() - 0.5) * 2 * wob;
+  const cyaw = Math.cos(yawErr), syaw = Math.sin(yawErr);
+  let dx = dir.x * cyaw - dir.z * syaw;
+  let dz = dir.x * syaw + dir.z * cyaw;
+  let dy = dir.y + pitchErr;
+  const len = Math.hypot(dx, dy, dz) || 1;
+  dx /= len; dy /= len; dz /= len;
+  spawnRocket(ox, oy, oz, dx, dy, dz);
+  sfxShooterFire(ox, oy, oz);
+}
+
 // --- HEAVY --------------------------------------------------------------
 // Walking minigun platform. Behavior:
 //   * Out of fire range / no LOS → advance (and arc around cover)
@@ -1945,10 +2054,11 @@ export function updateEnemies(dt) {
         // position/velocity in the same frame.
         applyEnemyTeleport(e);
         applyEnemyJumpPad(e);
-        if      (e.type === 'grunt')   gruntAI(e, dt);
-        else if (e.type === 'shooter') shooterAI(e, dt);
-        else if (e.type === 'heavy')   heavyAI(e, dt);
-        else if (e.type === 'jetpack') jetpackAI(e, dt);
+        if      (e.type === 'grunt')     gruntAI(e, dt);
+        else if (e.type === 'shooter')   shooterAI(e, dt);
+        else if (e.type === 'heavy')     heavyAI(e, dt);
+        else if (e.type === 'jetpack')   jetpackAI(e, dt);
+        else if (e.type === 'rocketeer') rocketeerAI(e, dt);
         syncEnemy(e);
       }
 

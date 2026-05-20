@@ -315,16 +315,16 @@ export const HEALTH_COLOR_LOW  = '#ef4444';
 //   waves 9–10: 4 jetpacks
 export const WAVE_TABLE = [
   null,
-  { grunts:  3, shooters: 0, heavies: 0, jetpacks: 0 }, // 1
-  { grunts:  5, shooters: 0, heavies: 0, jetpacks: 0 }, // 2
-  { grunts:  4, shooters: 2, heavies: 0, jetpacks: 1 }, // 3
-  { grunts:  6, shooters: 2, heavies: 0, jetpacks: 1 }, // 4
-  { grunts:  5, shooters: 3, heavies: 1, jetpacks: 2 }, // 5
-  { grunts:  7, shooters: 3, heavies: 1, jetpacks: 2 }, // 6
-  { grunts:  6, shooters: 4, heavies: 2, jetpacks: 3 }, // 7
-  { grunts:  8, shooters: 4, heavies: 2, jetpacks: 3 }, // 8
-  { grunts:  7, shooters: 5, heavies: 3, jetpacks: 4 }, // 9
-  { grunts: 10, shooters: 5, heavies: 4, jetpacks: 4 }, // 10
+  { grunts:  3, shooters: 0, heavies: 0, jetpacks: 0, rocketeers: 0 }, // 1
+  { grunts:  5, shooters: 0, heavies: 0, jetpacks: 0, rocketeers: 0 }, // 2
+  { grunts:  4, shooters: 2, heavies: 0, jetpacks: 1, rocketeers: 0 }, // 3
+  { grunts:  6, shooters: 2, heavies: 0, jetpacks: 1, rocketeers: 1 }, // 4
+  { grunts:  5, shooters: 3, heavies: 1, jetpacks: 2, rocketeers: 1 }, // 5
+  { grunts:  7, shooters: 3, heavies: 1, jetpacks: 2, rocketeers: 1 }, // 6
+  { grunts:  6, shooters: 4, heavies: 2, jetpacks: 3, rocketeers: 2 }, // 7
+  { grunts:  8, shooters: 4, heavies: 2, jetpacks: 3, rocketeers: 2 }, // 8
+  { grunts:  7, shooters: 5, heavies: 3, jetpacks: 4, rocketeers: 2 }, // 9
+  { grunts: 10, shooters: 5, heavies: 4, jetpacks: 4, rocketeers: 3 }, // 10
 ];
 export const MAX_WAVE = 10;
 export const BREAK_DURATION = 5.0;
@@ -413,7 +413,31 @@ export const SPAWN_RADIUS = 36;
 export const ARENA_ENEMY_POPULATION = 7;
 export const ARENA_ENEMY_RESPAWN_DELAY = 1.7;   // seconds from kill to replacement
 export const ARENA_PLAYER_RESPAWN_DELAY = 1.0;  // seconds player stays dead before respawn
-export const ARENA_ENEMY_MIX = { grunt: 3, shooter: 2, heavy: 1, jetpack: 1 };
+export const ARENA_ENEMY_MIX = { grunt: 3, shooter: 2, heavy: 1, jetpack: 1, rocketeer: 1 };
+
+// --- ROCKETEER (S55ai) ---
+// New long-range threat carrying a single-shot RPG. Slow, fragile-ish but
+// patient. Hangs back near max range; if the player stays in the open the
+// rocket arrives with a 50-damage direct hit + 35-damage AoE around the
+// splash. Slow projectile (28 m/s vs the 52 m/s rifle bullet) so a player
+// who keeps moving can dodge — counterplay = mobility.
+export const ROCKETEER_FIRE_RANGE = 55.0;
+export const ROCKETEER_DIST_MIN = 18.0;    // backs away below this to keep distance
+export const ROCKETEER_DIST_MAX = 45.0;    // pushes toward player above this
+export const ROCKETEER_ATTACK_COOLDOWN = 3.2;
+export const ROCKETEER_DAMAGE = 50;        // direct-hit damage (player taking rocket to the face)
+export const ROCKETEER_AIM_WOBBLE = 0.025; // very accurate — but slow rocket lets you dodge
+export const ROCKETEER_LEAD_STRENGTH = 0.65;
+// Aim slightly LOW so the rocket lands at the player's feet for splash
+// (instead of arrowing through their chest and exploding behind them).
+export const ROCKETEER_AIM_Y_OFFSET = -0.45;
+
+// Rocket projectile.
+export const ROCKET_SPEED = 28.0;
+export const ROCKET_LIFETIME = 4.5;        // 28*4.5 = 126 m — covers the map diagonal
+export const ROCKET_EXPLODE_RADIUS = 4.5;  // AoE radius around impact
+export const ROCKET_EXPLODE_DAMAGE = 35;   // peak AoE damage at centre, linear falloff
+export const ROCKET_RADIUS = 0.16;         // hit radius (vs player + walls)
 
 // --- HUD POLISH ---
 export const HIT_MARKER_TIME = 0.18;

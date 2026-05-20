@@ -27,10 +27,11 @@ export function startWave(n) {
   resetSpawnMemory();   // fresh fan-out spacing per wave
   const table = WAVE_TABLE[n];
   const spec = [
-    { type: 'grunt',   count: table.grunts   },
-    { type: 'shooter', count: table.shooters },
-    { type: 'heavy',   count: table.heavies  },
-    { type: 'jetpack', count: table.jetpacks || 0 },
+    { type: 'grunt',     count: table.grunts   },
+    { type: 'shooter',   count: table.shooters },
+    { type: 'heavy',     count: table.heavies  },
+    { type: 'jetpack',   count: table.jetpacks   || 0 },
+    { type: 'rocketeer', count: table.rocketeers || 0 },
   ];
   let total = 0;
   for (let i = 0; i < spec.length; i++) {
@@ -102,10 +103,11 @@ export function resetGame() {
 const MAPTEST_LINEUP = [
   // Lined up along the X axis a few metres north of SPAWN (which is at z=6).
   // All face -Z (toward the player, since spawn looks toward -Z by default).
-  { type: 'grunt',   x: -4.5, z: -1 },
-  { type: 'shooter', x: -1.5, z: -1 },
-  { type: 'heavy',   x:  1.5, z: -1 },
-  { type: 'jetpack', x:  4.5, z: -1 },
+  { type: 'grunt',     x: -6.0, z: -1 },
+  { type: 'shooter',   x: -3.0, z: -1 },
+  { type: 'heavy',     x:  0.0, z: -1 },
+  { type: 'jetpack',   x:  3.0, z: -1 },
+  { type: 'rocketeer', x:  6.0, z: -1 },
 ];
 
 export function startMapTest() {

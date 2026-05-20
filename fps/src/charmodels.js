@@ -39,7 +39,9 @@ import { scene } from './scene.js';
 
 const ASSET_URL = 'assets/models/players.glb';
 const TARGET_HEIGHT = 1.8;     // meters — the engine's standard enemy height
-const CHARACTERS = ['urban', 'sas', 'terror', 'leet'];
+// S55ai: 'guerilla' added for the new rocketeer enemy class. The 5th
+// character template loads alongside the other four at boot.
+const CHARACTERS = ['urban', 'sas', 'terror', 'leet', 'guerilla'];
 
 // Slice thresholds, as fractions of TARGET_HEIGHT or body half-width.
 const HIP_Y_FRAC      = 0.48;   // anything below this Y → leg
@@ -853,4 +855,38 @@ export function buildHeavyWeapon({ parent, meshes, bodyMats }) {
   parent.add(grp);
   meshes.push(recv, bar1, bar2, stk);
   bodyMats.push(RIFLE_MAT_BODY, RIFLE_MAT_WOOD, RIFLE_MAT_BARREL);
+}
+
+// S55ai: shoulder-fired rocket launcher. Long olive tube + a bulged
+// warhead nose poking out the front + a rear flared bell + a stubby
+// sight on top. Reads as RPG-7 from any angle. Sized for the same hand
+// hold point as the other weapons so the CS rig's hand-centroid still
+// lines up.
+const ROCKET_MAT_TUBE = new THREE.MeshStandardMaterial({ color: 0x4a5a3a, roughness: 0.55, metalness: 0.35 });
+const ROCKET_MAT_HEAD = new THREE.MeshStandardMaterial({ color: 0x2a1a14, roughness: 0.60, metalness: 0.25 });
+const ROCKET_MAT_SIGHT = new THREE.MeshStandardMaterial({ color: 0x14181c, roughness: 0.45, metalness: 0.65 });
+export function buildRocketLauncher({ parent, meshes, bodyMats }) {
+  const grp = new THREE.Group();
+  // Main tube — long, lying along -Z (forward).
+  const tube = new THREE.Mesh(new THREE.CylinderGeometry(0.045, 0.045, 0.72, 12), ROCKET_MAT_TUBE);
+  tube.rotation.x = Math.PI / 2;
+  tube.position.set(0, 0, -0.10);
+  // Warhead bulge poking out the front of the tube.
+  const head = new THREE.Mesh(new THREE.ConeGeometry(0.075, 0.18, 12), ROCKET_MAT_HEAD);
+  head.rotation.x = -Math.PI / 2;
+  head.position.set(0, 0, -0.55);
+  // Rear flared bell (back-blast cone).
+  const bell = new THREE.Mesh(new THREE.CylinderGeometry(0.055, 0.080, 0.10, 12), ROCKET_MAT_TUBE);
+  bell.rotation.x = Math.PI / 2;
+  bell.position.set(0, 0, 0.28);
+  // Stubby sight on top of the tube.
+  const sight = new THREE.Mesh(new THREE.BoxGeometry(0.04, 0.06, 0.10), ROCKET_MAT_SIGHT);
+  sight.position.set(0, 0.075, -0.05);
+  // Trigger grip below.
+  const grip = new THREE.Mesh(new THREE.BoxGeometry(0.04, 0.10, 0.06), ROCKET_MAT_SIGHT);
+  grip.position.set(0, -0.075, 0.04);
+  grp.add(tube, head, bell, sight, grip);
+  parent.add(grp);
+  meshes.push(tube, head, bell, sight, grip);
+  bodyMats.push(ROCKET_MAT_TUBE, ROCKET_MAT_HEAD, ROCKET_MAT_SIGHT);
 }
