@@ -26,6 +26,136 @@ Format: newest entries at the top. Each entry lists what was added, what was cha
 
 ## Session log
 
+### 2026-05-20 — Sessions 55ab–55ag (big QoL pass)
+
+Single user-driven batch covering: kill fog, drop the beige window
+glowpanes, daylight sky with sun + clouds, Map Test inspection lineup,
+no more grunt-hugging push (grunt is now a pistolier), stair-top
+unstuck, throwable grenade pickup + AoE, sniper scope crosshair clipped
+to the lens + a second tighter zoom, and AI use of teleporters +
+jump pads. Six separate commits (S55ab–S55ag) for review granularity;
+this single changelog entry covers the lot.
+
+**S55ab — bright sky, no fog, no window glowpanes.** scene.js gets a
+new makeSkyTexture (512×1024 canvas: blue-to-warm gradient + sun disc
+with radial halo at upper-right + 8 layered cloud streaks via seeded
+deterministic noise so the sky is identical across reloads). THREE.Fog
+removed. Lighting palette shifted from dusk to daylight (cool sky / warm
+ground hemisphere, brighter ambient, sun lifted to high oblique).
+maplayout.js GLOWPANES block (~20 emissive plane decals in window
+slits) deleted — they read as floating beige rectangles when seen from
+outside.
+
+**S55ac — Map Test inspection lineup.** wave.js startMapTest now spawns
+one of each character (grunt / shooter / heavy / jetpack) in a row at
+z=-1, spaced 3 m apart, all marked passive. enemies.js gains a `passive`
+flag on the enemy struct; updateEnemies skips the per-type AI dispatch
+and the wedge-detection block for passives but still runs animation
+ticks (head tracking, arm sway, leg cycle, hit-flash) so the models
+read as alive. Existing wave-clear gate (gameMode !== 'maptest') keeps
+the game from ending if you kill one.
+
+**S55ad — no more grunt push; grunt pistol; stair-top unstuck.** Three
+related fixes bundled:
+
+  Player push: `player.js` enemy-radius push loop deleted. Enemies no
+  longer collide with the player capsule at all — they can occupy the
+  same space; the grunt's new pistol replaces the old contact pressure.
+
+  Grunt → low-damage pistolier: the grunt knife-swipe never worked
+  after the CS-rig swap because the new rigs have no knifePivot, so
+  swipes whiffed and grunts just hugged you. New `GRUNT_FIRE_RANGE /
+  DIST_MIN / DIST_MAX / ATTACK_COOLDOWN / DAMAGE / AIM_WOBBLE /
+  LEAD_STRENGTH` constants. gruntAI rewritten as a short-range shooter:
+  holds 6–14 m, strafes, fires every 1.1 s with 0.045 rad wobble and
+  0.55 lead (shooter is 0.92). Damage 4 (vs shooter 8) so grunts feel
+  like chip-damage threats. spawnProjectile gains an optional `damage`
+  arg defaulting to PROJECTILE_DAMAGE; projectiles use that on player
+  hit. tryMeleeContact grunt branch removed; updateGruntSwipe call
+  removed; grunt def contactDmg → 0.
+
+  Stair-top unstuck: collision.js now precomputes a `rampHiY` in
+  collideCapsule (the hiY of the ramp directly under the feet, if any)
+  and passes it as ctx.rampHiY to resolveBodyHoriz. A walkable box
+  whose maxY matches that rampHiY (within 5 cm) skips its horizontal
+  push, letting the player walk straight onto the deck instead of
+  pinning at the last 12 cm of climb. An earlier naive variant (skip
+  whenever maxY <= feetY+STEP_UP, no ramp gate) broke the duck-jump
+  ceiling — cover-box mechanics on flat ground are now untouched.
+
+**S55ae — throwable grenade with AoE damage.** New module
+`src/grenades.js` (about 200 lines): spawnGrenade gives a dark sphere
+with velocity + GRENADE_FUSE; updateGrenades integrates gravity,
+ground-snap and ground-friction settle, AABB bounce with shallowest-
+face axis pick, fuse countdown. detonate spawns an expanding emissive
+flash sphere that fades over 0.45 s, and damages every enemy + the
+player inside GRENADE_RADIUS = 6 m with linear falloff. Player self-
+damage scaled by GRENADE_SELF_DAMAGE_MULT (0.6). G key throws (input.js
+`tryThrowGrenade`), consumes one grenade, sets a cooldown so mashing
+the key doesn't dump the inventory in one frame. Pickup kind
+`'grenade'` added to pickups.js (olive sphere + brass torus pin), 4
+placements added to maplayout PICKUPS. New HUD row "[G] GRENADES <n>"
+in index.html, dimmed when empty.
+
+**S55af — sniper scope: crosshair clipped to lens + 2nd zoom stage.**
+The CSS reticle-h / reticle-v lines were spanning the whole viewport
+because they used left:0/right:0/top:0/bottom:0. Replaced with
+centred + diameter-sized via a new --lens-r CSS variable that the
+gradient lens, the horizontal line, and the vertical line all reference.
+Stage 2 zoom: new SCOPE_FOV_2 = 10 (vs SCOPE_FOV = 25). player gains
+`scopeLevel` (0/1/2); player.js picks the FOV per level; weapons.js
+toggleScope now cycles 0→1→2→0 instead of bool flip. hud.js updates
+--lens-r (smaller at stage 2) and the magnification tag ("3×" → "7.5×")
+in updateHUD.
+
+**S55ag — enemies use teleporters + jump pads.** teleporters.js gains
+`applyEnemyTeleport(enemy)` which snaps an enemy that overlaps a portal
+trigger IFF the destination is at least 6 m closer to the player —
+without that gate enemies could portal AWAY from the player. jumppads.js
+gains `applyEnemyJumpPad(enemy)` which sets velocityY for grunt /
+shooter (canJump types) when they walk onto a pad. Heavy + jetpack
+skip — heavy is too massive, jetpack runs its own altitude. enemies.js
+updateEnemies runs both helpers BEFORE the per-frame AI dispatch for
+each live non-passive enemy, so a teleported / launched enemy
+re-plans from the new state in the same frame.
+
+**Changed (files)**
+- `src/scene.js` — sky + lighting palette, no fog
+- `src/maplayout.js` — glowpanes removed; 4 grenade pickups added
+- `src/state.js` — player.grenades, .grenadeCooldown, .scopeLevel
+- `src/constants.js` — GRUNT_*, GRENADE_*, SCOPE_FOV_2
+- `src/enemies.js` — gruntAI rewrite, passive flag, teleport/jumppad
+  triggers, grunt-swipe removed, grunt contactDmg=0
+- `src/projectiles.js` — per-projectile damage param
+- `src/player.js` — enemy-push loop removed, FOV by scopeLevel, reset
+  fields
+- `src/collision.js` — rampHiY ctx for stair-top unstuck
+- `src/wave.js` — passive Map Test lineup; clearGrenades on resets
+- `src/weapons.js` — toggleScope cycles 0→1→2→0; setScopeLevel
+- `src/input.js` — G key throws grenade
+- `src/main.js` — updateGrenades + cooldown tick
+- `src/pickups.js` — `grenade` kind
+- `src/hud.js` — grenade row, scope --lens-r + zoom tag
+- `src/teleporters.js` — applyEnemyTeleport
+- `src/jumppads.js` — applyEnemyJumpPad
+- `src/grenades.js` — NEW
+- `index.html` — grenade HUD row, scope CSS with --lens-r,
+  zoom-tag element
+
+**Verified**: dev/test-all.sh ALL GREEN at each of the six commits.
+Pickups harness assertion count went 48 → 52 with the new grenade
+pickups; all other counters unchanged. MAP OK.
+
+**Known issues**
+- Grenade self-damage is uncapped against jetpack-spawn collisions: a
+  grenade lobbed straight up while a jetpack flies through the
+  explosion will damage both. Acceptable.
+- Enemy teleporter use is reactive (they only use a portal they happen
+  to walk into); no path-planner bias yet.
+- Stair-top unstuck is robust for the 5 cm equality between deck.maxY
+  and ramp.hiY in our map, but a deck whose maxY drifts from its
+  serving ramp by more than that 5 cm would still pin. None do today.
+
 ### 2026-05-19 — Session 55aa (head facing — bake 180° Y rotation into head geometry)
 
 User: "Heads need to be twisted 180° — heads are facing backwards."
