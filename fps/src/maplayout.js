@@ -821,32 +821,26 @@ export const LAYOUT = [
   // disappears. Each slab avoids HILLTOP / SPIRE / CATWALK_HE airspace
   // so the high-elevation combat zone stays a true rooftop encounter.
   // =====================================================================
-  // CEILING_CENTRAL_S — spawn plaza + S ramp approach. Covers x=[-12,12],
-  // z=[-7,15]. Vertical: y=6.5-6.9. The citadel S parapet wall at z=-7
-  // tops out at y=5.6, so we abut the wall in plan but have 0.9 m of
-  // vertical separation from it.
-  { t: 'wall', axis: 'x', cx: 0, cz: 4, length: 24, height: 0.4, thick: 22,
-    base: 6.5, mat: 'slate' },
-  // CEILING_CENTRAL_N — north alley between citadel (z up to -7) and the
-  // VAULT (z=-39 down). Covers x=[-9,9], z=[-37,-27]. Sits in the slot
-  // between citadel north stair landing and the N anchor spawn box.
-  { t: 'wall', axis: 'x', cx: 0, cz: -32, length: 18, height: 0.4, thick: 10,
-    base: 6.5, mat: 'slate' },
-  // CEILING_EAST — alley between CITADEL east face and FOUNDRY west face.
-  // Covers x=[8,14], z=[-11,11].
-  { t: 'wall', axis: 'x', cx: 11, cz: 0, length: 6, height: 0.4, thick: 22,
-    base: 6.5, mat: 'iron' },
-  // CEILING_WEST — alley between CITADEL west face / BRIDGE_W underbelly
-  // and the COLONNADE rampart. Covers x=[-26,-8], z=[-2,12]. North half
-  // is omitted to leave the W stair landing area (z=-15..-7) uncovered
-  // — that's where the citadel internal W stair drops.
-  { t: 'wall', axis: 'x', cx: -17, cz: 5, length: 18, height: 0.4, thick: 14,
-    base: 6.5, mat: 'sandstone' },
-  // CEILING_SOUTH — between spawn area and TERRACE deck. Covers
-  // x=[-11,11], z=[15,23] (terrace begins at z=25 with parapet, so we
-  // stop 2 m short).
-  { t: 'wall', axis: 'x', cx: 0, cz: 19, length: 22, height: 0.4, thick: 8,
-    base: 6.5, mat: 'sandstone' },
+  // S55an: ceiling slabs converted from `wall` entries to walkable `box`
+  // entries flagged `ceiling: true`. The wall builder always set noWalk
+  // — that meant groundHeightAt skipped the slab tops, so a player who
+  // got above them (rocket-jump, drop from HILLTOP / CATWALK_HE) fell
+  // straight through. Boxes are walkable by default; the `ceiling: true`
+  // flag tells mapviz to exclude these tops from the BFS so they don't
+  // count as "stranded surfaces" (they're intentionally unreachable by
+  // normal step-up). Texture unified to 'slate' per user request. Base
+  // raised 6.5 → 6.8 so the overlap-vs-WEST_RAMPART (y=5) gap clears
+  // STAND+epsilon (1.75 m).
+  // CEILING_CENTRAL_S — spawn plaza + S ramp approach. x=[-12,12], z=[-7,15].
+  { t: 'box', cx: 0, cz: 4, sx: 24, sy: 0.4, sz: 22, base: 6.8, mat: 'slate', ceiling: true },
+  // CEILING_CENTRAL_N — north alley between citadel and VAULT. x=[-9,9], z=[-37,-27].
+  { t: 'box', cx: 0, cz: -32, sx: 18, sy: 0.4, sz: 10, base: 6.8, mat: 'slate', ceiling: true },
+  // CEILING_EAST — alley between CITADEL east face and FOUNDRY west face. x=[8,14], z=[-11,11].
+  { t: 'box', cx: 11, cz: 0, sx: 6, sy: 0.4, sz: 22, base: 6.8, mat: 'slate', ceiling: true },
+  // CEILING_WEST — alley between CITADEL west face / BRIDGE_W underbelly and the COLONNADE rampart. x=[-26,-8], z=[-2,12].
+  { t: 'box', cx: -17, cz: 5, sx: 18, sy: 0.4, sz: 14, base: 6.8, mat: 'slate', ceiling: true },
+  // CEILING_SOUTH — between spawn area and TERRACE deck. x=[-11,11], z=[15,23].
+  { t: 'box', cx: 0, cz: 19, sx: 22, sy: 0.4, sz: 8, base: 6.8, mat: 'slate', ceiling: true },
 
   // TALL PARTITION WALLS — break up the spawn plaza into smaller
   // sub-rooms with sightlines that don't span the whole plaza. Each is
@@ -889,36 +883,17 @@ export const LAYOUT = [
   // open to the sky. Same recipe — y=6.5-6.9 overhead slabs avoiding
   // any building roof above y=5, plus a few tall partition walls.
   // =====================================================================
-  // CEILING_NE — between FOUNDRY (x=14-30, z=-21..-9) and BARRACKS
-  // (x=35-49, z=-41..-31). Covers x=[27,39], z=[-33,-17]. Overlap with
-  // FOUNDRY_ROOF (y=4) and BARRACKS roof (y=4) is fine — vertical
-  // separation is 2.5 m, parapets top out at 5.6 m.
-  { t: 'wall', axis: 'x', cx: 33, cz: -25, length: 12, height: 0.4, thick: 16,
-    base: 6.5, mat: 'iron' },
-  // CEILING_NW — between CITADEL (x=-8..8, z=-23..-7) and WATCHTOWER
-  // (x=-46..-38, z=-36..-28). Covers x=[-37,-11], z=[-27,-11]. The W
-  // edge clears WATCHTOWER's E flank (x=-38). Avoids BRIDGE_W
-  // (x=-26..-8, z=-11..-7) on the south by stopping at z=-11.
-  { t: 'wall', axis: 'x', cx: -24, cz: -19, length: 26, height: 0.4, thick: 16,
-    base: 6.5, mat: 'slate' },
-  // CEILING_SE — between FOUNDRY (S edge z=-9), TERRACE (x=-11..11,
-  // z=25..35), MARKET (x=29..41, z=27..37) and EAST_TOWER (x=51..59,
-  // z=-4..4). Covers x=[19,41], z=[-3,21] — a big SE quadrant slab.
-  // Avoids the central shrine (x=10..14, z=15..21) by starting at
-  // x=19. Avoids EAST_TOWER (x=51+) by stopping at x=41.
-  { t: 'wall', axis: 'x', cx: 30, cz: 9, length: 22, height: 0.4, thick: 24,
-    base: 6.5, mat: 'sandstone' },
-  // CEILING_SW — between WEST_RAMPART (x=-34..-26, z=-12..12), TERRACE
-  // (x=-11..11, z=25..35) and RUINS (x=-38..-26, z=27..37). Covers
-  // x=[-25,-11], z=[13,27]. SW partition wall sits inside this.
-  { t: 'wall', axis: 'x', cx: -18, cz: 20, length: 14, height: 0.4, thick: 14,
-    base: 6.5, mat: 'sandstone' },
-  // CEILING_SOUTH_GAP — between TERRACE (S edge z=35) and SOUTH_KEEP
-  // (N edge z=50). Covers x=[-11,11], z=[37,47]. Overlap with the
-  // TELE_SOUTH_TO_FOUNDRY source AABB at (-8, 46) y=0-3 is fine
-  // (slab is at y=6.5, well above).
-  { t: 'wall', axis: 'x', cx: 0, cz: 42, length: 22, height: 0.4, thick: 10,
-    base: 6.5, mat: 'slate' },
+  // S55an: outer-plaza ceilings — same wall→box ceiling:true conversion.
+  // CEILING_NE — between FOUNDRY and BARRACKS. x=[27,39], z=[-33,-17].
+  { t: 'box', cx: 33, cz: -25, sx: 12, sy: 0.4, sz: 16, base: 6.8, mat: 'slate', ceiling: true },
+  // CEILING_NW — between CITADEL and WATCHTOWER. x=[-37,-11], z=[-27,-11].
+  { t: 'box', cx: -24, cz: -19, sx: 26, sy: 0.4, sz: 16, base: 6.8, mat: 'slate', ceiling: true },
+  // CEILING_SE — between FOUNDRY S, TERRACE, MARKET, EAST_TOWER. x=[19,41], z=[-3,21].
+  { t: 'box', cx: 30, cz: 9, sx: 22, sy: 0.4, sz: 24, base: 6.8, mat: 'slate', ceiling: true },
+  // CEILING_SW — between WEST_RAMPART, TERRACE, RUINS. x=[-25,-11], z=[13,27].
+  { t: 'box', cx: -18, cz: 20, sx: 14, sy: 0.4, sz: 14, base: 6.8, mat: 'slate', ceiling: true },
+  // CEILING_SOUTH_GAP — between TERRACE and SOUTH_KEEP. x=[-11,11], z=[37,47].
+  { t: 'box', cx: 0, cz: 42, sx: 22, sy: 0.4, sz: 10, base: 6.8, mat: 'slate', ceiling: true },
 
   // TALL PARTITIONS for the outer plazas — keep the 5.4 m / doorway
   // pattern from S55al so wall + ceiling visually meet.

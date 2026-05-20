@@ -34,7 +34,7 @@ for(const e of LAYOUT){
     if(e.id==='HILLTOP')HILLTOP=hnd;}
   else if(e.t==='box'){const b=e.base||0;
     const x0=e.cx-e.sx/2,x1=e.cx+e.sx/2,z0=e.cz-e.sz/2,z1=e.cz+e.sz/2;
-    makeBoxSolid(x0,x1,b,b+e.sy,z0,z1);
+    makeBoxSolid(x0,x1,b,b+e.sy,z0,z1, e.ceiling ? { ceiling: true } : undefined);
     const hnd={top:b+e.sy,x0,x1,z0,z1,cx:e.cx,cz:e.cz}; if(e.id)H[e.id]=hnd;
     if(e.id==='CATWALK_HE')CATWALK_HE={...hnd,yMin:b};}
   else if(e.t==='wall'){

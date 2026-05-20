@@ -164,10 +164,13 @@ export function platform({ cx, cz, top, sx, sz, thick = 0.6, mat }) {
 // onto it, or go around. Use stairs/ramp for no-jump ascent.)
 // Optional `mat` overrides the default crate material (used for the
 // CATWALK_HE bridge — it should read as forged iron, not wood).
-export function box({ cx, cz, base = 0, sx, sy, sz, mat }) {
+export function box({ cx, cz, base = 0, sx, sy, sz, mat, ceiling }) {
   const x0 = cx - sx / 2, x1 = cx + sx / 2;
   const z0 = cz - sz / 2, z1 = cz + sz / 2;
-  makeBoxSolid(x0, x1, base, base + sy, z0, z1);
+  // S55an: pass `ceiling: true` through to makeBoxSolid so unbounded
+  // groundHeightAt queries (pickup-floor, level-design surveys) skip
+  // overhead anti-jetpack slabs and return the true ground below.
+  makeBoxSolid(x0, x1, base, base + sy, z0, z1, ceiling ? { ceiling: true } : undefined);
   const m = new THREE.Mesh(new THREE.BoxGeometry(sx, sy, sz), resolveMat(mat, 'box'));
   m.position.set(cx, base + sy / 2, cz);
   m.castShadow = true; m.receiveShadow = true;

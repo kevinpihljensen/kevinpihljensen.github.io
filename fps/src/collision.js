@@ -57,6 +57,12 @@ function makeBoxSolid(minX, maxX, minY, maxY, minZ, maxZ, opts) {
     kind: 'box', planes,
     minX, maxX, minY, maxY, minZ, maxZ,
     walkable: !(opts && opts.noWalk),     // can you stand on its top?
+    // S55an: `ceiling: true` flags walkable overhead slabs (anti-jetpack
+    // covers). They're walkable so a player who gets ABOVE them via
+    // rocket-jump or drop from a tall structure lands on the top, but
+    // groundHeightAt in survey mode (very large maxY) skips them so
+    // pickup-floor / level-design queries return the true ground below.
+    ceiling: !!(opts && opts.ceiling),
     topY: maxY,
   };
   solids.push(s);
@@ -401,11 +407,21 @@ export function groundHeightAt(x, z, maxY, r) {
   const xs = [x, x + rr, x - rr, x, x];
   const zs = [z, z, z, z + rr, z - rr];
   let best = -Infinity;
+  // S55an: SURVEY MODE skips ceiling-flagged solids. When the caller is
+  // doing an unbounded "where's the highest walkable surface anywhere
+  // here" query (level-design pickup-floor checks, mapviz seam checks,
+  // any tooling using maxY = 1e6), the answer should be the true
+  // ground, not an anti-jetpack overhead slab. Player + enemy movement
+  // calls with a small maxY (feet + STEP_UP / ENEMY_MAX_JUMP_HEIGHT)
+  // so they're below the threshold and CAN still land on a ceiling top
+  // if they got above it (rocket-jump, drop from HILLTOP/CATWALK_HE).
+  const surveyMode = maxY > 50;
   for (let k = 0; k < xs.length; k++) {
     const px = xs[k], pz = zs[k];
     for (let i = 0; i < solids.length; i++) {
       const s = solids[i];
       if (!s.walkable) continue;
+      if (surveyMode && s.ceiling) continue;
       if (px < s.minX || px > s.maxX || pz < s.minZ || pz > s.maxZ) continue;
       const top = (s.kind === 'ramp') ? rampSurfaceY(s, px, pz) : s.maxY;
       if (top <= maxY + 0.05 && top > best) best = top;

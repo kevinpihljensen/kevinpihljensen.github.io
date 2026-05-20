@@ -26,6 +26,70 @@ Format: newest entries at the top. Each entry lists what was added, what was cha
 
 ## Session log
 
+### 2026-05-20 — Session 55an (walkable ceiling slabs + uniform roof texture)
+
+User: "Why are some of the roofs not letting me jump on them, I just
+phase through. Also keep all the rooves the same texture."
+
+**Phase-through root cause.** S55al/am added the anti-jetpack overhead
+slabs as `wall` entries. The wall builder always passes `noWalk: true`
+to makeBoxSolid, so the slab tops were invisible to groundHeightAt —
+which meant a player who got ABOVE a slab (rocket-jump from a tall
+roof, drop from HILLTOP / CATWALK_HE) fell straight through the slab
+body without snapping onto it.
+
+**Fix.** Convert the 10 slabs from `wall` entries to `box` entries
+with a new `ceiling: true` flag. Boxes are walkable by default, so the
+player CAN now land on a slab top from above. But unbounded
+groundHeightAt queries (pickup-floor checks, mapviz seam continuity,
+level-design surveys) would WRONGLY return the slab top as "ground"
+for queries directly under the slab, breaking many existing
+invariants.
+
+Solution: thread `ceiling: true` from the LAYOUT entry → arena box
+dispatcher → kit.js box() → collision.makeBoxSolid(opts.ceiling).
+The solid records `s.ceiling = true`. groundHeightAt detects
+"survey mode" (any caller passing `maxY > 50`) and skips
+ceiling-flagged solids in that mode. Player + enemy movement use a
+small bounded `maxY` (feet + STEP_UP / ENEMY_MAX_JUMP_HEIGHT) so
+they're below the threshold and DO see ceiling tops — a falling
+player snaps onto the slab as expected.
+
+**Plumbing**:
+- `src/collision.js` — makeBoxSolid accepts `opts.ceiling`; sets
+  `s.ceiling`. groundHeightAt skips ceiling solids in survey mode.
+- `src/kit.js` — box() takes `ceiling` param, passes through.
+- `src/arena.js` — box dispatcher forwards `e.ceiling`.
+- `src/maplayout.js` — all 10 ceiling slabs converted from `wall` to
+  `box` with `ceiling: true`. All use `mat: 'slate'` (uniform texture
+  per user request). Base raised 6.5 → 6.8 so the overlap-vs-
+  WEST_RAMPART (y=5) gap clears STAND+epsilon (1.75 m).
+- `dev/mapviz.mjs` — box dispatcher passes `e.ceiling`; struct
+  overlap check filters out ceilings (the pair-check assumes
+  ground-stacked structures and produced nonsense BAD verdicts for
+  overhead slabs above overhangs); seam-continuity check bounds its
+  groundHeightAt maxY to connector.hiY + STEP_UP so a ceiling above
+  the connector can't be returned as the seam's "ground".
+- Four harnesses (arena, arena_spawn, jumppads, pickups) — their box
+  dispatchers now pass `e.ceiling` through. Without this, s.ceiling
+  was always false in those simulations, the survey-mode skip
+  couldn't trigger, and pickup-floor / overlap checks saw the wrong
+  surface.
+
+**Verified**: node --check clean; dev/test-all.sh ALL GREEN; MAP OK
+on first try after the plumbing was complete.
+
+**Known issues**
+- Ceiling slabs are only reachable by landing from above (HILLTOP,
+  CATWALK_HE, or rocket-jump from a y=8+ structure). Normal jump from
+  ground can't reach them — slab top y=7.2, jump apex from ground
+  y=0.85. By design — they're cover, not a layer of the navigation
+  graph.
+- The auto-discriminator (maxY > 50 = survey mode) is a heuristic. If
+  some future caller wants a 60 m-range groundHeightAt that DOES
+  include ceilings, this rule would surprise them. Acceptable for
+  now; revisit if a real conflict shows up.
+
 ### 2026-05-20 — Session 55am (outer-plaza coverage — second-pass anti-jetpack rework)
 
 User: "Do the second pass." S55al covered central + spawn-area

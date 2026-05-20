@@ -50,7 +50,7 @@ for (const e of LAYOUT) {
     const base = e.base || 0;
     const x0 = e.cx - e.sx / 2, x1 = e.cx + e.sx / 2;
     const z0 = e.cz - e.sz / 2, z1 = e.cz + e.sz / 2;
-    makeBoxSolid(x0, x1, base, base + e.sy, z0, z1);
+    makeBoxSolid(x0, x1, base, base + e.sy, z0, z1, e.ceiling ? { ceiling: true } : undefined);
     if (e.id) H[e.id] = { top: base + e.sy, x0, x1, z0, z1, cx: e.cx, cz: e.cz };
   } else if (e.t === 'wall') {
     for (const r of wallBoxes(e)) makeBoxSolid(r.x0, r.x1, r.y0, r.y1, r.z0, r.z1, { noWalk: true });

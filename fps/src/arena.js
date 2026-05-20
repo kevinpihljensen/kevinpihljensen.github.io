@@ -26,7 +26,7 @@ for (const e of LAYOUT) {
       break;
     }
     case 'box': {
-      const h = box({ cx: e.cx, cz: e.cz, base: e.base, sx: e.sx, sy: e.sy, sz: e.sz, mat: e.mat });
+      const h = box({ cx: e.cx, cz: e.cz, base: e.base, sx: e.sx, sy: e.sy, sz: e.sz, mat: e.mat, ceiling: e.ceiling });
       if (e.id) H[e.id] = h;
       break;
     }

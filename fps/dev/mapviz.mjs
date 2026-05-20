@@ -83,11 +83,18 @@ for (const e of LAYOUT) {
     const base = e.base || 0;
     const x0 = e.cx - e.sx / 2, x1 = e.cx + e.sx / 2;
     const z0 = e.cz - e.sz / 2, z1 = e.cz + e.sz / 2;
-    makeBoxSolid(x0, x1, base, base + e.sy, z0, z1);
+    makeBoxSolid(x0, x1, base, base + e.sy, z0, z1, e.ceiling ? { ceiling: true } : undefined);
     const hnd = { top: base + e.sy, x0, x1, z0, z1, cx: e.cx, cz: e.cz };
     if (e.id) H[e.id] = hnd;
+    // S55an: `ceiling: true` flags walkable overhead slabs. The slab is a
+    // real walkable box in-game (player can land on it via rocket-jump /
+    // drop from a tall structure) but mapviz skips its top from the
+    // reachability BFS — those slabs are designed as anti-jetpack
+    // overhead cover, not as a part of the navigable surface network, so
+    // they shouldn't count as "stranded".
     rect({ kind: 'box', id: e.id || '', x0, x1, z0, z1,
-           yMin: base, yMax: base + e.sy, top: base + e.sy });
+           yMin: base, yMax: base + e.sy, top: base + e.sy,
+           ceiling: !!e.ceiling });
   } else if (e.t === 'wall') {
     for (const r of wallBoxes(e)) {
       makeBoxSolid(r.x0, r.x1, r.y0, r.y1, r.z0, r.z1, { noWalk: true });
@@ -135,7 +142,13 @@ P('================ THE CITADEL — MAP ANALYSIS ================\n');
 
 // 1) Footprint overlap + vertical clearance.
 P('--- overlap / clearance (structure pairs sharing XZ) ---');
-const struct = pieces.filter(p => p.kind === 'platform' || p.kind === 'box' || p.kind === 'ramp' || p.kind === 'stairs' || p.kind === 'overhang');
+// S55an: skip `ceiling` boxes (anti-jetpack overhead slabs) from the
+// struct overlap pairs. They're walkable in-game but exist only as
+// overhead occluders; the pair check assumes structures stack on the
+// ground and produces nonsense BAD verdicts when a ceiling sits high
+// above an overhang or building. Geometry conflicts are still caught
+// for normal box pairs.
+const struct = pieces.filter(p => !p.ceiling && (p.kind === 'platform' || p.kind === 'box' || p.kind === 'ramp' || p.kind === 'stairs' || p.kind === 'overhang'));
 let issues = 0;
 for (let i = 0; i < struct.length; i++) for (let j = i + 1; j < struct.length; j++) {
   const a = struct[i], b = struct[j];
@@ -189,10 +202,15 @@ for (const p of pieces) {
   // sample along the run axis, across the full connector + a little onto deck
   let prev = null, maxJump = 0, nul = false, above = -Infinity;
   const cFix = (c.c0 + c.c1) / 2;
+  // S55an: limit maxY to the connector's hi end + STEP_UP so a walkable
+  // ceiling box sitting overhead doesn't get returned as "ground" for
+  // the seam check — the connector's ground is at or below its hi end,
+  // not 6 m up.
+  const maxSeamY = Math.max(c.loY, c.hiY) + STEP_UP + 0.1;
   for (let s = aMin - 0.5; s <= aMax + 1.5; s += 0.1) {
     const x = c.axis === 'z' ? cFix : s;
     const z = c.axis === 'z' ? s : cFix;
-    const h = groundHeightAt(x, z, BIG, R);
+    const h = groundHeightAt(x, z, maxSeamY, R);
     if (h === null) { nul = true; continue; }
     if (prev !== null) maxJump = Math.max(maxJump, Math.abs(h - prev));
     above = Math.max(above, h - Math.max(c.loY, c.hiY));
@@ -216,6 +234,7 @@ const surfaces = [];
 surfaces.push({ name: 'GROUND', x0: -GH, x1: GH, z0: -GH, z1: GH, y: 0 });
 for (const p of pieces) {
   if (p.kind === 'platform' || p.kind === 'box') {
+    if (p.ceiling) continue;   // S55an: skip anti-jetpack overhead slabs
     surfaces.push({ name: (p.id || p.kind) + '@' + f(p.top), x0: p.x0, x1: p.x1, z0: p.z0, z1: p.z1, y: p.top });
   }
 }
