@@ -26,6 +26,81 @@ Format: newest entries at the top. Each entry lists what was added, what was cha
 
 ## Session log
 
+### 2026-05-20 — Session 55ah (operator grunt skin — opt-in alternate GLB)
+
+User uploaded a rigged operator model authored in Claude Design and asked
+to swap the grunt over to it, with an easy revert.
+
+**Asset addition** (deviation from the CLAUDE.md "no external runtime
+assets" hard constraint, explicitly user-authorized):
+- `assets/models/operator.glb` — 7.6 MB, 1 skin, 3 baked animations,
+  191 meshes / 249 nodes / 43 materials.
+
+**New module `src/operatorskin.js`**:
+- `initOperatorSkin()` — async GLB load via GLTFLoader; idempotent.
+- `hasOperator()` — true once loaded.
+- `buildOperatorRig()` — returns the same rig shape `buildCharacterRig`
+  does (group / meshes / bodyMats / emissiveMats / headMeshes / head /
+  armL / armR / legL / legR / weaponPivot / mixer). Internals:
+  - Clones the loaded scene via `three/addons/utils/SkeletonUtils.clone`
+    so each instance has its own SkinnedMeshes + skeleton (a plain
+    Object3D.clone would share the skeleton across instances and break
+    individual animation).
+  - Scales the clone so the source-bbox Y span fits TARGET_HEIGHT
+    (1.8 m). The source measures ~1.95 m so the scale comes out near 1.
+  - Walks the tree to mark shadows, push every mesh into the meshes
+    array (so enemies.js can register them as shootables) and collect
+    every material into bodyMats with restEmissive stamped onto
+    userData (so the hit-flash decay/clear in enemies.js returns to
+    the authored emissive baseline, not pitch black).
+  - Creates a per-instance AnimationMixer playing animations[0] on
+    loop with a randomised start time so a row of operators desyncs.
+  - Returns null limb groups (head/armL/armR/legL/legR). The bundled
+    animation drives the skeleton; the per-frame arm-sway / leg-cycle
+    / head-pitch hooks in enemies.js are all null-guarded so they
+    no-op for this rig.
+
+**Wiring**:
+- `constants.js` — new `USE_OPERATOR_FOR_GRUNT = true` flag. Flip to
+  `false` to revert grunts to the S55p CS-rig terror.
+- `enemies.js` — at makeEnemy(grunt), `USE_OPERATOR_FOR_GRUNT &&
+  hasOperator()` picks the operator path; otherwise falls through to
+  the CS-rig path; otherwise to the procedural builder. The enemy
+  struct stores `mixer` (null for non-operator). updateEnemies advances
+  `e.mixer.update(dt)` once per frame inside the animation block.
+- `main.js` — `initOperatorSkin()` kicked off at boot alongside the
+  existing `initCharModels()`.
+
+**Why no slice / per-limb animation hooks?** The CS rigs have no
+skeleton, so charmodels.js carves the body mesh into torso/legs/arms/
+head buckets and the engine animates them. The operator IS skinned
+(real bones) and ships its own clips, so giving it our procedural sway
+on top would fight the bundled animation. The bundled animation runs;
+our overrides are skipped because the returned `head/armL/armR/...`
+are null and the existing call sites are null-guarded.
+
+**Changed**
+- `src/operatorskin.js` — NEW
+- `src/constants.js` — `USE_OPERATOR_FOR_GRUNT`
+- `src/enemies.js` — operator-rig pick at makeEnemy, mixer tick
+- `src/main.js` — `initOperatorSkin()` at boot
+- `assets/models/operator.glb` — NEW asset
+
+**Verified**: `node --check` clean on every modified module;
+`dev/test-all.sh` ALL GREEN.
+
+**Reverting**: set `USE_OPERATOR_FOR_GRUNT = false` in constants.js.
+Asset and module stay in tree so re-enabling is a one-character change.
+
+**Known issues**
+- The operator model is ~7.6 MB. Initial page load over Pages picks
+  that up before the first grunt spawns. The CS players.glb (3.9 MB)
+  was already a non-trivial download; this roughly doubles authored-
+  asset weight. Trade-off accepted.
+- The grunt's `WEAPON_FOR_TYPE` rifle isn't parented to the operator
+  rig — the operator's model already includes whatever weapon was
+  authored in. No `weaponPivot` is exposed.
+
 ### 2026-05-20 — Sessions 55ab–55ag (big QoL pass)
 
 Single user-driven batch covering: kill fog, drop the beige window

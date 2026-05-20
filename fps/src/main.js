@@ -22,6 +22,7 @@ import { applyJumpPad, updateJumpPads } from './jumppads.js';
 import { updateTorchFlicker } from './torches.js';
 import { updateSpawnFX } from './spawnfx.js';
 import { initCharModels } from './charmodels.js';
+import { initOperatorSkin } from './operatorskin.js';
 import { updateGrenades } from './grenades.js';
 import { player } from './state.js';
 
@@ -30,6 +31,10 @@ import { player } from './state.js';
 // the GLB hasn't resolved yet. Typically it will have loaded long before
 // the player presses Start.
 initCharModels();
+// S55ah: kick off the operator-skin GLB load. enemies.js checks
+// hasOperator() at spawn and falls back to the CS-rig grunt (terror) if
+// the asset isn't ready or USE_OPERATOR_FOR_GRUNT is flipped to false.
+initOperatorSkin();
 
 // Initial UI state: title overlay shown, no HUD, no canvas focus.
 setGameState(GAME_STATE.TITLE);

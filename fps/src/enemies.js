@@ -17,6 +17,7 @@ import { shootables, staticAABBs, collideCapsule, groundHeightAt, lineOfSight, r
 import { player } from './state.js';
 import { DOORWAYS, ENEMY_SPAWN_POINTS } from './maplayout.js';
 import { buildCharacterRig, hasCharacter, buildSimpleRifle, buildHeavyWeapon } from './charmodels.js';
+import { buildOperatorRig, hasOperator } from './operatorskin.js';
 import {
   HIT_FLASH_TIME, DEATH_ANIM_TIME,
   MELEE_ATTACK_COOLDOWN, SHOOTER_ATTACK_COOLDOWN,
@@ -46,6 +47,7 @@ import {
   ENEMY_JUMP_VY, ENEMY_MAX_JUMP_HEIGHT, ENEMY_JUMP_COOLDOWN, ENEMY_TERMINAL_VY,
   GRUNT_FIRE_RANGE, GRUNT_DIST_MIN, GRUNT_DIST_MAX,
   GRUNT_ATTACK_COOLDOWN, GRUNT_DAMAGE, GRUNT_AIM_WOBBLE, GRUNT_LEAD_STRENGTH,
+  USE_OPERATOR_FOR_GRUNT,
 } from './constants.js';
 import { sfxEnemyDeath, sfxShooterFire } from './audio.js';
 import { applyEnemyTeleport } from './teleporters.js';
@@ -673,9 +675,17 @@ export function makeEnemy(type, x, z) {
   // Falls back to the procedural model if the GLB isn't loaded yet or the
   // character template failed to build.
   let built = null;
-  const csChar = CHAR_FOR_TYPE[type];
-  if (csChar && hasCharacter(csChar)) {
-    built = buildCharacterRig(csChar, WEAPON_FOR_TYPE[type] || null);
+  // S55ah: optional alternate-skin path per class. Grunt currently has the
+  // operator GLB as an opt-in skin (USE_OPERATOR_FOR_GRUNT). Other classes
+  // continue to use the CS-rig terror/sas/urban/leet pipeline.
+  if (type === 'grunt' && USE_OPERATOR_FOR_GRUNT && hasOperator()) {
+    built = buildOperatorRig();
+  }
+  if (!built) {
+    const csChar = CHAR_FOR_TYPE[type];
+    if (csChar && hasCharacter(csChar)) {
+      built = buildCharacterRig(csChar, WEAPON_FOR_TYPE[type] || null);
+    }
   }
   if (!built) built = MODEL_BUILDERS[type](def);
 
@@ -823,6 +833,11 @@ export function makeEnemy(type, x, z) {
     // alive. Used by Map Test mode to line up inspectable enemies that don't
     // fight you.
     passive: false,
+
+    // S55ah: operator-skin path stores the per-instance AnimationMixer here
+    // so updateEnemies can advance it each frame AND killEnemy can pull it
+    // out of the active list when the body despawns.
+    mixer: built.mixer || null,
   };
 
   // M13: register the grunt's knife meshes as shootable + enemy-tagged, just
@@ -2020,6 +2035,10 @@ export function updateEnemies(dt) {
 
       // S55ad: grunt knife-swipe animation removed along with the swipe AI.
       // Grunts now fire a pistol; no per-frame attack animation needed.
+      // S55ah: operator-skin AnimationMixer tick. Only present when this
+      // enemy uses the operator GLB; mixer is null for CS-rig / procedural
+      // grunts. Three.js batches matrix updates inside .update().
+      if (e.mixer) e.mixer.update(dt);
 
       // Hit flash on body mats only — emissive mats keep their permanent glow.
       // S55v: CS character materials carry a baseline self-emissive (so

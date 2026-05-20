@@ -164,6 +164,13 @@ export const RELOAD_BOLT_TRAVEL = 0.04;  // m: sniper bolt back-and-forward
 export const RELOAD_BOLT_ROTATE = 1.0;   // rad: sniper bolt twist (lift bolt before pulling)
 export const RELOAD_COVER_OPEN = 0.9;    // rad: SAW top cover hinges up
 
+// --- ENEMY SKIN OVERRIDES (S55ah) ---
+// Per-class flags to swap in alternate authored rigs without losing the
+// existing CS-rig path. Flip to false to revert to the S55p CS-rig (terror).
+// The grunt operator rig is `assets/models/operator.glb`, a Claude-Design
+// export with bundled skeletal animations.
+export const USE_OPERATOR_FOR_GRUNT = true;
+
 // --- ENEMIES ---
 export const HIT_FLASH_TIME = 0.12;
 export const DEATH_ANIM_TIME = 0.18;
