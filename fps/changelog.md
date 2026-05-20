@@ -26,6 +26,86 @@ Format: newest entries at the top. Each entry lists what was added, what was cha
 
 ## Session log
 
+### 2026-05-20 — Session 55ak (rocket damage cut further; player gets a rocket launcher)
+
+User: rocket still felt too lethal; also asked to add a rocket launcher
+as a player weapon.
+
+**Damage** (continues the S55aj cut)
+- ROCKETEER_DAMAGE 25 → 10 (enemy direct hit)
+- ROCKET_EXPLODE_DAMAGE 25 → 15 (enemy AoE peak)
+- Max stack at point-blank: 25 (vs S55aj 50, vs original 85).
+  Survivable from any non-low HP; knockback (still 9.0 horiz + 3.5 up
+  at centre) carries the threat now.
+
+**Player rocket launcher** (new 7th weapon)
+- `constants.js`: PLAYER_ROCKET_DAMAGE = 60 (direct enemy hit),
+  PLAYER_ROCKET_EXPLODE_DAMAGE = 60 (peak AoE),
+  PLAYER_ROCKET_SELF_DAMAGE_MULT = 0.40 (rocket-jump support — full
+  knockback, 60 % less self-damage).
+- `weapons.js`: WEAPON_DEFS.rocket with `launcher: true` marker
+  (mag 1, reserve 4, reload 2.5 s, rpm 30). tryFire launcher branch
+  spawns a player-owned rocket via spawnRocket(..., 'player') 0.7 m
+  forward of the camera. New buildRocketLauncherViewModel — olive
+  tube + warhead cone + back-blast bell + top sight + front sight
+  post + two hand groups (tagged isHand so the pickup builder
+  strips them). Registered in VIEW_MODELS / FLASH_OFFSETS /
+  WEAPON_OFFSETS. resetWeapons zeroes rocket.unlocked so a fresh run
+  requires the pickup.
+- `projectiles.js`: spawnRocket now takes an `owner` ('enemy' default
+  | 'player') and stamps p.owner + p.aoePeak + p.damage on each
+  projectile. rocketExplode takes peak + owner; for the player's
+  own rocket the self-damage scales by PLAYER_ROCKET_SELF_DAMAGE_MULT
+  (knockback stays full). Player-rocket path adds an explicit
+  enemy-body check before the AABB loop so a direct hit on an enemy
+  detonates AT the body (projectiles otherwise pass through enemies
+  because enemies aren't in staticAABBs). The player-overlap check
+  is skipped for owner='player' so a rocket spawning in front of
+  the camera can't accidentally hit its own thrower.
+- `input.js`: Digit7 → switchWeapon('rocket').
+- `pickups.js`: WEAPON_PICKUP_INFO.rocket (red `0xff4030` /
+  "Rocket Launcher" / key '7'); WEAPON_MODEL_BUILDERS.rocket points
+  at the FP view-model builder; placement on CATWALK_HE (the high
+  iron bridge at y=8 above the citadel east side — a high-traffic
+  vertical contest point matching the long-range explosive role).
+- `index.html` + `hud.js`: new "[7] RKT" weapon slot; roster cache
+  key includes rocket.unlocked so the slot toggles correctly on
+  pickup.
+
+**Verified**: `node --check` clean; `dev/test-all.sh` ALL GREEN.
+Pickups harness count 52 → 53 with the new rocket.
+
+**Known issues**
+- Enemy-body check for player rockets is a flat distance test in XZ
+  with a loose Y range, not a true capsule test. Direct hits on a
+  duck-walking enemy at the very edge of the cylinder might miss;
+  AoE radius (4.5 m) catches up.
+- Rocket fire audio reuses sfxShotgun for now. A dedicated launch
+  cue would read better but I didn't want to add another wav file.
+
+### 2026-05-20 — Session 55aj (rocket damage halved; AoE adds knockback)
+
+User feedback after S55ai: rocketeer was close to a one-shot kill.
+Direct hit + center-of-AoE stacked to 85 — survivable from full HP
+but lethal from any chip damage.
+
+- ROCKETEER_DAMAGE 50 → 25
+- ROCKET_EXPLODE_DAMAGE 35 → 25
+  → max stack 50 instead of 85
+- New ROCKET_PUSH_PEAK = 9.0 m/s horizontal knockback at blast centre
+- New ROCKET_PUSH_UP = 3.5 m/s vertical kick at blast centre
+
+In rocketExplode, when the player is inside the AoE, horizontal
+velocity is pushed along (player − blast-centre) with the same linear
+falloff used for damage, plus an upward kick that lifts the player
+so a foot-blast pops them off the ground instead of just sliding
+them. player.isGrounded is cleared so gravity takes over. The edge
+case where d ≈ 0 gets only the upward kick.
+
+Net feel: rocket reads as a real BOOM that flings you back instead
+of borderline-instakill. Trade-off accepted by the user (then
+extended in S55ak with another damage cut).
+
 ### 2026-05-20 — Session 55ai (new enemy class: rocketeer)
 
 User requested a new opponent type with a rocket launcher, using one of

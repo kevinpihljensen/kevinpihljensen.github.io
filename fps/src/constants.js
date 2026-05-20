@@ -425,27 +425,36 @@ export const ROCKETEER_FIRE_RANGE = 55.0;
 export const ROCKETEER_DIST_MIN = 18.0;    // backs away below this to keep distance
 export const ROCKETEER_DIST_MAX = 45.0;    // pushes toward player above this
 export const ROCKETEER_ATTACK_COOLDOWN = 3.2;
-// S55aj: damage halved (50→25 direct, 35→25 peak AoE) so a direct hit +
-// center-of-AoE stacks to 50 instead of 85 — still a serious threat but
-// no longer borderline-one-shot from full HP. Knockback adds physicality
-// that replaces some of the damage's psychological punch.
-export const ROCKETEER_DAMAGE = 25;        // direct-hit damage
+// S55aj/ak: damage further reduced. S55aj cut from 50/35 → 25/25. User
+// felt that was still too punishing. Now 10/15 — max stack at point-blank
+// is 25 (vs prev 50, vs original 85). The knockback (S55aj) plus the
+// positional disruption of a slow-flight rocket is the real threat now;
+// raw damage is chip.
+export const ROCKETEER_DAMAGE = 10;        // enemy rocket direct-hit damage
 export const ROCKETEER_AIM_WOBBLE = 0.025;
 export const ROCKETEER_LEAD_STRENGTH = 0.65;
 export const ROCKETEER_AIM_Y_OFFSET = -0.45;
 
-// Rocket projectile.
+// Rocket projectile (shared between player + enemy launcher).
 export const ROCKET_SPEED = 28.0;
 export const ROCKET_LIFETIME = 4.5;
 export const ROCKET_EXPLODE_RADIUS = 4.5;
-export const ROCKET_EXPLODE_DAMAGE = 25;   // peak AoE damage at centre
+export const ROCKET_EXPLODE_DAMAGE = 15;   // peak AoE damage at centre (enemy default)
 export const ROCKET_RADIUS = 0.16;
-// S55aj: knockback applied to the player when caught inside the AoE.
-// Linear falloff with distance (same as damage). Horizontal velocity gets
-// PEAK at the blast centre, falling to 0 at the radius edge; vertical
-// component adds a small upward kick so the hit reads as physical.
-export const ROCKET_PUSH_PEAK = 9.0;       // peak m/s horizontal push at centre
-export const ROCKET_PUSH_UP = 3.5;         // peak m/s upward kick at centre
+// Knockback applied to the player when caught inside the AoE. Linear
+// falloff with distance (same as damage). Vertical kick lifts feet off
+// the ground so a foot-blast reads physical.
+export const ROCKET_PUSH_PEAK = 9.0;
+export const ROCKET_PUSH_UP = 3.5;
+
+// --- PLAYER ROCKET LAUNCHER (S55ak) ---
+// Player-side rocket. Reuses the rocket projectile + explosion path with
+// independent damage values (much bigger numbers than the enemy rocketeer
+// fires) and an explicit self-damage multiplier so rocket-jumping is
+// viable without killing you outright.
+export const PLAYER_ROCKET_DAMAGE = 60;          // direct hit
+export const PLAYER_ROCKET_EXPLODE_DAMAGE = 60;  // peak AoE
+export const PLAYER_ROCKET_SELF_DAMAGE_MULT = 0.40;   // own-rocket self-damage scale
 
 // --- HUD POLISH ---
 export const HIT_MARKER_TIME = 0.18;

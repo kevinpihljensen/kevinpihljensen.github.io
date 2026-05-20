@@ -16,6 +16,7 @@ import {
   ROCKET_SPEED, ROCKET_LIFETIME, ROCKET_RADIUS,
   ROCKET_EXPLODE_RADIUS, ROCKET_EXPLODE_DAMAGE, ROCKETEER_DAMAGE,
   ROCKET_PUSH_PEAK, ROCKET_PUSH_UP,
+  PLAYER_ROCKET_DAMAGE, PLAYER_ROCKET_EXPLODE_DAMAGE, PLAYER_ROCKET_SELF_DAMAGE_MULT,
 } from './constants.js';
 import { player } from './state.js';
 import { damagePlayer } from './player.js';
@@ -74,7 +75,14 @@ export function spawnProjectile(ox, oy, oz, dx, dy, dz, damage) {
 // S55ai: rocket variant. Slower speed, distinct mesh, explodes on ANY
 // collision (player / AABB / ramp surface). Lifetime sized so it covers
 // the map diagonal.
-export function spawnRocket(ox, oy, oz, dx, dy, dz) {
+// S55ak: `owner` ('enemy' default | 'player') picks damage tables and
+// flips the player from "target" (enemy rocket) to "self-damage * mult"
+// (own rocket — supports rocket jumping). Player rockets also DON'T
+// damage other enemies via the impact dose (only AoE), since we already
+// take damageEnemy() via the projectile-hit path below if it directly
+// strikes a body — see updateProjectiles.
+export function spawnRocket(ox, oy, oz, dx, dy, dz, owner) {
+  const isPlayer = owner === 'player';
   const mesh = new THREE.Mesh(rocketGeom, rocketMat);
   mesh.position.set(ox, oy, oz);
   // Orient the capsule along its velocity so it reads as flying nose-first.
@@ -85,20 +93,24 @@ export function spawnRocket(ox, oy, oz, dx, dy, dz) {
   scene.add(mesh);
   projectiles.push({
     kind: 'rocket',
+    owner: isPlayer ? 'player' : 'enemy',
     mesh,
     position: new THREE.Vector3(ox, oy, oz),
     velocity: new THREE.Vector3(dx * ROCKET_SPEED, dy * ROCKET_SPEED, dz * ROCKET_SPEED),
     lifetime: ROCKET_LIFETIME,
-    damage: ROCKETEER_DAMAGE,
+    damage: isPlayer ? PLAYER_ROCKET_DAMAGE : ROCKETEER_DAMAGE,
+    aoePeak: isPlayer ? PLAYER_ROCKET_EXPLODE_DAMAGE : ROCKET_EXPLODE_DAMAGE,
     originX: ox,
     originZ: oz,
   });
 }
 
 // Detonate a rocket at (x,y,z) — AoE damage to enemies + player with
-// linear falloff, plus a visual flash that fades over ~0.45 s. Shared
-// with grenades.js's detonate logic but kept local to avoid a cycle.
-function rocketExplode(x, y, z, originX, originZ) {
+// linear falloff, plus a visual flash that fades over ~0.45 s.
+// S55ak: peak (peak AoE damage) varies between enemy/player rockets;
+// owner === 'player' scales the player's own self-damage by
+// PLAYER_ROCKET_SELF_DAMAGE_MULT (rocket jump support).
+function rocketExplode(x, y, z, originX, originZ, peak, owner) {
   // Visual flash.
   const fm = new THREE.Mesh(explodeFlashGeom, explodeFlashMat.clone());
   fm.position.set(x, y, z);
@@ -114,12 +126,13 @@ function rocketExplode(x, y, z, originX, originZ) {
     const dz = e.position.z - z;
     const d = Math.hypot(dx, dy, dz);
     if (d > ROCKET_EXPLODE_RADIUS) continue;
-    const dmg = ROCKET_EXPLODE_DAMAGE * (1 - d / ROCKET_EXPLODE_RADIUS);
+    const dmg = peak * (1 - d / ROCKET_EXPLODE_RADIUS);
     damageEnemy(e, dmg);
   }
-  // Player too — using the rocket's ORIGIN for the damage-direction
-  // indicator so the player is pointed back at the shooter, not at the
-  // explosion centre.
+  // Player. For an enemy rocket, full falloff. For the player's OWN
+  // rocket, self-damage gets scaled down so rocket jumping is viable.
+  // Knockback still applies at full strength regardless of owner —
+  // that's the whole point of the player launching one at their feet.
   if (player.alive) {
     const dx = player.position.x - x;
     const dy = (player.position.y + 0.9) - y;
@@ -127,15 +140,8 @@ function rocketExplode(x, y, z, originX, originZ) {
     const d = Math.hypot(dx, dy, dz);
     if (d <= ROCKET_EXPLODE_RADIUS) {
       const falloff = 1 - d / ROCKET_EXPLODE_RADIUS;
-      damagePlayer(ROCKET_EXPLODE_DAMAGE * falloff, originX, originZ);
-      // S55aj: knockback. Push the player along the HORIZONTAL vector
-      // from blast centre to player, plus a small upward kick so the
-      // hit reads as physical (and so a blast at the feet briefly
-      // pops the player off the ground instead of just nudging them
-      // along the floor). Force scales with the same linear falloff
-      // as damage. If the player is sitting EXACTLY on the explosion
-      // (d ≈ 0) the horizontal direction is ill-defined, so just give
-      // an upward kick.
+      const selfMult = owner === 'player' ? PLAYER_ROCKET_SELF_DAMAGE_MULT : 1.0;
+      damagePlayer(peak * falloff * selfMult, originX, originZ);
       const horizD = Math.hypot(dx, dz);
       if (horizD > 1e-3) {
         const nx = dx / horizD;
@@ -180,7 +186,7 @@ export function updateProjectiles(dt) {
       // S55ai: rocket that ran out of fuel airbursts at its last position
       // so a long-range overshoot doesn't just silently vanish.
       if (p.kind === 'rocket') {
-        rocketExplode(p.position.x, p.position.y, p.position.z, p.originX, p.originZ);
+        rocketExplode(p.position.x, p.position.y, p.position.z, p.originX, p.originZ, p.aoePeak, p.owner);
       }
       destroyProjectileAt(i);
       continue;
@@ -190,9 +196,36 @@ export function updateProjectiles(dt) {
     p.position.add(_projStep);
     p.mesh.position.copy(p.position);
 
-    // Player hit: 2D radial check + 3D Y range gate so jumping/crouching
-    // genuinely dodges. Player Y range is [pos.y, pos.y + eye_height].
-    if (player.alive) {
+    // S55ak: player's OWN rocket — check for enemy bodies in its path
+    // (projectiles otherwise pass through enemies because enemies aren't in
+    // staticAABBs). Direct hit applies p.damage to that enemy AND detonates
+    // the AoE. Player-overlap check is skipped entirely for player rockets
+    // so the rocket spawning right in front of the camera doesn't
+    // accidentally hit its own thrower.
+    if (p.kind === 'rocket' && p.owner === 'player') {
+      let hitE = null;
+      for (let k = 0; k < enemies.length; k++) {
+        const e = enemies[k];
+        if (!e.alive) continue;
+        const ex = e.position.x, ez = e.position.z;
+        const er = (e.def ? e.def.radius : 0.45) + radius;
+        const ddx = p.position.x - ex;
+        const ddz = p.position.z - ez;
+        if (ddx * ddx + ddz * ddz >= er * er) continue;
+        // Loose Y gate — enemy body is ~1.8 m tall standing on e.position.y.
+        if (p.position.y < e.position.y - 0.2) continue;
+        if (p.position.y > e.position.y + 2.0) continue;
+        hitE = e; break;
+      }
+      if (hitE) {
+        damageEnemy(hitE, p.damage);
+        rocketExplode(p.position.x, p.position.y, p.position.z, p.originX, p.originZ, p.aoePeak, p.owner);
+        destroyProjectileAt(i);
+        continue;
+      }
+    } else if (player.alive) {
+      // Enemy projectile (bullet OR enemy rocket) hitting the player: 2D
+      // radial check + 3D Y range gate so jumping/crouching genuinely dodges.
       const ddx = p.position.x - player.position.x;
       const ddz = p.position.z - player.position.z;
       const distSq = ddx * ddx + ddz * ddz;
@@ -202,10 +235,8 @@ export function updateProjectiles(dt) {
         const topY = player.position.y + eyeH + 0.1;
         if (p.position.y >= player.position.y - 0.1 && p.position.y <= topY) {
           if (p.kind === 'rocket') {
-            // Direct hit on the player: the impact dose (p.damage) plus
-            // the AoE detonation around the hit point.
             damagePlayer(p.damage, p.originX, p.originZ);
-            rocketExplode(p.position.x, p.position.y, p.position.z, p.originX, p.originZ);
+            rocketExplode(p.position.x, p.position.y, p.position.z, p.originX, p.originZ, p.aoePeak, p.owner);
           } else {
             damagePlayer(p.damage, p.originX, p.originZ);
           }
@@ -236,7 +267,7 @@ export function updateProjectiles(dt) {
     }
     if (hit) {
       if (p.kind === 'rocket') {
-        rocketExplode(p.position.x, p.position.y, p.position.z, p.originX, p.originZ);
+        rocketExplode(p.position.x, p.position.y, p.position.z, p.originX, p.originZ, p.aoePeak, p.owner);
       }
       destroyProjectileAt(i);
       continue;
@@ -246,7 +277,7 @@ export function updateProjectiles(dt) {
     // (handled above); ramps are not, so test them as surfaces here.
     if (pointBlockedBySurface(p.position.x, p.position.y, p.position.z, radius)) {
       if (p.kind === 'rocket') {
-        rocketExplode(p.position.x, p.position.y, p.position.z, p.originX, p.originZ);
+        rocketExplode(p.position.x, p.position.y, p.position.z, p.originX, p.originZ, p.aoePeak, p.owner);
       }
       destroyProjectileAt(i);
     }

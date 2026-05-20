@@ -40,6 +40,11 @@ import {
 } from './audio.js';
 import { damageEnemy } from './enemies.js';
 import { createImpact, createBloodSplat } from './decals.js';
+import { spawnRocket } from './projectiles.js';
+
+// S55ak: scratch vectors for the rocket-launcher fire path (camera-forward
+// direction + spawn position). Reused — no per-shot Vector3 alloc.
+const _rocketFwd = new THREE.Vector3();
 
 // --- WEAPON DEFS ---
 // Each weapon: { name, damage, rpm, magSize, reserveStart, reloadTime,
@@ -90,6 +95,18 @@ export const WEAPON_DEFS = {
     recoil: 0, headshotMult: 1.0, melee: true, range: KNIFE_RANGE,
     unlocked: true, autoFire: false, canScope: false, sfxFire: sfxKnife,
   },
+  rocket: {
+    // S55ak: shoulder-fired rocket launcher. Single load, slow reload.
+    // `launcher: true` flags tryFire to spawn a rocket via projectiles.js
+    // instead of casting a raycast. `damage` here is purely cosmetic
+    // (the actual damage values live in constants.js
+    // PLAYER_ROCKET_DAMAGE / PLAYER_ROCKET_EXPLODE_DAMAGE).
+    name: 'Rocket Launcher', damage: 60, rpm: 30,
+    magSize: 1, reserveStart: 4, reloadTime: 2.5,
+    spread: 0, pellets: 1, recoil: 0.110,
+    launcher: true,
+    unlocked: false, autoFire: false, canScope: false, sfxFire: sfxShotgun,
+  },
 };
 
 // Mutable per-weapon ammo state.
@@ -100,6 +117,7 @@ export const weaponState = {
   sniper:  { mag: WEAPON_DEFS.sniper.magSize,  reserve: WEAPON_DEFS.sniper.reserveStart  },
   saw:     { mag: WEAPON_DEFS.saw.magSize,     reserve: WEAPON_DEFS.saw.reserveStart     },
   knife:   { mag: 0, reserve: 0 },   // unused (melee has no ammo)
+  rocket:  { mag: WEAPON_DEFS.rocket.magSize,  reserve: WEAPON_DEFS.rocket.reserveStart  },
 };
 
 // Per-frame transient state — exported so HUD can read and input can mutate
@@ -822,6 +840,64 @@ function buildKnifeModel() {
   return g;
 }
 
+// S55ak: first-person rocket launcher view model. Long olive tube + warhead
+// cone nose + rear blast-bell + top sight + grip. Sized up vs the NPC
+// version in charmodels.js so it reads at FP camera distance. The hand
+// group (right hand on the grip) is tagged userData.isHand=true so the
+// pickup builder strips it when this model is rendered as a world pickup.
+export function buildRocketLauncherViewModel() {
+  const g = new THREE.Group();
+  const tubeMat = new THREE.MeshStandardMaterial({ color: 0x4a5a3a, roughness: 0.55, metalness: 0.35 });
+  const headMat = new THREE.MeshStandardMaterial({ color: 0x2a1a14, roughness: 0.60, metalness: 0.25 });
+  const sightMat = new THREE.MeshStandardMaterial({ color: 0x14181c, roughness: 0.45, metalness: 0.65 });
+
+  // Main tube — runs along Z, opening forward (-Z).
+  const tube = new THREE.Mesh(new THREE.CylinderGeometry(0.060, 0.060, 0.78, 14), tubeMat);
+  tube.rotation.x = Math.PI / 2;
+  tube.position.set(0, 0, -0.14);
+  g.add(tube);
+
+  // Warhead cone poking out the front (where the rocket spawns).
+  const head = new THREE.Mesh(new THREE.ConeGeometry(0.090, 0.20, 14), headMat);
+  head.rotation.x = -Math.PI / 2;
+  head.position.set(0, 0, -0.62);
+  g.add(head);
+
+  // Rear back-blast cone.
+  const bell = new THREE.Mesh(new THREE.CylinderGeometry(0.072, 0.105, 0.12, 14), tubeMat);
+  bell.rotation.x = Math.PI / 2;
+  bell.position.set(0, 0, 0.30);
+  g.add(bell);
+
+  // Top sight.
+  const sight = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.075, 0.13), sightMat);
+  sight.position.set(0, 0.09, -0.06);
+  g.add(sight);
+
+  // Front sight post.
+  const fsight = new THREE.Mesh(new THREE.BoxGeometry(0.012, 0.06, 0.012), sightMat);
+  fsight.position.set(0, 0.09, -0.40);
+  g.add(fsight);
+
+  // Trigger grip below the tube.
+  const grip = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.12, 0.07), sightMat);
+  grip.position.set(0, -0.10, 0.04);
+  g.add(grip);
+
+  // Right hand wrapping the grip.
+  const rHand = buildHand({ side: 'right' });
+  rHand.position.set(0.02, -0.10, 0.04);
+  g.add(rHand);
+  // Left hand on the front of the tube for stability.
+  const lHand = buildHand({ side: 'left' });
+  lHand.position.set(-0.05, -0.06, -0.20);
+  g.add(lHand);
+
+  g.position.set(0.18, -0.20, -0.42);
+  g.rotation.set(0.02, -0.05, 0);
+  return g;
+}
+
 // Build all view models and attach to camera. Hidden by default; the active
 // one is toggled via updateWeaponVisibility().
 const VIEW_MODELS = {
@@ -831,6 +907,7 @@ const VIEW_MODELS = {
   sniper:  buildSniperModel(),
   saw:     buildSawModel(),
   knife:   buildKnifeModel(),
+  rocket:  buildRocketLauncherViewModel(),
 };
 for (const key in VIEW_MODELS) {
   camera.add(VIEW_MODELS[key]);
@@ -864,6 +941,10 @@ const FLASH_OFFSETS = {
   sniper:  { x: 0, y: 0.02,  z: -0.69, scale: 1.8 },
   saw:     { x: 0, y: 0.02,  z: -0.54, scale: 1.3 },
   knife:   { x: 0, y: 0,     z: -0.30, scale: 0.0 },  // melee: never shown
+  // S55ak: rocket launcher — small front flash, plus a separate visible
+  // back-blast handled by the rocket spawn (the rocket itself reads as
+  // the exhaust). Front muzzle position matches the warhead nose tip.
+  rocket:  { x: 0, y: 0.02,  z: -0.74, scale: 2.0 },
 };
 
 // Where each weapon group sits relative to the camera. Mirrors the
@@ -877,6 +958,7 @@ const WEAPON_OFFSETS = {
   sniper:  { x: 0.22, y: -0.18, z: -0.48 },
   saw:     { x: 0.20, y: -0.18, z: -0.44 },
   knife:   { x: 0.17, y: -0.15, z: -0.34 },
+  rocket:  { x: 0.18, y: -0.20, z: -0.42 },
 };
 
 // Each weapon gets a small group: { core sphere, corona quad }. The whole
@@ -1223,6 +1305,31 @@ export function tryFire() {
   s.mag -= 1;
   wState.fireCooldown = 60 / w.rpm;
 
+  // S55ak: launcher branch. Skip the raycast — spawn a player-owned
+  // rocket along camera-forward from the muzzle position. The projectile
+  // path (projectiles.js updateProjectiles) handles direct-enemy hits +
+  // AoE detonation + self-damage scaling.
+  if (w.launcher) {
+    camera.getWorldDirection(_rocketFwd);
+    const off = WEAPON_OFFSETS.rocket;
+    const fOff = FLASH_OFFSETS.rocket;
+    // Muzzle world position = camera position + camera basis * (off + fOff).
+    // Easier: spawn 0.6 m forward of the camera along view direction so the
+    // rocket clears the player capsule (PLAYER_RADIUS = 0.4) before its
+    // owner check would even fire.
+    const ox = camera.position.x + _rocketFwd.x * 0.7;
+    const oy = camera.position.y + _rocketFwd.y * 0.7;
+    const oz = camera.position.z + _rocketFwd.z * 0.7;
+    spawnRocket(ox, oy, oz, _rocketFwd.x, _rocketFwd.y, _rocketFwd.z, 'player');
+    triggerMuzzleFlash();
+    // Heavier recoil kick.
+    wState.recoilPitch += w.recoil;
+    wState.recoilYaw   += 0;
+    wState.sprayResetTimer = RECOIL_RESET_TIME;
+    w.sfxFire();
+    return;
+  }
+
   // Effective spread = base + accumulated bloom (SAW only; 0 otherwise).
   const spread = w.spread + (w.bloom ? wState.bloom : 0);
   fireRays(w, spread);
@@ -1548,6 +1655,7 @@ export function resetWeapons() {
   WEAPON_DEFS.smg.unlocked = false;
   WEAPON_DEFS.saw.unlocked = false;
   WEAPON_DEFS.sniper.unlocked = false;
+  WEAPON_DEFS.rocket.unlocked = false;
   // knife stays unlocked (always-available melee fallback).
   for (const key in WEAPON_DEFS) {
     weaponState[key].mag = WEAPON_DEFS[key].magSize;

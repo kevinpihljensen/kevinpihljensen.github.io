@@ -92,6 +92,7 @@ window.addEventListener('keydown', (e) => {
     if (e.code === 'Digit4') { switchWeapon('sniper');  e.preventDefault(); return; }
     if (e.code === 'Digit5') { switchWeapon('saw');     e.preventDefault(); return; }
     if (e.code === 'Digit6' || e.code === 'KeyV') { switchWeapon('knife'); e.preventDefault(); return; }
+    if (e.code === 'Digit7') { switchWeapon('rocket'); e.preventDefault(); return; }
     if (e.code === 'KeyG') { tryThrowGrenade(); e.preventDefault(); return; }
   }
 

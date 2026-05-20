@@ -186,6 +186,7 @@ function updateWeaponRoster() {
     WEAPON_DEFS.smg.unlocked     ? 'M' : 'm',
     WEAPON_DEFS.saw.unlocked     ? 'W' : 'w',
     WEAPON_DEFS.sniper.unlocked  ? 'N' : 'n',
+    WEAPON_DEFS.rocket.unlocked  ? 'R' : 'r',
   ].join('|');
   if (key === lastRosterKey) return;
   lastRosterKey = key;

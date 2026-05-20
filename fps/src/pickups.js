@@ -29,6 +29,7 @@ import { PICKUPS as PICKUP_LAYOUT } from './maplayout.js';
 import {
   WEAPON_DEFS, unlockWeapon,
   buildShotgunModel, buildSmgModel, buildSniperModel, buildSawModel,
+  buildRocketLauncherViewModel,
 } from './weapons.js';
 import { sfxWeaponUnlock, sfxScopeOn } from './audio.js';
 import { showToast } from './hud.js';
@@ -40,6 +41,7 @@ const WEAPON_PICKUP_INFO = {
   smg:     { color: 0x36d6ff, label: 'SMG',     key: '3' },
   sniper:  { color: 0xb47bff, label: 'Sniper',  key: '4' },
   saw:     { color: 0x9ee03a, label: 'M249 SAW', key: '5' },
+  rocket:  { color: 0xff4030, label: 'Rocket Launcher', key: '7' },
 };
 
 // --- live list of pickups in the scene ---
@@ -151,6 +153,7 @@ const WEAPON_MODEL_BUILDERS = {
   smg:     buildSmgModel,
   sniper:  buildSniperModel,
   saw:     buildSawModel,
+  rocket:  buildRocketLauncherViewModel,
 };
 
 // Build a small coloured ring at the pickup's base that identifies the weapon

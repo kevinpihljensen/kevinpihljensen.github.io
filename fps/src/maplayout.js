@@ -815,6 +815,10 @@ export const PICKUPS = [
   { kind: 'weapon', what: 'shotgun', x:  22, z: -12, y: 4.0 },         // FOUNDRY_ROOF center (clear of CATWALK_HE shadow and the new stair)
   { kind: 'weapon', what: 'smg',     x:   0, z: -45, y: 4.0 },         // VAULT_ROOF center
   { kind: 'weapon', what: 'saw',     x: -48, z:   0, y: 0.0 },         // COLONNADE ground (between cols 2 & 3)
+  // S55ak: rocket launcher — placed on CATWALK_HE (the high iron bridge
+  // at y=8 above the citadel east side). High-traffic vertical contest
+  // point matching the long-range explosive role.
+  { kind: 'weapon', what: 'rocket',  x:  10, z: -17, y: 8.0 },         // CATWALK_HE top
   // Ground health — one per cardinal-ish quadrant.
   { kind: 'health', x:  18, z: -28, y: 0 },                            // NE plaza
   { kind: 'health', x: -18, z: -28, y: 0 },                            // NW plaza
