@@ -15,6 +15,7 @@ import {
   PLAYER_RADIUS, EYE_HEIGHT_STAND, EYE_HEIGHT_CROUCH,
   ROCKET_SPEED, ROCKET_LIFETIME, ROCKET_RADIUS,
   ROCKET_EXPLODE_RADIUS, ROCKET_EXPLODE_DAMAGE, ROCKETEER_DAMAGE,
+  ROCKET_PUSH_PEAK, ROCKET_PUSH_UP,
 } from './constants.js';
 import { player } from './state.js';
 import { damagePlayer } from './player.js';
@@ -125,8 +126,26 @@ function rocketExplode(x, y, z, originX, originZ) {
     const dz = player.position.z - z;
     const d = Math.hypot(dx, dy, dz);
     if (d <= ROCKET_EXPLODE_RADIUS) {
-      const dmg = ROCKET_EXPLODE_DAMAGE * (1 - d / ROCKET_EXPLODE_RADIUS);
-      damagePlayer(dmg, originX, originZ);
+      const falloff = 1 - d / ROCKET_EXPLODE_RADIUS;
+      damagePlayer(ROCKET_EXPLODE_DAMAGE * falloff, originX, originZ);
+      // S55aj: knockback. Push the player along the HORIZONTAL vector
+      // from blast centre to player, plus a small upward kick so the
+      // hit reads as physical (and so a blast at the feet briefly
+      // pops the player off the ground instead of just nudging them
+      // along the floor). Force scales with the same linear falloff
+      // as damage. If the player is sitting EXACTLY on the explosion
+      // (d ≈ 0) the horizontal direction is ill-defined, so just give
+      // an upward kick.
+      const horizD = Math.hypot(dx, dz);
+      if (horizD > 1e-3) {
+        const nx = dx / horizD;
+        const nz = dz / horizD;
+        player.velocityX += nx * ROCKET_PUSH_PEAK * falloff;
+        player.velocityZ += nz * ROCKET_PUSH_PEAK * falloff;
+      }
+      const upKick = ROCKET_PUSH_UP * falloff;
+      if (player.velocityY < upKick) player.velocityY = upKick;
+      player.isGrounded = false;
     }
   }
 }

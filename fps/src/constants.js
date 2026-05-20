@@ -425,19 +425,27 @@ export const ROCKETEER_FIRE_RANGE = 55.0;
 export const ROCKETEER_DIST_MIN = 18.0;    // backs away below this to keep distance
 export const ROCKETEER_DIST_MAX = 45.0;    // pushes toward player above this
 export const ROCKETEER_ATTACK_COOLDOWN = 3.2;
-export const ROCKETEER_DAMAGE = 50;        // direct-hit damage (player taking rocket to the face)
-export const ROCKETEER_AIM_WOBBLE = 0.025; // very accurate — but slow rocket lets you dodge
+// S55aj: damage halved (50→25 direct, 35→25 peak AoE) so a direct hit +
+// center-of-AoE stacks to 50 instead of 85 — still a serious threat but
+// no longer borderline-one-shot from full HP. Knockback adds physicality
+// that replaces some of the damage's psychological punch.
+export const ROCKETEER_DAMAGE = 25;        // direct-hit damage
+export const ROCKETEER_AIM_WOBBLE = 0.025;
 export const ROCKETEER_LEAD_STRENGTH = 0.65;
-// Aim slightly LOW so the rocket lands at the player's feet for splash
-// (instead of arrowing through their chest and exploding behind them).
 export const ROCKETEER_AIM_Y_OFFSET = -0.45;
 
 // Rocket projectile.
 export const ROCKET_SPEED = 28.0;
-export const ROCKET_LIFETIME = 4.5;        // 28*4.5 = 126 m — covers the map diagonal
-export const ROCKET_EXPLODE_RADIUS = 4.5;  // AoE radius around impact
-export const ROCKET_EXPLODE_DAMAGE = 35;   // peak AoE damage at centre, linear falloff
-export const ROCKET_RADIUS = 0.16;         // hit radius (vs player + walls)
+export const ROCKET_LIFETIME = 4.5;
+export const ROCKET_EXPLODE_RADIUS = 4.5;
+export const ROCKET_EXPLODE_DAMAGE = 25;   // peak AoE damage at centre
+export const ROCKET_RADIUS = 0.16;
+// S55aj: knockback applied to the player when caught inside the AoE.
+// Linear falloff with distance (same as damage). Horizontal velocity gets
+// PEAK at the blast centre, falling to 0 at the radius edge; vertical
+// component adds a small upward kick so the hit reads as physical.
+export const ROCKET_PUSH_PEAK = 9.0;       // peak m/s horizontal push at centre
+export const ROCKET_PUSH_UP = 3.5;         // peak m/s upward kick at centre
 
 // --- HUD POLISH ---
 export const HIT_MARKER_TIME = 0.18;
