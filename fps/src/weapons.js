@@ -1433,20 +1433,35 @@ export function switchWeapon(name) {
 }
 
 // --- SCOPE ---
-// M10: only the sniper canScope. Right-click toggles. Side effects on FOV /
-// sensitivity / walk speed / overlay are read elsewhere (player.js, hud.js,
-// input.js); this function owns the flag.
+// S55af: right-click cycles scope stages: 0 (off) → 1 → 2 → 0.
+// Side effects (FOV transition, sensitivity multiplier, walk-speed clamp,
+// scope CSS overlay opacity) read player.isScoped / player.scopeLevel
+// elsewhere; this function owns the flag.
 export function toggleScope() {
   if (!canAct()) return;
   const w = WEAPON_DEFS[wState.currentWeapon];
   if (!w.canScope) return;
-  setScope(!player.isScoped);
+  const next = (player.scopeLevel + 1) % 3;
+  setScopeLevel(next);
 }
 
+// Public boolean-style setter kept for back-compat (weapon swap clears scope).
 export function setScope(on) {
-  if (player.isScoped === on) return;
-  player.isScoped = on;
-  if (on) sfxScopeOn(); else sfxScopeOff();
+  setScopeLevel(on ? 1 : 0);
+}
+
+export function setScopeLevel(level) {
+  level = level | 0;
+  if (level < 0) level = 0;
+  if (level > 2) level = 2;
+  if (player.scopeLevel === level) return;
+  const wasScoped = player.isScoped;
+  player.scopeLevel = level;
+  player.isScoped = level > 0;
+  if (!wasScoped && player.isScoped) sfxScopeOn();
+  else if (wasScoped && !player.isScoped) sfxScopeOff();
+  // Distinct cue between stage 1 → 2 click (different from full unscope).
+  else if (wasScoped && player.isScoped) sfxScopeOn();
 }
 
 export function updateWeaponTimers(dt) {

@@ -403,37 +403,58 @@
     }
 
     /* --- SCOPE OVERLAY (sniper ADS) ---
-       Radial gradient that's transparent inside `min(45vh,45vw)` and black
-       outside, plus thin red crosshair lines through center. */
+       Radial gradient that's transparent inside the lens and black outside,
+       plus thin red crosshair lines THAT STAY INSIDE THE LENS CIRCLE (not
+       spanning the whole screen). The --lens-r CSS var lets JS adjust the
+       lens radius per zoom stage (stage 2 is a slightly tighter eyepiece). */
     #scope-overlay {
       position: fixed; inset: 0;
       pointer-events: none; z-index: 6;
       opacity: 0;
       transition: opacity 0.06s linear;
+      --lens-r: min(45vh, 45vw);
     }
     #scope-overlay .lens {
       position: absolute; inset: 0;
       background: radial-gradient(
         circle at center,
         transparent 0,
-        transparent calc(min(45vh, 45vw) - 2px),
-        #000 calc(min(45vh, 45vw)),
+        transparent calc(var(--lens-r) - 2px),
+        #000 var(--lens-r),
         #000 100%
       );
     }
+    /* S55af: crosshair lines sized to the lens diameter so they stay INSIDE
+       the round scope, not spanning the entire screen. */
     #scope-overlay .reticle-h,
     #scope-overlay .reticle-v {
       position: absolute;
-      background: rgba(239, 68, 68, 0.6);
+      left: 50%; top: 50%;
+      transform: translate(-50%, -50%);
+      background: rgba(239, 68, 68, 0.65);
     }
-    #scope-overlay .reticle-h { left: 0; right: 0; top: 50%; height: 1px; }
-    #scope-overlay .reticle-v { top: 0; bottom: 0; left: 50%; width: 1px; }
+    #scope-overlay .reticle-h {
+      width: calc(var(--lens-r) * 2 - 6px);
+      height: 1px;
+    }
+    #scope-overlay .reticle-v {
+      width: 1px;
+      height: calc(var(--lens-r) * 2 - 6px);
+    }
     #scope-overlay .reticle-dot {
       position: absolute; left: 50%; top: 50%;
       width: 4px; height: 4px;
       background: rgba(239, 68, 68, 0.9);
       transform: translate(-50%, -50%);
       border-radius: 50%;
+    }
+    /* Optional small zoom-stage indicator at the bottom of the scope. */
+    #scope-overlay .zoom-tag {
+      position: absolute; left: 50%; bottom: calc(50% - var(--lens-r) + 24px);
+      transform: translate(-50%, 0);
+      color: rgba(239, 68, 68, 0.85);
+      font-size: 12px; font-weight: 700; letter-spacing: 2px;
+      text-shadow: 0 1px 2px rgba(0,0,0,0.8);
     }
 
     /* --- TOAST --- */
@@ -546,6 +567,7 @@
     <div class="reticle-h"></div>
     <div class="reticle-v"></div>
     <div class="reticle-dot"></div>
+    <div class="zoom-tag" id="scope-zoom-tag">3×</div>
   </div>
 
   <div id="toast"></div>

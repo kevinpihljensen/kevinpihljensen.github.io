@@ -59,6 +59,10 @@ export const player = {
   // collision capsule height both interpolate with it (fast but not instant).
   crouchT: 0,
   isScoped: false,      // M10: sniper-scoped (right-click toggle)
+  // S55af: scope zoom stage. 0 = unscoped, 1 = first zoom, 2 = second
+  // (tighter) zoom. `isScoped` mirrors `scopeLevel > 0` so existing
+  // call sites (speed clamp, sensitivity, HUD) keep working unchanged.
+  scopeLevel: 0,
   health: PLAYER_MAX_HEALTH,
   maxHealth: PLAYER_MAX_HEALTH,
   damageFlashTimer: 0,

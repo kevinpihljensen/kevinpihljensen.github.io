@@ -52,6 +52,7 @@ export const dom = {
   damageIndicator:   $('damage-indicator'),
   toast:             $('toast'),
   scopeOverlay:      $('scope-overlay'),
+  scopeZoomTag:      $('scope-zoom-tag'),
 };
 
 // Pre-grab weapon slot elements so we don't re-query each frame.
@@ -254,9 +255,17 @@ export function updateHUD(dt) {
     dom.hudBreak.style.display = 'none';
   }
 
-  // Crosshair vs scope.
+  // Crosshair vs scope. S55af: 2-stage zoom — stage 2 tightens the lens
+  // and updates the magnification label.
   dom.crosshair.style.display = player.isScoped ? 'none' : 'block';
   dom.scopeOverlay.style.opacity = player.isScoped ? '1' : '0';
+  if (player.scopeLevel === 2) {
+    dom.scopeOverlay.style.setProperty('--lens-r', 'min(34vh, 34vw)');
+    dom.scopeZoomTag.textContent = '7.5×';
+  } else {
+    dom.scopeOverlay.style.setProperty('--lens-r', 'min(45vh, 45vw)');
+    dom.scopeZoomTag.textContent = '3×';
+  }
 
   // Hit marker (red X) / headshot marker (gold +). Headshot takes precedence.
   if (wState.headshotMarkerTimer > 0) {

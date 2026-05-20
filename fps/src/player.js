@@ -29,7 +29,7 @@ import {
   GROUND_FRICTION, GROUND_STOP_SPEED, GROUND_ACCEL, AIR_ACCEL,
   AIR_WISH_SPEED_CAP, MAX_HORIZONTAL_SPEED,
   PLAYER_MAX_HEALTH, DAMAGE_FLASH_TIME, DAMAGE_INDICATOR_TIME,
-  DEFAULT_FOV, SCOPE_FOV, ARENA_PLAYER_RESPAWN_DELAY,
+  DEFAULT_FOV, SCOPE_FOV, SCOPE_FOV_2, ARENA_PLAYER_RESPAWN_DELAY,
 } from './constants.js';
 import { sfxPlayerHurt, sfxGameOver } from './audio.js';
 import { setGameState } from './hud.js';
@@ -144,8 +144,11 @@ export function updatePlayer(dt) {
   // growing capsule has the room it needs.
   const bodyH = standCapsuleH + (crouchCapsuleH - standCapsuleH) * player.crouchT;
 
-  // FOV transition based on scope state.
-  const targetFov = player.isScoped ? SCOPE_FOV : DEFAULT_FOV;
+  // FOV transition based on scope stage. S55af: 2-stage zoom.
+  let targetFov;
+  if      (player.scopeLevel === 2) targetFov = SCOPE_FOV_2;
+  else if (player.scopeLevel === 1) targetFov = SCOPE_FOV;
+  else                              targetFov = DEFAULT_FOV;
   if (camera.fov !== targetFov) {
     camera.fov = targetFov;
     camera.updateProjectionMatrix();
@@ -527,6 +530,7 @@ export function resetPlayer() {
   player.isCrouching = false;
   player.crouchT = 0;
   player.isScoped = false;
+  player.scopeLevel = 0;
   player.health = PLAYER_MAX_HEALTH;
   player.maxHealth = PLAYER_MAX_HEALTH;
   player.damageFlashTimer = 0;

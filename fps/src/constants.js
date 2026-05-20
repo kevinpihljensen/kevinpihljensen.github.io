@@ -77,6 +77,10 @@ export const PITCH_LIMIT = Math.PI / 2 - 0.01;
 export const SCOPE_SENS_MULT = 0.35;   // M10: scoped sensitivity ratio
 export const DEFAULT_FOV = 75;
 export const SCOPE_FOV = 25;
+// S55af: second zoom level on the sniper. Right-click cycles
+// off → SCOPE_FOV (25°) → SCOPE_FOV_2 (10°) → off. The tighter zoom
+// shrinks the scope FOV by ~2.5× over the first stage.
+export const SCOPE_FOV_2 = 10;
 
 // --- LOOP / NUMERICS ---
 export const MAX_DT = 0.1;
