@@ -32,6 +32,7 @@ export const dom = {
   btnModeMaptest:    $('btn-mode-maptest'),
   hud:               $('hud'),
   hudAmmo:           $('hud-ammo'),
+  hudGrenade:        $('hud-grenade-count'),
   hudWeapon:         $('hud-weapon'),
   hudMagPips:        $('hud-mag-pips'),
   hudHealthFill:     $('hud-health-fill'),
@@ -215,6 +216,10 @@ export function updateHUD(dt) {
   dom.hudWeapon.textContent = w.name;
   updateMagPips(wState.currentWeapon, s);
   updateWeaponRoster();
+  // S55ae: grenade count. Dimmed colour when zero so the [G] hint still
+  // shows the binding but doesn't shout when there's nothing to throw.
+  dom.hudGrenade.textContent = String(player.grenades);
+  dom.hudGrenade.style.opacity = player.grenades > 0 ? '1' : '0.35';
 
   // Health
   const hp = Math.max(0, Math.min(player.maxHealth, player.health));

@@ -339,6 +339,23 @@ export const PICKUP_BOB_RATE = 2.2;        // bob frequency (rad/s)
 export const PICKUP_SPIN_RATE = 1.4;       // yaw rotation rate (rad/s)
 export const HEALTH_PICKUP_AMOUNT = 25;    // HP restored per health pickup (capped at PLAYER_MAX_HEALTH)
 
+// --- GRENADES (S55ae) ---
+// Player-thrown explosive. Picked up on the map (kind='grenade'), tossed
+// with G. Travels under gravity, bounces off solids with energy loss,
+// detonates on fuse expiry. Explosion damages enemies + player inside
+// GRENADE_RADIUS with linear-falloff damage (full at centre, 0 at edge).
+export const GRENADE_MAX_HELD = 4;          // can hold this many at once
+export const GRENADE_PICKUP_AMOUNT = 2;     // grenades gained per pickup
+export const GRENADE_FUSE = 2.4;            // seconds from throw to detonation
+export const GRENADE_THROW_SPEED = 16.0;    // initial speed (m/s)
+export const GRENADE_THROW_UP = 0.20;       // y component of throw direction
+export const GRENADE_GRAVITY = 14.0;        // gravity on the in-flight grenade
+export const GRENADE_BOUNCE = 0.45;         // velocity multiplier on bounce
+export const GRENADE_RADIUS = 6.0;          // explosion radius (m)
+export const GRENADE_DAMAGE = 80;           // peak damage at centre (linear falloff)
+export const GRENADE_SELF_DAMAGE_MULT = 0.6;// player self-damage from own grenade
+export const GRENADE_THROW_COOLDOWN = 0.5;  // seconds between throws
+
 // Knife: always available melee fallback. Short reach, fast swipe, lethal to
 // light enemies in one hit (kills a 30-HP grunt / 20-HP shooter outright;
 // ~2 hits for a 150-HP heavy).

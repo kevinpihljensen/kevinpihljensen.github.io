@@ -531,6 +531,10 @@ export function resetPlayer() {
   player.maxHealth = PLAYER_MAX_HEALTH;
   player.damageFlashTimer = 0;
   player.alive = true;
+  // S55ae: start a fresh run with no grenades. They're picked up from
+  // map pickups.
+  player.grenades = 0;
+  player.grenadeCooldown = 0;
   damageIndicator.timer = 0;
   damageIndicator.angle = 0;
   spacePrev = false;

@@ -137,6 +137,16 @@
     }
 
     /* Ammo widget — bottom-right. Big readable count, weapon name, mag pips. */
+    /* S55ae: grenade count, just below the ammo row. */
+    #hud-grenade-row {
+      position: fixed; right: 24px; bottom: 12px;
+      color: #f0c050; font-size: 18px; font-weight: 700; letter-spacing: 1px;
+      text-shadow: 0 1px 2px rgba(0,0,0,0.7);
+      z-index: 5;
+    }
+    #hud-grenade-row #hud-grenade-label { opacity: 0.7; margin-right: 8px; font-size: 13px; }
+    #hud-grenade-row #hud-grenade-count { color: #ffd060; }
+
     #hud-ammo-row {
       position: absolute; right: 28px; bottom: 28px;
       text-align: right;
@@ -507,6 +517,10 @@
       <div id="hud-ammo"><span class="mag">12</span><span class="reserve"> / 96</span></div>
       <div id="hud-weapon">Pistol</div>
       <div id="hud-mag-pips"></div>
+    </div>
+    <div id="hud-grenade-row">
+      <span id="hud-grenade-label">[G] GRENADES</span>
+      <span id="hud-grenade-count">0</span>
     </div>
     <div id="hud-speed">0</div>
     <div id="hud-bhop">BUNNY HOP: OFF</div>

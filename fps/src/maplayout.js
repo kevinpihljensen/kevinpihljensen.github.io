@@ -830,4 +830,11 @@ export const PICKUPS = [
   { kind: 'health', x: -42, z: -32, y: 4.0 },                          // WATCHTOWER roof center
   { kind: 'health', x:  55, z:   0, y: 5.0 },                          // EAST_TOWER roof center
   { kind: 'health', x:   0, z:  55, y: 4.0 },                          // SOUTH_KEEP roof center
+  // S55ae: grenade pickups — four around the map at points likely to be in
+  // the player's flow, all on open surfaces (no roofed buildings) so the
+  // pickup-reachability harness passes.
+  { kind: 'grenade', x:  12, z:   2, y: 0 },                           // SE plaza near foundry approach
+  { kind: 'grenade', x: -12, z:   2, y: 0 },                           // SW plaza
+  { kind: 'grenade', x:   0, z:  -7, y: 4.0 },                         // CITADEL_BASE mezzanine
+  { kind: 'grenade', x: -30, z:  16, y: 0 },                           // West plaza
 ];

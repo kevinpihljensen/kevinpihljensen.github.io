@@ -63,6 +63,10 @@ export const player = {
   maxHealth: PLAYER_MAX_HEALTH,
   damageFlashTimer: 0,
   alive: true,
+  // S55ae: held grenades. Capped at GRENADE_MAX_HELD by the pickup path
+  // and the throw input checks the count. resetPlayer / resetGame zero it.
+  grenades: 0,
+  grenadeCooldown: 0,
 };
 
 // M10: damage direction indicator. `angle` is screen-CW relative to player

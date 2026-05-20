@@ -22,6 +22,8 @@ import { applyJumpPad, updateJumpPads } from './jumppads.js';
 import { updateTorchFlicker } from './torches.js';
 import { updateSpawnFX } from './spawnfx.js';
 import { initCharModels } from './charmodels.js';
+import { updateGrenades } from './grenades.js';
+import { player } from './state.js';
 
 // S55p: kick off the player-model GLB load at boot. enemies.js checks
 // hasCharacter() at spawn time and falls back to the procedural rig if
@@ -51,6 +53,13 @@ function loop() {
     processAutoFire();
     updateEnemies(dt);
     updateProjectiles(dt);
+    updateGrenades(dt);
+    // S55ae: grenade-throw cooldown tick so multiple presses don't dump
+    // the whole inventory in one frame.
+    if (player.grenadeCooldown > 0) {
+      player.grenadeCooldown -= dt;
+      if (player.grenadeCooldown < 0) player.grenadeCooldown = 0;
+    }
     // S55i/k: portal-trigger + jumppad-trigger checks BEFORE player
     // movement. Teleporter snaps position; jumppad sets velocityY. Both
     // must run pre-collision so the change is reflected this same frame.

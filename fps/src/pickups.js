@@ -23,6 +23,7 @@ import {
   PICKUP_RADIUS, PICKUP_VERT_TOL, PICKUP_RESPAWN,
   PICKUP_HOVER_HEIGHT, PICKUP_BOB_AMP, PICKUP_BOB_RATE, PICKUP_SPIN_RATE,
   HEALTH_PICKUP_AMOUNT,
+  GRENADE_MAX_HELD, GRENADE_PICKUP_AMOUNT,
 } from './constants.js';
 import { PICKUPS as PICKUP_LAYOUT } from './maplayout.js';
 import {
@@ -212,10 +213,32 @@ function buildWeaponMesh(what) {
   return g;
 }
 
+// S55ae: grenade pickup mesh — small dark olive sphere with a yellow ring
+// "pin" wrapped around it. Reads as a CS-style explosive without needing a
+// new authored asset.
+const GRENADE_BODY_MAT = new THREE.MeshStandardMaterial({
+  color: 0x2a3a18, emissive: 0x0a1208, emissiveIntensity: 0.4,
+  roughness: 0.55, metalness: 0.25,
+});
+const GRENADE_RING_MAT = new THREE.MeshStandardMaterial({
+  color: 0xf0c050, emissive: 0xf0c050, emissiveIntensity: 0.6,
+  roughness: 0.4, metalness: 0.3,
+});
+function buildGrenadeMesh() {
+  const g = new THREE.Group();
+  const body = new THREE.Mesh(new THREE.SphereGeometry(0.18, 14, 10), GRENADE_BODY_MAT);
+  g.add(body);
+  const ring = new THREE.Mesh(new THREE.TorusGeometry(0.20, 0.025, 8, 18), GRENADE_RING_MAT);
+  ring.rotation.x = Math.PI / 2;
+  g.add(ring);
+  return g;
+}
+
 function makePickup(entry) {
-  const group = entry.kind === 'weapon'
-    ? buildWeaponMesh(entry.what)
-    : buildHealthMesh();
+  let group;
+  if      (entry.kind === 'weapon')  group = buildWeaponMesh(entry.what);
+  else if (entry.kind === 'grenade') group = buildGrenadeMesh();
+  else                                group = buildHealthMesh();
   group.position.set(entry.x, (entry.y || 0) + PICKUP_HOVER_HEIGHT, entry.z);
   scene.add(group);
   pickups.push({
@@ -254,6 +277,15 @@ function applyPickup(p) {
     showToast(wasLocked
       ? `${label} acquired! [${key}]`
       : `${label} ammo refilled`, 1.6);
+    sfxWeaponUnlock();
+  } else if (p.kind === 'grenade') {
+    // S55ae: add GRENADE_PICKUP_AMOUNT to held, clamp at GRENADE_MAX_HELD.
+    // Always consume the pickup (even at cap) so it can't be hoarded; this
+    // matches the health-at-full-HP behaviour above.
+    const before = player.grenades;
+    player.grenades = Math.min(GRENADE_MAX_HELD, before + GRENADE_PICKUP_AMOUNT);
+    const gained = player.grenades - before;
+    showToast(gained > 0 ? `+${gained} Grenade [G]` : 'Grenade pouch full', 1.4);
     sfxWeaponUnlock();
   } else {
     // Health: clamp at max so a full-HP player gains nothing (the pickup

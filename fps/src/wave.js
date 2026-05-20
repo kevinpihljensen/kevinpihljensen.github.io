@@ -12,6 +12,7 @@ import {
 import { enemies, makeEnemy, pickSpawnPoint, pickArenaSpawnPoint, clearEnemies, resetSpawnMemory } from './enemies.js';
 import { spawnSpawnFX } from './spawnfx.js';
 import { projectiles, clearProjectiles } from './projectiles.js';
+import { clearGrenades } from './grenades.js';
 import { decals, clearDecals, clearBlood } from './decals.js';
 import { resetWeapons } from './weapons.js';
 import { resetPlayer } from './player.js';
@@ -75,6 +76,7 @@ export function updateWave(dt) {
 export function resetGame() {
   clearEnemies();
   clearProjectiles();
+  clearGrenades();
   clearDecals();
   clearBlood();
   resetWeapons();
@@ -109,6 +111,7 @@ const MAPTEST_LINEUP = [
 export function startMapTest() {
   clearEnemies();
   clearProjectiles();
+  clearGrenades();
   clearDecals();
   clearBlood();
   resetWeapons();        // pistol is unlocked + selected by default
@@ -142,6 +145,7 @@ export function startMapTest() {
 export function startArena() {
   clearEnemies();
   clearProjectiles();
+  clearGrenades();
   clearDecals();
   clearBlood();
   resetWeapons();

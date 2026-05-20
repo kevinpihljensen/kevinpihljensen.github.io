@@ -8,9 +8,10 @@
 //   * mousedown/mouseup track held state for full-auto SMG (sets
 //     weapons.wState.mouseHeld).
 
-import { renderer } from './scene.js';
+import { renderer, camera } from './scene.js';
 import { state, game, player } from './state.js';
-import { GAME_STATE, KEYS_TO_LOCK } from './constants.js';
+import { GAME_STATE, KEYS_TO_LOCK,
+  GRENADE_THROW_SPEED, GRENADE_THROW_UP, GRENADE_THROW_COOLDOWN } from './constants.js';
 import { ensureAudio, suspendAudio, resumeAudio } from './audio.js';
 import { keys, applyMouseDelta, clearKeys } from './player.js';
 import {
@@ -18,6 +19,34 @@ import {
 } from './weapons.js';
 import { setGameState, dom, syncTitleToggles } from './hud.js';
 import { resetGame, startWave, startMapTest, startArena } from './wave.js';
+import { spawnGrenade } from './grenades.js';
+import * as THREE from 'three';
+
+// S55ae: scratch vector for the throw direction (reused, no per-throw alloc).
+const _throwDir = new THREE.Vector3();
+
+function tryThrowGrenade() {
+  if (!player.alive) return;
+  if (player.grenades <= 0) return;
+  if (player.grenadeCooldown > 0) return;
+  player.grenades -= 1;
+  player.grenadeCooldown = GRENADE_THROW_COOLDOWN;
+  // Throw from the eye, along camera forward + slight upward tilt so the
+  // arc has a useful pop. Speed is GRENADE_THROW_SPEED.
+  _throwDir.set(0, 0, -1).applyQuaternion(camera.quaternion);
+  // Bias the direction upward; renormalize so the speed is consistent.
+  _throwDir.y += GRENADE_THROW_UP;
+  _throwDir.normalize();
+  const ox = camera.position.x + _throwDir.x * 0.4;
+  const oy = camera.position.y + _throwDir.y * 0.4;
+  const oz = camera.position.z + _throwDir.z * 0.4;
+  spawnGrenade(
+    ox, oy, oz,
+    _throwDir.x * GRENADE_THROW_SPEED,
+    _throwDir.y * GRENADE_THROW_SPEED,
+    _throwDir.z * GRENADE_THROW_SPEED,
+  );
+}
 
 // --- KEYBOARD ---
 window.addEventListener('keydown', (e) => {
@@ -63,6 +92,7 @@ window.addEventListener('keydown', (e) => {
     if (e.code === 'Digit4') { switchWeapon('sniper');  e.preventDefault(); return; }
     if (e.code === 'Digit5') { switchWeapon('saw');     e.preventDefault(); return; }
     if (e.code === 'Digit6' || e.code === 'KeyV') { switchWeapon('knife'); e.preventDefault(); return; }
+    if (e.code === 'KeyG') { tryThrowGrenade(); e.preventDefault(); return; }
   }
 
   if (state.gameState === GAME_STATE.GAMEOVER || state.gameState === GAME_STATE.WON) {
