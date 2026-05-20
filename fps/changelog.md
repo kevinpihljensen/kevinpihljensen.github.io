@@ -26,6 +26,82 @@ Format: newest entries at the top. Each entry lists what was added, what was cha
 
 ## Session log
 
+### 2026-05-20 — Session 55al (anti-jetpack map rework — overhead slabs + spawn plaza partitions)
+
+User: "doesn't matter where I hide, there's a jetpack guy volleying a
+shot at me. We need far more combat to happen inside walls." Map had
+wide-open plazas with full sky overhead — a jetpack at the previous
+JETPACK_HOVER_HEIGHT_MIN (5.5 m) could see down to any grounded player
+from anywhere on the map. Sightline matrix in the prior map_report
+showed SPAWN had clear LOS to most of the weapon pickups.
+
+**Fix — two parts:**
+
+1. `constants.js` — JETPACK_HOVER_HEIGHT_MIN 5.5 → 8.0,
+   JETPACK_HOVER_HEIGHT_MAX 11.0 → 13.0. Jetpacks are now always above
+   the new overhead slabs (which top out at y=6.9), so when the player
+   ducks under cover the through-slab LOS test fails and the jetpack
+   stops firing until they emerge.
+
+2. `maplayout.js` — appended a S55al block with two new geometry types:
+
+   **5 overhead slabs** at y=6.5–6.9, implemented as `wall` entries with
+   large `thick` (the wall builder already calls makeBoxSolid with
+   noWalk:true so they don't register as stranded surfaces in the
+   reachability BFS). Slab placements avoid HILLTOP / SPIRE / CATWALK_HE
+   airspace so the high-elevation combat zone stays a true rooftop
+   encounter:
+
+   - CEILING_CENTRAL_S (slate)  — spawn plaza + S ramp approach,
+     x=[-12,12], z=[-7,15]
+   - CEILING_CENTRAL_N (slate)  — north alley between citadel + VAULT,
+     x=[-9,9], z=[-37,-27]
+   - CEILING_EAST    (iron)     — citadel↔foundry alley,
+     x=[8,14], z=[-11,11]
+   - CEILING_WEST    (sandstone)— citadel↔colonnade rampart alley,
+     x=[-26,-8], z=[-2,12]
+   - CEILING_SOUTH   (sandstone)— spawn↔TERRACE approach,
+     x=[-11,11], z=[15,23]
+
+   The slabs are intentionally BROKEN into 5 separate pieces with gaps
+   between them, so a player can step into an open courtyard if they
+   want a sightline UP — pressure switches but never disappears.
+
+   **5 tall partition walls** (height 5.4 m, just below the y=6.5
+   ceiling so wall+ceiling visually meet) breaking up the spawn plaza
+   into smaller sub-rooms. Each has a 2.4 m doorway for AI flow:
+
+   - East partition (sandstone)  axis=z @ (7, 9)  L=18
+   - West partition (sandstone)  axis=z @ (-7, 9) L=18
+   - North partition (slate)     axis=x @ (0, -34) L=8 — between
+     citadel N stair foot (z=-31) and VAULT, set 3 m north of the
+     stair foot so its doorway doesn't open into the stair wedge.
+   - NE-foundry partition (iron) axis=x @ (18, 0) L=8
+   - SE-toward-terrace (sand)    axis=z @ (6, 20) L=6
+
+   Each new ground-level door-bearing wall has a matching DOORWAYS
+   entry so the AI router can path through them.
+
+**Verified**: node --check clean; dev/test-all.sh ALL GREEN; MAP OK;
+geomWarns=0; unreachable pickups=0; doorway drift=0. Sightline matrix
+between SPAWN and every weapon pickup is now ALL BLOCKED (✗) — was
+mostly open before. That's the headline result.
+
+**Known issues**
+- The rework is conservative: only the central + spawn-area corridors
+  are covered. NE / NW / SE outer plazas (between corner buildings)
+  are still open to the sky. If jetpack pressure on those zones is
+  still problematic, add more slabs covering those gaps next session.
+- Slab materials don't unify into a single style — central is slate,
+  east is iron, west/south are sandstone — so the visual reads as
+  "the buildings reach across to each other" rather than a single
+  monolithic awning. Reading whether that helps or hurts is the user's
+  call.
+- One geomWarn iteration was needed before MAP OK: the original
+  north partition position at z=-30 had its doorway opening into the
+  citadel N stair wedge. Moved to z=-34 (3 m clear of the stair foot)
+  and the warning resolved.
+
 ### 2026-05-20 — Session 55ak (rocket damage cut further; player gets a rocket launcher)
 
 User: rocket still felt too lethal; also asked to add a rocket launcher

@@ -156,6 +156,12 @@ export const DOORWAYS = [
   { x:   0, z: 55, axis: 'z' },    // interior partition
   // EAST_TOWER (far-east watchtower, S55k).
   { x:  51, z:  0, axis: 'z' },    // W front door
+  // S55al: ground-level partition walls in the spawn plaza.
+  { x:   7, z:  9, axis: 'z' },    // east spawn-plaza partition
+  { x:  -7, z:  9, axis: 'z' },    // west spawn-plaza partition
+  { x:   0, z: -34, axis: 'x' },   // north partition (between citadel N stair foot and VAULT)
+  { x:  18, z:  0, axis: 'x' },    // NE-foundry partition (between foundry and spawn)
+  { x:   6, z:  20, axis: 'z' },   // SE-of-spawn partition (toward terrace)
 ];
 
 // S55j: Arena-mode enemy spawn points scattered across the WHOLE MAP so
@@ -791,6 +797,83 @@ export const LAYOUT = [
   // South open plaza between terrace and citadel S ramp foot.
   { t: 'box', cx:  10, cz:  12, sx: 2.0, sy: 1.0, sz: 2.0 },
   { t: 'box', cx: -10, cz:  12, sx: 2.0, sy: 1.0, sz: 2.0 },
+
+  // =====================================================================
+  // S55al: OVERHEAD SLABS + INTERIOR PARTITIONS — anti-jetpack rework.
+  // User: "doesn't matter where I hide, there's a jetpack guy volleying
+  // a shot at me." Map had wide-open plazas with full sky overhead, so
+  // a jetpack at 5.5 m could see down to any grounded player from
+  // anywhere. Fix in two parts:
+  //   (1) raise JETPACK_HOVER_HEIGHT_MIN to 8.0 (constants.js)
+  //   (2) add NOWALK overhead slabs at y=6.5-6.9 over the main combat
+  //       corridors. Slabs are `wall` entries with large `thick` so they
+  //       render as wide flat ceilings. From below, a player has 4+ m of
+  //       headroom; from above, the slab body blocks LOS — a jetpack at
+  //       y=8+ cannot see down through the slab to a player below.
+  // Slabs are deliberately broken into 4 separate pieces with gaps
+  // between, so the player can also pop into open courtyards if they
+  // want a sightline UP to the jetpack — pressure switches but never
+  // disappears. Each slab avoids HILLTOP / SPIRE / CATWALK_HE airspace
+  // so the high-elevation combat zone stays a true rooftop encounter.
+  // =====================================================================
+  // CEILING_CENTRAL_S — spawn plaza + S ramp approach. Covers x=[-12,12],
+  // z=[-7,15]. Vertical: y=6.5-6.9. The citadel S parapet wall at z=-7
+  // tops out at y=5.6, so we abut the wall in plan but have 0.9 m of
+  // vertical separation from it.
+  { t: 'wall', axis: 'x', cx: 0, cz: 4, length: 24, height: 0.4, thick: 22,
+    base: 6.5, mat: 'slate' },
+  // CEILING_CENTRAL_N — north alley between citadel (z up to -7) and the
+  // VAULT (z=-39 down). Covers x=[-9,9], z=[-37,-27]. Sits in the slot
+  // between citadel north stair landing and the N anchor spawn box.
+  { t: 'wall', axis: 'x', cx: 0, cz: -32, length: 18, height: 0.4, thick: 10,
+    base: 6.5, mat: 'slate' },
+  // CEILING_EAST — alley between CITADEL east face and FOUNDRY west face.
+  // Covers x=[8,14], z=[-11,11].
+  { t: 'wall', axis: 'x', cx: 11, cz: 0, length: 6, height: 0.4, thick: 22,
+    base: 6.5, mat: 'iron' },
+  // CEILING_WEST — alley between CITADEL west face / BRIDGE_W underbelly
+  // and the COLONNADE rampart. Covers x=[-26,-8], z=[-2,12]. North half
+  // is omitted to leave the W stair landing area (z=-15..-7) uncovered
+  // — that's where the citadel internal W stair drops.
+  { t: 'wall', axis: 'x', cx: -17, cz: 5, length: 18, height: 0.4, thick: 14,
+    base: 6.5, mat: 'sandstone' },
+  // CEILING_SOUTH — between spawn area and TERRACE deck. Covers
+  // x=[-11,11], z=[15,23] (terrace begins at z=25 with parapet, so we
+  // stop 2 m short).
+  { t: 'wall', axis: 'x', cx: 0, cz: 19, length: 22, height: 0.4, thick: 8,
+    base: 6.5, mat: 'sandstone' },
+
+  // TALL PARTITION WALLS — break up the spawn plaza into smaller
+  // sub-rooms with sightlines that don't span the whole plaza. Each is
+  // 5.4 m tall (just below the y=6.5 ceiling, so the wall + ceiling
+  // visually meet) so jumping doesn't peek over them. Doorways punched
+  // through with `door:` so AI navigation still works.
+  // ---------------------------------------------------------------
+  // East partition: separates spawn plaza from the east alley + foundry
+  // approach. Doorway 2.4 m wide for AI flow.
+  { t: 'wall', axis: 'z', cx: 7, cz: 9, length: 18, height: 5.4, thick: 0.5,
+    base: 0, mat: 'sandstone',
+    door: { width: 2.4, height: 2.6 } },
+  // West partition: mirrors the east, separating spawn from west alley.
+  { t: 'wall', axis: 'z', cx: -7, cz: 9, length: 18, height: 5.4, thick: 0.5,
+    base: 0, mat: 'sandstone',
+    door: { width: 2.4, height: 2.6 } },
+  // North partition: blocks a long N-S sightline between citadel N
+  // stair foot (z=-31) and the VAULT (z=-39). Sits 3 m north of the
+  // stair foot so its doorway does NOT open into the stair wedge body.
+  { t: 'wall', axis: 'x', cx: 0, cz: -34, length: 8, height: 5.4, thick: 0.5,
+    base: 0, mat: 'slate',
+    door: { width: 2.4, height: 2.6 } },
+  // NE-foundry partition: a tall slab between the foundry south door and
+  // the central plaza, so a jetpack from the foundry roof can't beeline
+  // straight to spawn.
+  { t: 'wall', axis: 'x', cx: 18, cz: 0, length: 8, height: 5.4, thick: 0.5,
+    base: 0, mat: 'iron',
+    door: { width: 2.4, height: 2.6 } },
+  // SE-of-spawn partition: same idea on the south side near TERRACE.
+  { t: 'wall', axis: 'z', cx: 6, cz: 20, length: 6, height: 5.4, thick: 0.5,
+    base: 0, mat: 'sandstone',
+    door: { width: 2.4, height: 2.6 } },
 ];
 
 // --- PICKUPS ---

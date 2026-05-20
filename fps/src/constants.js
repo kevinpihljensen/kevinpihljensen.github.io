@@ -229,8 +229,14 @@ export const ENEMY_TERMINAL_VY = -25;
 // New flying enemy. Hovers above the player, fires a 3-round burst from a
 // carbine, then reloads. Worse aim than the ground shooter (weaker lead +
 // per-shot wobble); HP is low (it's exposed up there).
-export const JETPACK_HOVER_HEIGHT_MIN = 5.5;   // metres above the player's floor
-export const JETPACK_HOVER_HEIGHT_MAX = 11.0;  // upper hover bound
+// S55al: jetpack hover floor raised 5.5→8.0 and ceiling 11.0→13.0. The
+// map rework adds y=6.5-6.9 overhead slabs over the main plaza corridors
+// to block jetpack line-of-sight to grounded players. With min hover at
+// 8.0 the jetpack is always ABOVE those slabs — so when the player runs
+// under cover the LOS through-slab test fails and the jetpack stops
+// firing until they emerge again.
+export const JETPACK_HOVER_HEIGHT_MIN = 8.0;   // metres above the player's floor
+export const JETPACK_HOVER_HEIGHT_MAX = 13.0;  // upper hover bound
 export const JETPACK_HORIZ_SPEED = 4.2;        // horizontal m/s
 export const JETPACK_VERT_SPEED = 4.0;         // vertical m/s
 export const JETPACK_ORBIT_DIST = 14.0;        // tries to keep this radius around the player
