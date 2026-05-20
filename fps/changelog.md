@@ -26,6 +26,48 @@ Format: newest entries at the top. Each entry lists what was added, what was cha
 
 ## Session log
 
+### 2026-05-20 — Session 55am (outer-plaza coverage — second-pass anti-jetpack rework)
+
+User: "Do the second pass." S55al covered central + spawn-area
+corridors; the four outer plazas (NE between FOUNDRY+BARRACKS, NW
+between CITADEL+WATCHTOWER, SE between FOUNDRY+TERRACE+MARKET, SW
+between RAMPART+TERRACE+RUINS) and the TERRACE↔SOUTH_KEEP gap were
+still open to the sky.
+
+**Five new overhead slabs** at y=6.5–6.9 — same recipe (wall entries
+with large `thick`, noWalk under the hood, won't register as
+stranded surfaces). Each one covers a major outer-plaza zone while
+avoiding building roof footprints above y=5 + building parapets at
+y=5.6.
+
+  - CEILING_NE     iron       x=[27,39],  z=[-33,-17]  (FOUNDRY ↔ BARRACKS)
+  - CEILING_NW     slate      x=[-37,-11],z=[-27,-11]  (CITADEL ↔ WATCHTOWER)
+  - CEILING_SE     sandstone  x=[19,41],  z=[-3,21]    (FOUNDRY S ↔ MARKET)
+  - CEILING_SW     sandstone  x=[-25,-11],z=[13,27]    (RAMPART ↔ RUINS ↔ TERRACE)
+  - CEILING_SOUTH_GAP slate   x=[-11,11], z=[37,47]    (TERRACE ↔ SOUTH_KEEP)
+
+**Four new tall partitions** (5.4 m, doors, +DOORWAYS entries) breaking
+long diagonal sightlines through the new outer compartments:
+
+  - NE partition  axis=z @ (33,-20)  L=6  (FOUNDRY door → BARRACKS door)
+  - NW partition  axis=z @ (-22,-17) L=8  (CITADEL W ↔ WATCHTOWER E)
+  - SE partition  axis=z @ (22,4)    L=6  (FOUNDRY S face → MARKET)
+  - SW partition  axis=z @ (-22,18)  L=6  (RAMPART S end → TERRACE W ramp)
+
+**Verified**: node --check clean; dev/test-all.sh ALL GREEN on the
+first try; MAP OK; geomWarns=0; doorway drift=0; pickup-reach=0.
+
+**Known issues**
+- Map now has 10 overhead slabs total. Visually the player is under
+  cover almost everywhere at ground level — feel may have shifted from
+  "open arena" to "indoor warren." If that feels too claustrophobic,
+  remove one slab (e.g. CEILING_SE which is the largest) to restore an
+  open zone.
+- Far-north (behind VAULT, z=-51..-65) and far-west (behind COLONNADE
+  and WEST_RUIN, x=-65..-48) are still uncovered. They're peripheral
+  enough that the player rarely lingers there; left exposed
+  deliberately so the perimeter still reads as "outside the warren."
+
 ### 2026-05-20 — Session 55al (anti-jetpack map rework — overhead slabs + spawn plaza partitions)
 
 User: "doesn't matter where I hide, there's a jetpack guy volleying a

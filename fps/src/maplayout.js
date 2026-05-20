@@ -162,6 +162,11 @@ export const DOORWAYS = [
   { x:   0, z: -34, axis: 'x' },   // north partition (between citadel N stair foot and VAULT)
   { x:  18, z:  0, axis: 'x' },    // NE-foundry partition (between foundry and spawn)
   { x:   6, z:  20, axis: 'z' },   // SE-of-spawn partition (toward terrace)
+  // S55am: outer-plaza corridor partitions.
+  { x:  33, z: -20, axis: 'z' },   // NE corridor partition (between foundry + barracks)
+  { x: -22, z: -17, axis: 'z' },   // NW corridor partition (between citadel + watchtower)
+  { x:  22, z:   4, axis: 'z' },   // SE corridor partition (foundry south face → SE plaza)
+  { x: -22, z:  18, axis: 'z' },   // SW corridor partition (rampart south → TERRACE)
 ];
 
 // S55j: Arena-mode enemy spawn points scattered across the WHOLE MAP so
@@ -872,6 +877,72 @@ export const LAYOUT = [
     door: { width: 2.4, height: 2.6 } },
   // SE-of-spawn partition: same idea on the south side near TERRACE.
   { t: 'wall', axis: 'z', cx: 6, cz: 20, length: 6, height: 5.4, thick: 0.5,
+    base: 0, mat: 'sandstone',
+    door: { width: 2.4, height: 2.6 } },
+
+  // =====================================================================
+  // S55am: OUTER PLAZA COVERAGE — second pass on the anti-jetpack rework.
+  // S55al covered the central + spawn-area corridors but left the four
+  // OUTER plazas (NE between FOUNDRY+BARRACKS, NW between CITADEL+
+  // WATCHTOWER, SE between FOUNDRY+TERRACE+MARKET, SW between RAMPART+
+  // TERRACE+RUINS) and the SOUTH gap between TERRACE+SOUTH_KEEP still
+  // open to the sky. Same recipe — y=6.5-6.9 overhead slabs avoiding
+  // any building roof above y=5, plus a few tall partition walls.
+  // =====================================================================
+  // CEILING_NE — between FOUNDRY (x=14-30, z=-21..-9) and BARRACKS
+  // (x=35-49, z=-41..-31). Covers x=[27,39], z=[-33,-17]. Overlap with
+  // FOUNDRY_ROOF (y=4) and BARRACKS roof (y=4) is fine — vertical
+  // separation is 2.5 m, parapets top out at 5.6 m.
+  { t: 'wall', axis: 'x', cx: 33, cz: -25, length: 12, height: 0.4, thick: 16,
+    base: 6.5, mat: 'iron' },
+  // CEILING_NW — between CITADEL (x=-8..8, z=-23..-7) and WATCHTOWER
+  // (x=-46..-38, z=-36..-28). Covers x=[-37,-11], z=[-27,-11]. The W
+  // edge clears WATCHTOWER's E flank (x=-38). Avoids BRIDGE_W
+  // (x=-26..-8, z=-11..-7) on the south by stopping at z=-11.
+  { t: 'wall', axis: 'x', cx: -24, cz: -19, length: 26, height: 0.4, thick: 16,
+    base: 6.5, mat: 'slate' },
+  // CEILING_SE — between FOUNDRY (S edge z=-9), TERRACE (x=-11..11,
+  // z=25..35), MARKET (x=29..41, z=27..37) and EAST_TOWER (x=51..59,
+  // z=-4..4). Covers x=[19,41], z=[-3,21] — a big SE quadrant slab.
+  // Avoids the central shrine (x=10..14, z=15..21) by starting at
+  // x=19. Avoids EAST_TOWER (x=51+) by stopping at x=41.
+  { t: 'wall', axis: 'x', cx: 30, cz: 9, length: 22, height: 0.4, thick: 24,
+    base: 6.5, mat: 'sandstone' },
+  // CEILING_SW — between WEST_RAMPART (x=-34..-26, z=-12..12), TERRACE
+  // (x=-11..11, z=25..35) and RUINS (x=-38..-26, z=27..37). Covers
+  // x=[-25,-11], z=[13,27]. SW partition wall sits inside this.
+  { t: 'wall', axis: 'x', cx: -18, cz: 20, length: 14, height: 0.4, thick: 14,
+    base: 6.5, mat: 'sandstone' },
+  // CEILING_SOUTH_GAP — between TERRACE (S edge z=35) and SOUTH_KEEP
+  // (N edge z=50). Covers x=[-11,11], z=[37,47]. Overlap with the
+  // TELE_SOUTH_TO_FOUNDRY source AABB at (-8, 46) y=0-3 is fine
+  // (slab is at y=6.5, well above).
+  { t: 'wall', axis: 'x', cx: 0, cz: 42, length: 22, height: 0.4, thick: 10,
+    base: 6.5, mat: 'slate' },
+
+  // TALL PARTITIONS for the outer plazas — keep the 5.4 m / doorway
+  // pattern from S55al so wall + ceiling visually meet.
+  // ---------------------------------------------------------------
+  // NE corridor partition: blocks a direct sightline between FOUNDRY
+  // south door (22,-9) and BARRACKS south door (42,-31). Sits between
+  // them, perpendicular to the diagonal sightline.
+  { t: 'wall', axis: 'z', cx: 33, cz: -20, length: 6, height: 5.4, thick: 0.5,
+    base: 0, mat: 'iron',
+    door: { width: 2.4, height: 2.6 } },
+  // NW corridor partition: between CITADEL west face and WATCHTOWER
+  // east stair. Sits 14 m west of citadel.
+  { t: 'wall', axis: 'z', cx: -22, cz: -17, length: 8, height: 5.4, thick: 0.5,
+    base: 0, mat: 'slate',
+    door: { width: 2.4, height: 2.6 } },
+  // SE corridor partition: between FOUNDRY south door area and the SE
+  // plaza so a foundry-room shooter can't drag a direct line to MARKET.
+  { t: 'wall', axis: 'z', cx: 22, cz: 4, length: 6, height: 5.4, thick: 0.5,
+    base: 0, mat: 'iron',
+    door: { width: 2.4, height: 2.6 } },
+  // SW corridor partition: between WEST_RAMPART south end (z=12) and
+  // TERRACE west wing ramp. Breaks the south-rampart-to-TERRACE
+  // diagonal sightline.
+  { t: 'wall', axis: 'z', cx: -22, cz: 18, length: 6, height: 5.4, thick: 0.5,
     base: 0, mat: 'sandstone',
     door: { width: 2.4, height: 2.6 } },
 ];
