@@ -3,6 +3,27 @@
 A browser FPS wave shooter. Three.js (loaded from CDN), vanilla JS ES
 modules, no build step, no bundler, no npm.
 
+## Download
+
+Three options — pick whichever fits your setup.
+
+- **ZIP** (no git required):
+  [Download the latest as a ZIP](https://github.com/kevinpihljensen/kevinpihljensen.github.io/archive/refs/heads/main.zip),
+  then extract. The game lives in the `fps/` folder.
+- **git clone:**
+  ```
+  git clone https://github.com/kevinpihljensen/kevinpihljensen.github.io.git
+  cd kevinpihljensen.github.io/fps
+  ```
+- **GitHub CLI:**
+  ```
+  gh repo clone kevinpihljensen/kevinpihljensen.github.io
+  cd kevinpihljensen.github.io/fps
+  ```
+
+A specific commit / tag can be downloaded by replacing `main` in either
+the ZIP URL or the clone target (`git checkout <sha>` after clone).
+
 ## How to run
 
 This is a modular site: `index.html` loads the game from `src/*.js` at
